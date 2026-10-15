@@ -61,3 +61,7 @@ export const ORE_TILES: readonly TileId[] = [Tile.CoalOre, Tile.CopperOre, Tile.
 export function tileDef(id: number): TileDef {
   return TILES[id] ?? TILES[Tile.Air];
 }
+
+export function isSolid(id: number): boolean {
+  return tileDef(id).solid;
+}

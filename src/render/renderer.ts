@@ -1,15 +1,16 @@
 import {
   CHUNK_CACHE_LIMIT,
   CHUNK_SIZE,
+  PLAYER_WIDTH,
   SCALE_3X_MIN_HEIGHT,
   SKY_BOTTOM_COLOR,
   SKY_TOP_COLOR,
   TILE_SIZE,
 } from '../config';
+import type { Player } from '../entities/player';
 import type { GenProgress } from '../world/generate';
 import { Tile } from '../world/tiles';
 import type { World } from '../world/world';
-import type { Camera } from './camera';
 import { buildTileAtlas } from './textures';
 
 const CHUNK_PX = CHUNK_SIZE * TILE_SIZE;
@@ -59,7 +60,8 @@ export class Renderer {
     return this.canvas.height / this.scale;
   }
 
-  drawWorld(world: World, camera: Camera): void {
+  /** Draw the sky and tiles. (camX, camY) is the view's top-left in whole world pixels. */
+  drawWorld(world: World, camX: number, camY: number): void {
     const { ctx } = this;
     if (this.cacheWorld !== world) {
       this.chunkCache.clear();
@@ -73,8 +75,6 @@ export class Renderer {
 
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    const camX = Math.round(camera.x);
-    const camY = Math.round(camera.y);
 
     // Chunks overlapping the view plus a 1-tile margin.
     const cx0 = Math.max(0, Math.floor((camX - TILE_SIZE) / CHUNK_PX));
@@ -88,6 +88,53 @@ export class Renderer {
       }
     }
     this.evictChunks();
+  }
+
+  /** Draw the player at top-left (x, y) in world px. Call after drawWorld. */
+  drawPlayer(player: Player, x: number, y: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    ctx.save();
+    // Draw facing right in a 12 x 28 box; mirror for facing left.
+    ctx.translate(Math.round(x) - camX + (player.facing < 0 ? PLAYER_WIDTH : 0), Math.round(y) - camY);
+    ctx.scale(player.facing, 1);
+
+    // Legs: apart while walking (alternating) or in the air, together when standing.
+    const walking = player.grounded && Math.abs(player.vx) > 20;
+    const stride = !player.grounded || (walking && Math.floor(player.walkDistance / 6) % 2 === 0);
+    ctx.fillStyle = '#3b3f58';
+    if (stride) {
+      ctx.fillRect(1, 20, 3, 8);
+      ctx.fillRect(8, 20, 3, 8);
+    } else {
+      ctx.fillRect(3, 20, 3, 8);
+      ctx.fillRect(6, 20, 3, 8);
+    }
+    ctx.fillStyle = '#2a2420';
+    if (stride) {
+      ctx.fillRect(1, 26, 3, 2);
+      ctx.fillRect(8, 26, 4, 2);
+    } else {
+      ctx.fillRect(3, 26, 3, 2);
+      ctx.fillRect(6, 26, 4, 2);
+    }
+
+    // Body and arm.
+    ctx.fillStyle = '#c0482f';
+    ctx.fillRect(2, 10, 8, 10);
+    ctx.fillStyle = '#9a3622';
+    ctx.fillRect(5, 11, 3, 7);
+    ctx.fillStyle = '#e8b98a';
+    ctx.fillRect(5, 18, 3, 2);
+
+    // Head, hair, eye.
+    ctx.fillStyle = '#e8b98a';
+    ctx.fillRect(2, 2, 8, 8);
+    ctx.fillStyle = '#5a3a1e';
+    ctx.fillRect(2, 1, 8, 3);
+    ctx.fillRect(2, 4, 2, 3);
+    ctx.fillStyle = '#1b1b24';
+    ctx.fillRect(7, 5, 1, 2);
+    ctx.restore();
   }
 
   drawLoading(status: GenProgress): void {

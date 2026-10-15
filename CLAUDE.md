@@ -37,7 +37,9 @@ src/
     tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid)
     world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile
     generate.ts      seeded terrain, caves, ores, trees, bedrock, spawn
-  entities/          player.ts, itemDrop.ts            (Phase 2–3)
+  entities/
+    player.ts        movement, jump, tile collision, auto step-up
+    itemDrop.ts      (Phase 3)
   systems/           mining, building, inventory, crafting, save   (Phase 3–6)
   render/
     camera.ts        camera position, clamping
@@ -65,6 +67,12 @@ tests/               Vitest unit tests (world gen, inventory, crafting)
   The same seed must always produce the identical world, so all randomness in generation
   goes through the seeded RNG. Never use `Math.random()` in generation.
 - **Loop**: fixed-timestep `update(dt)` at 60 Hz; `render()` once per `requestAnimationFrame`.
+  Moving things (player, camera) keep `prevX`/`prevY`, and render interpolates between the
+  last two update steps so motion stays smooth on high-refresh screens. Keyboard edge
+  presses (`wasPressed`) are cleared after each update step.
+- **Physics**: player intent comes in as a plain `PlayerControls` object, so physics can be
+  unit-tested without the DOM. Movement is split into steps of at most `MAX_MOVE_STEP` px,
+  resolved X then Y, so nothing tunnels through tiles.
 - **Rendering**: `imageSmoothingEnabled = false`, integer camera positions, 2x or 3x pixel scale
   chosen by window size. Only draw what's on screen; chunk images are cached and redrawn only
   when one of their tiles changes (tracked with per-chunk version numbers).

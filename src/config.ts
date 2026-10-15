@@ -18,9 +18,23 @@ export const SKY_BOTTOM_COLOR = '#bfe3ff';
 export const CHUNK_CACHE_LIMIT = 48; // cached chunk canvases kept in memory (~1 MB each)
 export const TEXTURE_SEED = 1337; // fixed so tile textures look the same in every world
 
-// --- Free-fly camera (Phase 1 debug camera) ---
-export const CAMERA_FLY_SPEED = 600; // px/s
-export const CAMERA_FAST_MULTIPLIER = 4; // while Shift is held
+// --- Camera ---
+export const CAMERA_FOLLOW_RATE = 8; // 1/s; higher = camera catches up with the player faster
+
+// --- Player movement and physics ---
+export const PLAYER_WIDTH = 12; // px
+export const PLAYER_HEIGHT = 28; // px
+export const RUN_SPEED = 180; // px/s
+export const RUN_ACCEL = 2000; // px/s^2 while a direction is held (reaches full speed in ~0.09 s)
+export const RUN_FRICTION = 2400; // px/s^2 when no direction is held
+export const AIR_CONTROL = 0.65; // fraction of accel/friction that applies in the air
+export const GRAVITY = 1400; // px/s^2
+export const MAX_FALL_SPEED = 900; // px/s
+export const JUMP_VELOCITY = 480; // px/s; full-height jump clears a 4-tile ledge
+export const JUMP_CUT = 0.4; // upward speed is multiplied by this when jump is released early
+export const COYOTE_TIME = 0.1; // s after leaving the ground that a jump still works
+export const JUMP_BUFFER = 0.1; // s before landing that a jump press is remembered
+export const MAX_MOVE_STEP = 8; // px; movement is split into steps this small so nothing tunnels
 
 // --- World generation ---
 // Average surface row. Depth (in m) = ty - SURFACE_LEVEL, so the depth meter reads 0 here.

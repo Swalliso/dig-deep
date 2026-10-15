@@ -1,6 +1,4 @@
 import {
-  CAMERA_FAST_MULTIPLIER,
-  CAMERA_FLY_SPEED,
   GEN_FRAME_BUDGET_MS,
   MAX_FRAME_TIME,
   SURFACE_LEVEL,
@@ -9,7 +7,8 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from './config';
-import { initInput, isDown } from './input';
+import { Player } from './entities/player';
+import { endInputStep, initInput, isDown, wasPressed } from './input';
 import { Camera } from './render/camera';
 import { Renderer } from './render/renderer';
 import { drawDebugInfo } from './ui/hud';
@@ -29,6 +28,7 @@ const generation = generateWorldSteps(world);
 let genStatus: GenProgress = { label: 'Starting', progress: 0 };
 let generating = true;
 let worldHash = '';
+let player = new Player(0, 0);
 
 let accumulator = 0;
 let lastTime = 0;
@@ -75,7 +75,8 @@ function stepGeneration(): void {
     if (next.done) {
       generating = false;
       worldHash = world.hash().toString(16).padStart(8, '0');
-      camera.centerOn((world.spawnTx + 0.5) * TILE_SIZE, (world.spawnTy + 0.5) * TILE_SIZE);
+      player = new Player(world.spawnTx, world.spawnTy);
+      camera.centerOn(player.centerX, player.centerY);
       camera.clampTo(world.width * TILE_SIZE, world.height * TILE_SIZE);
       return;
     }
@@ -83,30 +84,39 @@ function stepGeneration(): void {
   }
 }
 
+const anyDown = (...codes: string[]): boolean => codes.some(isDown);
+const anyPressed = (...codes: string[]): boolean => codes.some(wasPressed);
+
 function update(dt: number): void {
-  // Phase 1: free-flying camera on the arrow keys.
-  let dx = 0;
-  let dy = 0;
-  if (isDown('ArrowLeft')) dx -= 1;
-  if (isDown('ArrowRight')) dx += 1;
-  if (isDown('ArrowUp')) dy -= 1;
-  if (isDown('ArrowDown')) dy += 1;
-  const fast = isDown('ShiftLeft') || isDown('ShiftRight');
-  const speed = CAMERA_FLY_SPEED * (fast ? CAMERA_FAST_MULTIPLIER : 1);
-  camera.x += dx * speed * dt;
-  camera.y += dy * speed * dt;
+  const right = anyDown('KeyD', 'ArrowRight');
+  const left = anyDown('KeyA', 'ArrowLeft');
+  player.update(dt, world, {
+    move: (right ? 1 : 0) - (left ? 1 : 0),
+    jumpPressed: anyPressed('Space', 'KeyW', 'ArrowUp'),
+    jumpHeld: anyDown('Space', 'KeyW', 'ArrowUp'),
+  });
+  camera.follow(player.centerX, player.centerY, dt);
   camera.clampTo(world.width * TILE_SIZE, world.height * TILE_SIZE);
 }
 
-function render(): void {
-  renderer.drawWorld(world, camera);
-  const tx = Math.floor(camera.centerX / TILE_SIZE);
-  const ty = Math.floor(camera.centerY / TILE_SIZE);
+/** alpha (0..1) is how far we are between the last update step and the next one. */
+function render(alpha: number): void {
+  const camX = Math.round(lerp(camera.prevX, camera.x, alpha));
+  const camY = Math.round(lerp(camera.prevY, camera.y, alpha));
+  renderer.drawWorld(world, camX, camY);
+  renderer.drawPlayer(player, lerp(player.prevX, player.x, alpha), lerp(player.prevY, player.y, alpha), camX, camY);
+
+  const tx = Math.floor(player.centerX / TILE_SIZE);
+  const ty = Math.floor(player.centerY / TILE_SIZE);
   drawDebugInfo(renderer.ctx, [
     `Seed ${world.seed}   World hash ${worldHash}`,
-    `View centre tile (${tx}, ${ty})   Depth ${ty - SURFACE_LEVEL} m`,
-    'Arrow keys: fly   Shift: fast',
+    `Player tile (${tx}, ${ty})   Depth ${ty - SURFACE_LEVEL} m`,
+    'A/D or ←/→: move   Space, W or ↑: jump',
   ]);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
 }
 
 function frame(now: number): void {
@@ -121,9 +131,10 @@ function frame(now: number): void {
   lastTime = now;
   while (accumulator >= STEP) {
     update(STEP);
+    endInputStep();
     accumulator -= STEP;
   }
-  render();
+  render(accumulator / STEP);
 }
 
 requestAnimationFrame(frame);

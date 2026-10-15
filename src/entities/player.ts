@@ -1,0 +1,174 @@
+import {
+  AIR_CONTROL,
+  COYOTE_TIME,
+  GRAVITY,
+  JUMP_BUFFER,
+  JUMP_CUT,
+  JUMP_VELOCITY,
+  MAX_FALL_SPEED,
+  MAX_MOVE_STEP,
+  PLAYER_HEIGHT,
+  PLAYER_WIDTH,
+  RUN_ACCEL,
+  RUN_FRICTION,
+  RUN_SPEED,
+  TILE_SIZE,
+} from '../config';
+import { isSolid } from '../world/tiles';
+import type { World } from '../world/world';
+
+/** One update step's worth of player intent, so physics doesn't depend on the DOM. */
+export interface PlayerControls {
+  /** -1 left, 0 none, 1 right. */
+  move: number;
+  /** Jump went down this step. */
+  jumpPressed: boolean;
+  /** Jump is being held. */
+  jumpHeld: boolean;
+}
+
+// Keeps a box's far edge out of the next tile when it sits exactly on a tile boundary.
+const EPS = 1e-6;
+
+const W = PLAYER_WIDTH;
+const H = PLAYER_HEIGHT;
+
+/** Axis-aligned box that runs, jumps and falls with tile collision. */
+export class Player {
+  /** Top-left corner, world px. */
+  x: number;
+  y: number;
+  /** Position before the latest update, for render interpolation. */
+  prevX: number;
+  prevY: number;
+  vx = 0;
+  vy = 0;
+  grounded = false;
+  facing: 1 | -1 = 1;
+  /** Horizontal distance walked on the ground, drives the walk animation. */
+  walkDistance = 0;
+  private coyoteTimer = 0;
+  private jumpBufferTimer = 0;
+  /** Rising from a jump with the button still held (early release cuts the jump). */
+  private jumpHeld = false;
+
+  /** Place the player standing on the tile row below (tx, ty). */
+  constructor(tx: number, ty: number) {
+    this.x = tx * TILE_SIZE + (TILE_SIZE - W) / 2;
+    this.y = (ty + 1) * TILE_SIZE - H;
+    this.prevX = this.x;
+    this.prevY = this.y;
+  }
+
+  get centerX(): number {
+    return this.x + W / 2;
+  }
+
+  get centerY(): number {
+    return this.y + H / 2;
+  }
+
+  update(dt: number, world: World, controls: PlayerControls): void {
+    this.prevX = this.x;
+    this.prevY = this.y;
+
+    // Run: accelerate toward the target speed, or brake with friction.
+    const control = this.grounded ? 1 : AIR_CONTROL;
+    const rate = (controls.move !== 0 ? RUN_ACCEL : RUN_FRICTION) * control * dt;
+    this.vx = approach(this.vx, controls.move * RUN_SPEED, rate);
+    if (controls.move !== 0) this.facing = controls.move > 0 ? 1 : -1;
+
+    // Jump, with coyote time and jump buffering.
+    this.coyoteTimer = this.grounded ? COYOTE_TIME : this.coyoteTimer - dt;
+    this.jumpBufferTimer = controls.jumpPressed ? JUMP_BUFFER : this.jumpBufferTimer - dt;
+    if (this.jumpBufferTimer > 0 && this.coyoteTimer > 0) {
+      this.vy = -JUMP_VELOCITY;
+      this.jumpBufferTimer = 0;
+      this.coyoteTimer = 0;
+      this.grounded = false;
+      this.jumpHeld = true;
+    }
+    if (this.jumpHeld && (!controls.jumpHeld || this.vy >= 0)) {
+      if (this.vy < 0) this.vy *= JUMP_CUT;
+      this.jumpHeld = false;
+    }
+
+    this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL_SPEED);
+
+    // Move in small steps, X then Y, so even max speed can't skip over a tile.
+    const dx = this.vx * dt;
+    const dy = this.vy * dt;
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / MAX_MOVE_STEP));
+    const wasGrounded = this.grounded;
+    this.grounded = false;
+    const startX = this.x;
+    for (let i = 0; i < steps; i++) {
+      if (this.vx !== 0) this.moveX(dx / steps, world, wasGrounded);
+      if (this.vy !== 0) this.moveY(dy / steps, world);
+    }
+    if (this.grounded) this.walkDistance += Math.abs(this.x - startX);
+  }
+
+  private moveX(dx: number, world: World, canStep: boolean): void {
+    this.x += dx;
+    const col = dx > 0 ? Math.floor((this.x + W - EPS) / TILE_SIZE) : Math.floor(this.x / TILE_SIZE);
+    const row0 = Math.floor(this.y / TILE_SIZE);
+    const row1 = Math.floor((this.y + H - EPS) / TILE_SIZE);
+    let blocked = false;
+    for (let row = row0; row <= row1; row++) {
+      if (isSolid(world.getTile(col, row))) {
+        blocked = true;
+        break;
+      }
+    }
+    if (!blocked) return;
+
+    // Auto step-up: walking into a 1-tile ledge lifts the player onto it.
+    if (canStep) {
+      const stepY = row1 * TILE_SIZE - H;
+      if (this.y - stepY <= TILE_SIZE && !overlapsSolid(world, this.x, stepY)) {
+        this.y = stepY;
+        return;
+      }
+    }
+
+    this.x = dx > 0 ? col * TILE_SIZE - W : (col + 1) * TILE_SIZE;
+    this.vx = 0;
+  }
+
+  private moveY(dy: number, world: World): void {
+    this.y += dy;
+    const row = dy > 0 ? Math.floor((this.y + H - EPS) / TILE_SIZE) : Math.floor(this.y / TILE_SIZE);
+    const col0 = Math.floor(this.x / TILE_SIZE);
+    const col1 = Math.floor((this.x + W - EPS) / TILE_SIZE);
+    for (let col = col0; col <= col1; col++) {
+      if (!isSolid(world.getTile(col, row))) continue;
+      if (dy > 0) {
+        this.y = row * TILE_SIZE - H;
+        this.grounded = true;
+      } else {
+        this.y = (row + 1) * TILE_SIZE;
+      }
+      this.vy = 0;
+      return;
+    }
+  }
+}
+
+/** Does a player-sized box with its top-left at (x, y) touch any solid tile? */
+export function overlapsSolid(world: World, x: number, y: number): boolean {
+  const col0 = Math.floor(x / TILE_SIZE);
+  const col1 = Math.floor((x + W - EPS) / TILE_SIZE);
+  const row0 = Math.floor(y / TILE_SIZE);
+  const row1 = Math.floor((y + H - EPS) / TILE_SIZE);
+  for (let row = row0; row <= row1; row++) {
+    for (let col = col0; col <= col1; col++) {
+      if (isSolid(world.getTile(col, row))) return true;
+    }
+  }
+  return false;
+}
+
+function approach(value: number, target: number, maxDelta: number): number {
+  return value < target ? Math.min(value + maxDelta, target) : Math.max(value - maxDelta, target);
+}
