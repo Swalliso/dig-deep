@@ -66,6 +66,10 @@ a shortcut there and mention it in the phase's test steps.
 index.html           page shell, menu styles, favicon link
 vite.config.ts       base './' so dist/ works from any folder on any static host
 public/favicon.svg   pixel-art favicon (copied into dist/ as is)
+public/og-image.png  1200x630 link-preview image (Discord/Slack/etc., via the og:/twitter: tags in
+                     index.html, which use absolute swalliso.github.io URLs). Rendered with the
+                     game's own renderer: seed 42, view centred on tile x 821 from row 112, with a
+                     shaft, three torches and a few ores added, then upscaled 2x nearest-neighbour
 README.md            how to play, develop and deploy
 src/
   main.ts            boot, screens (title → loading → playing ⇄ paused), game loop, saving
