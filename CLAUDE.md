@@ -52,19 +52,21 @@ src/
     player.ts        movement, jump, tile collision, auto step-up
     itemDrop.ts      dropped items: fall, fly to the player within 2 tiles, picked up on touch
   systems/
-    items.ts         item registry (name, max stack, tile it places, icon)
-    inventory.ts     40 slots (10 hotbar + 30 bag), pickup/stacking rules, hotbar selection
+    items.ts         item registry (name, max stack, tile it places, icon, pickaxe tier)
+    inventory.ts     40 slots (10 hotbar + 30 bag), stacking, cursor stack, shift-move,
+                     best pickaxe, starting items
     mining.ts        reach + tier checks, break progress, crack stage, hints
     building.ts      placement rules (empty, in reach, supported, not on the player)
-    crafting.ts, save.ts                          (Phase 4, 6)
+    crafting.ts      recipe table, station range checks, craft()
+    save.ts                                       (Phase 6)
   render/
     camera.ts        camera position, clamping
-    textures.ts      procedural 16x16 tile atlas, built once at startup
+    textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
     renderer.ts      sky, cached chunk canvases, overlays
     particles.ts     cosmetic break particles (Math.random is fine here)
   ui/
-    hud.ts           hotbar, depth meter, toasts, debug text
-    menus.ts         inventory/crafting, pause, title  (Phase 4, 6)
+    hud.ts           hotbar, slot/stack drawing helpers, debug text (depth meter, toasts: Phase 5)
+    menus.ts         inventory + crafting panel (pause and title screens: Phase 6)
 tests/               Vitest unit tests (world gen, inventory, crafting)
 ```
 

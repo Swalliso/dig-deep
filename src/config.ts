@@ -69,6 +69,9 @@ export const HOTBAR_SIZE = 10;
 export const BAG_SIZE = 30;
 export const MAX_STACK = 999;
 
+// --- Crafting ---
+export const STATION_RANGE = 4; // tiles; a workbench/furnace this close (centre to centre) counts
+
 // --- World generation ---
 // Average surface row. Depth (in m) = ty - SURFACE_LEVEL, so the depth meter reads 0 here.
 export const SURFACE_LEVEL = 120;

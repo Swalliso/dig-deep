@@ -11,13 +11,13 @@ import {
 } from '../config';
 import type { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
-import { itemDef } from '../systems/items';
+import { itemIndex } from '../systems/items';
 import type { Hint } from '../systems/mining';
 import type { GenProgress } from '../world/generate';
 import { Tile } from '../world/tiles';
 import type { World } from '../world/world';
 import type { Particles } from './particles';
-import { buildCrackAtlas, buildTileAtlas } from './textures';
+import { buildCrackAtlas, buildItemAtlas, buildTileAtlas } from './textures';
 
 const CHUNK_PX = CHUNK_SIZE * TILE_SIZE;
 
@@ -33,8 +33,10 @@ export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
   /** Device pixels per world pixel (2 or 3). */
   scale = 2;
-  /** Tile textures; tile id N at x = N * TILE_SIZE. Also used for item icons. */
+  /** Tile textures; tile id N at x = N * TILE_SIZE. */
   readonly atlas: HTMLCanvasElement;
+  /** Item icons; see buildItemAtlas. */
+  readonly itemAtlas: HTMLCanvasElement;
   private readonly cracks: HTMLCanvasElement;
   private readonly chunkCache = new Map<number, CachedChunk>();
   private cacheWorld: World | null = null;
@@ -47,6 +49,7 @@ export class Renderer {
     if (!ctx) throw new Error('Canvas 2D not supported');
     this.ctx = ctx;
     this.atlas = buildTileAtlas();
+    this.itemAtlas = buildItemAtlas(this.atlas);
     this.cracks = buildCrackAtlas();
     this.resize();
   }
@@ -124,8 +127,8 @@ export class Renderer {
     for (const drop of drops) {
       const x = Math.round(drop.prevX + (drop.x - drop.prevX) * alpha) - camX;
       const y = Math.round(drop.prevY + (drop.y - drop.prevY) * alpha) - camY;
-      const icon = itemDef(drop.item).iconTile;
-      this.ctx.drawImage(this.atlas, icon * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE, x, y, DROP_SIZE, DROP_SIZE);
+      const icon = itemIndex(drop.item);
+      this.ctx.drawImage(this.itemAtlas, icon * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE, x, y, DROP_SIZE, DROP_SIZE);
     }
   }
 

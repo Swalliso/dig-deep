@@ -16,18 +16,18 @@ import { Camera } from './render/camera';
 import { Particles } from './render/particles';
 import { Renderer } from './render/renderer';
 import { canPlace, tryPlace } from './systems/building';
+import { nearbyStations } from './systems/crafting';
 import { Inventory } from './systems/inventory';
-import { itemDef } from './systems/items';
+import { itemDef, type ItemId } from './systems/items';
 import { checkMine, Mining, type BrokenTile } from './systems/mining';
 import { drawDebugInfo, drawHotbar } from './ui/hud';
+import { InventoryPanel } from './ui/menus';
 import { generateWorldSteps, type GenProgress } from './world/generate';
 import { Tile, tileDef, type TileId } from './world/tiles';
 import { fellTreeAbove } from './world/trees';
 import { World } from './world/world';
 
 const STEP = 1 / UPDATE_HZ;
-// Phase 4 switches this to the best pickaxe in the inventory.
-const PICKAXE_TIER = 0;
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const renderer = new Renderer(canvas);
@@ -41,7 +41,8 @@ let genStatus: GenProgress = { label: 'Starting', progress: 0 };
 let generating = true;
 let worldHash = '';
 let player = new Player(0, 0);
-const inventory = new Inventory();
+const inventory = Inventory.withStartingItems();
+const inventoryPanel = new InventoryPanel();
 const mining = new Mining();
 const particles = new Particles();
 let drops: ItemDrop[] = [];
@@ -125,10 +126,29 @@ function update(dt: number): void {
     jumpHeld: anyDown('Space', 'KeyW', 'ArrowUp'),
   });
 
+  // E / Tab toggles the inventory + crafting panel (Esc also closes it). It pauses mining
+  // and building; the mouse works the panel instead.
+  if (anyPressed('KeyE', 'Tab') || (inventoryPanel.open && wasPressed('Escape'))) {
+    inventoryPanel.open = !inventoryPanel.open;
+    if (!inventoryPanel.open) {
+      const leftover = inventory.returnCursor();
+      if (leftover) dropAtPlayer(leftover.item, leftover.count);
+    }
+  }
+
   const [tx, ty] = cursorTile();
-  const broken = mining.update(dt, world, player, tx, ty, isDown('MouseLeft'), PICKAXE_TIER);
-  if (broken) onTileBroken(broken);
-  if (wasPressed('MouseRight')) tryPlace(world, player, inventory, tx, ty);
+  if (inventoryPanel.open) {
+    mining.update(dt, world, player, tx, ty, false, 0); // lets any hint fade out
+    if (wasPressed('MouseLeft')) {
+      const shift = anyDown('ShiftLeft', 'ShiftRight');
+      const stations = nearbyStations(world, player.centerX, player.centerY);
+      inventoryPanel.click(canvas, renderer.scale, mouse.x, mouse.y, shift, inventory, stations);
+    }
+  } else {
+    const broken = mining.update(dt, world, player, tx, ty, isDown('MouseLeft'), inventory.bestPickaxeTier());
+    if (broken) onTileBroken(broken);
+    if (wasPressed('MouseRight')) tryPlace(world, player, inventory, tx, ty);
+  }
 
   drops = updateDrops(drops, dt, world, player, inventory);
   particles.update(dt, world);
@@ -144,6 +164,12 @@ function onTileBroken({ tx, ty, tile }: BrokenTile): void {
   }
 }
 
+function dropAtPlayer(item: ItemId, count: number): void {
+  const drop = new ItemDrop(item, count, player.centerX, player.centerY);
+  drop.vx = player.facing * 120;
+  drops.push(drop);
+}
+
 /** Particles and the item drop for a tile that just broke. */
 function shatter(tx: number, ty: number, tile: TileId): void {
   const def = tileDef(tile);
@@ -154,7 +180,7 @@ function shatter(tx: number, ty: number, tile: TileId): void {
 /** Outline the tile under the cursor: white if it can be mined, red if not. */
 function drawCursor(camX: number, camY: number): void {
   const [tx, ty] = cursorTile();
-  const check = checkMine(world, player, tx, ty, PICKAXE_TIER);
+  const check = checkMine(world, player, tx, ty, inventory.bestPickaxeTier());
   if (check !== 'empty') {
     renderer.drawTileOutline(tx, ty, check === 'ok' ? '#ffffff' : '#ff4040', camX, camY);
     return;
@@ -176,18 +202,25 @@ function render(alpha: number): void {
   renderer.drawDrops(drops, alpha, camX, camY);
   renderer.drawPlayer(player, lerp(player.prevX, player.x, alpha), lerp(player.prevY, player.y, alpha), camX, camY);
   renderer.drawParticles(particles, camX, camY);
-  drawCursor(camX, camY);
+  if (!inventoryPanel.open) drawCursor(camX, camY);
   if (mining.hint) renderer.drawHint(mining.hint, camX, camY);
-  drawHotbar(renderer.ctx, renderer.atlas, inventory, renderer.scale);
+  if (inventoryPanel.open) {
+    const stations = nearbyStations(world, player.centerX, player.centerY);
+    inventoryPanel.draw(renderer.ctx, renderer.itemAtlas, renderer.scale, mouse.x, mouse.y, inventory, stations);
+  } else {
+    drawHotbar(renderer.ctx, renderer.itemAtlas, inventory, renderer.scale);
+  }
 
   const tx = Math.floor(player.centerX / TILE_SIZE);
   const ty = Math.floor(player.centerY / TILE_SIZE);
+  const tier = inventory.bestPickaxeTier();
   drawDebugInfo(renderer.ctx, [
     `Seed ${world.seed}   World hash ${worldHash}`,
     `Player tile (${tx}, ${ty})   Depth ${ty - SURFACE_LEVEL} m`,
-    `Pickaxe: ${PICKAXES[PICKAXE_TIER].name} (tier ${PICKAXE_TIER})`,
+    `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
     'A/D or ←/→: move   Space, W or ↑: jump',
     'Left mouse: mine   Right mouse: place   1–0 or wheel: select',
+    'E or Tab: inventory + crafting (shift-click: hotbar ↔ bag)',
   ]);
 }
 

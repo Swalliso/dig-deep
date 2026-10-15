@@ -1,4 +1,5 @@
 import { CRACK_STAGES, TEXTURE_SEED, TILE_SIZE } from '../config';
+import { ITEM_IDS, itemDef } from '../systems/items';
 import { createRng, randInt, type Rng } from '../util/rng';
 import { Tile, TILE_COUNT, tileDef } from '../world/tiles';
 
@@ -148,6 +149,43 @@ function planks(img: ImageData, rng: Rng): void {
   }
 }
 
+function workbench(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Workbench).color);
+  // Thick top board with a lighter top edge, two legs, and a cross brace.
+  for (let y = 5; y < 9; y++) {
+    for (let x = 0; x < S; x++) put(img, x, y, c, y === 5 ? 1.2 : y === 8 ? 0.7 : rng() < 0.15 ? 0.9 : 1);
+  }
+  for (let y = 9; y < S; y++) {
+    for (const x of [1, 2, 13, 14]) put(img, x, y, c, x === 2 || x === 14 ? 0.75 : 0.9);
+  }
+  for (let x = 3; x < 13; x++) put(img, x, 12, c, 0.65);
+  // A little saw resting on top.
+  for (let x = 4; x < 10; x++) put(img, x, 4, [180, 184, 190]);
+  put(img, 10, 4, [107, 74, 43]);
+  put(img, 11, 4, [107, 74, 43]);
+}
+
+function furnace(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Furnace).color);
+  speckle(img, rng, c);
+  for (let x = 0; x < S; x++) {
+    put(img, x, 0, c, 1.25);
+    put(img, x, S - 1, c, 0.6);
+  }
+  // Arched opening with a fire glowing at the bottom.
+  for (let y = 6; y < 14; y++) {
+    for (let x = 4; x < 12; x++) {
+      if (y === 6 && (x === 4 || x === 11)) continue;
+      put(img, x, y, [24, 18, 16]);
+    }
+  }
+  for (let x = 5; x < 11; x++) {
+    put(img, x, 13, [255, 140, 40]);
+    if (rng() < 0.6) put(img, x, 12, [255, 196, 80]);
+  }
+  for (let x = 3; x < 13; x++) put(img, x, 14, c, 0.7);
+}
+
 function drawTile(img: ImageData, id: number, rng: Rng): void {
   switch (id) {
     case Tile.Grass: return grass(img, rng);
@@ -163,7 +201,59 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.Bedrock: return bedrock(img, rng);
     case Tile.Torch: return torch(img);
     case Tile.Planks: return planks(img, rng);
+    case Tile.Workbench: return workbench(img, rng);
+    case Tile.Furnace: return furnace(img, rng);
   }
+}
+
+/** Ingot: a lighter top face over a darker body. */
+function barIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  for (let x = 4; x < 12; x++) put(img, x, 6, c, 1.35);
+  for (let y = 7; y < 11; y++) for (let x = 3; x < 13; x++) put(img, x, y, c, x === 3 || x === 12 ? 0.8 : 1.05);
+  for (let x = 2; x < 14; x++) put(img, x, 11, c, 0.65);
+  put(img, 5, 6, c, 1.6);
+  put(img, 6, 6, c, 1.6);
+}
+
+/** Pickaxe: a wooden handle running up and right, with a curved head across its top. */
+function pickaxeIcon(img: ImageData, color: string): void {
+  const handle: RGB = [107, 74, 43];
+  for (let i = 0; i < 9; i++) {
+    put(img, 3 + i, 13 - i, handle);
+    put(img, 4 + i, 13 - i, handle, 0.75);
+  }
+  const c = rgb(color);
+  const head: [number, number][] = [
+    [5, 2], [6, 2], [7, 2], [8, 3], [9, 3], [10, 4], [11, 5], [12, 6], [12, 7], [13, 8], [13, 9], [13, 10],
+  ];
+  for (const [x, y] of head) {
+    put(img, x, y, c, 1.15);
+    put(img, x, y + 1, c, 0.8);
+  }
+  put(img, 4, 3, c, 0.9);
+  put(img, 14, 11, c, 0.9);
+}
+
+/** Item icons: ITEM_IDS[i] lives at x = i * TILE_SIZE. Tile items reuse their tile texture. */
+export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement {
+  const atlas = document.createElement('canvas');
+  atlas.width = ITEM_IDS.length * S;
+  atlas.height = S;
+  const ctx = atlas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D not supported');
+  ITEM_IDS.forEach((id, i) => {
+    const icon = itemDef(id).icon;
+    if (typeof icon === 'number') {
+      ctx.drawImage(tileAtlas, icon * S, 0, S, S, i * S, 0, S, S);
+      return;
+    }
+    const img = new ImageData(S, S);
+    if (icon.shape === 'bar') barIcon(img, icon.color);
+    else pickaxeIcon(img, icon.color);
+    ctx.putImageData(img, i * S, 0);
+  });
+  return atlas;
 }
 
 /**
