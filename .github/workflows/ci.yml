@@ -1,0 +1,30 @@
+# Tests plus both builds (live and dev site) for every pull request and for pushes to feature
+# and hotfix branches. Deploys nothing; deploy.yml publishes main and develop.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ['feature/**', 'hotfix/**']
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:dev

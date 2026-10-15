@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { storageKey } from '../src/channel';
 import { CHUNK_SIZE, MAX_STACK, TILE_SIZE } from '../src/config';
 import { ItemDrop } from '../src/entities/itemDrop';
 import { Player } from '../src/entities/player';
@@ -11,6 +12,7 @@ import {
   encodeRle,
   restoreDrops,
   restoreInventory,
+  SAVE_KEY,
   SAVE_VERSION,
   type SaveData,
 } from '../src/systems/save';
@@ -177,5 +179,14 @@ describe('save checks', () => {
 
   it('accepts a real save', () => {
     expect(checkSave(valid()).kind).toBe('ok');
+  });
+});
+
+describe('save key', () => {
+  it('keeps the live key and gives the dev site its own', () => {
+    // The live and dev sites share one origin; changing the live key would lose players' saves.
+    expect(storageKey('save', 'live')).toBe('dig-deep:save');
+    expect(storageKey('save', 'dev')).toBe('dig-deep-dev:save');
+    expect(SAVE_KEY).toBe('dig-deep:save'); // tests build as the live channel
   });
 });
