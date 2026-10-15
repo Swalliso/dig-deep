@@ -1,3 +1,4 @@
+import { BUILD_SHA, CHANNEL } from '../channel';
 import { BAG_SIZE, HOTBAR_SIZE } from '../config';
 import { canCraft, craft, missingIngredients, RECIPES, type Recipe, type Station } from '../systems/crafting';
 import type { Inventory } from '../systems/inventory';
@@ -262,6 +263,7 @@ export class Menus {
     const { save } = options;
     const menu = this.open('title');
     menu.append(el('h1', 'DIG DEEP'), el('p', 'dig · collect · craft · build', 'sub'));
+    if (CHANNEL === 'dev') menu.append(el('p', BUILD_SHA ? `DEV BUILD · ${BUILD_SHA}` : 'DEV BUILD', 'devtag'));
 
     const resume = button('Continue', options.onContinue);
     if (save.kind === 'ok') {
