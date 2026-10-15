@@ -55,9 +55,9 @@ tunable numbers (physics, mining, lighting, world generation) live in `src/confi
 `npm run build` writes a fully static site to `dist/`. It uses relative paths, so it works
 from any folder on any static host:
 
-- **GitHub Pages**: publish the contents of `dist/`, for example by pushing it to a `gh-pages`
-  branch (`npx gh-pages -d dist`) or with a Pages workflow that runs `npm ci && npm run build`
-  and uploads `dist/`.
+- **GitHub Pages** (set up for this repo): `.github/workflows/deploy.yml` runs the tests,
+  builds and publishes `dist/` on every push to `main`. The repo's Settings → Pages source is
+  "GitHub Actions". Each run shows up under the Actions tab.
 - **Netlify**: build command `npm run build`, publish directory `dist`. Or drag the `dist/`
   folder onto the Netlify dashboard.
 - **itch.io**: zip the *contents* of `dist/` (so `index.html` is at the top of the zip),
