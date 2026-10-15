@@ -2,6 +2,7 @@ import { BAG_SIZE, HOTBAR_SIZE } from '../config';
 import { canCraft, craft, missingIngredients, RECIPES, type Recipe, type Station } from '../systems/crafting';
 import type { Inventory } from '../systems/inventory';
 import { itemDef } from '../systems/items';
+import { SAVE_VERSION, type SaveStatus } from '../systems/save';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 
 // Inventory + crafting panel (opened with E or Tab). Sizes are in UI units; one unit is
@@ -210,4 +211,160 @@ function drawRecipe(
     ctx.fillText(text, x, r.y + 10 * u);
     x += ctx.measureText(text).width;
   }
+}
+
+// --- Title, controls and pause screens (HTML on top of the canvas) ---
+
+export interface TitleOptions {
+  /** What's in the save slot. */
+  save: SaveStatus;
+  /** Pre-filled seed text (from `?seed=`), or ''. */
+  seedText: string;
+  onContinue: () => void;
+  /** Start a new world from the seed field's text ('' means random). */
+  onNewWorld: (seedText: string) => void;
+  /** Debug mode only: shown as an extra button when there's a save. */
+  onMarkOutdated?: () => void;
+}
+
+export interface PauseOptions {
+  onResume: () => void;
+  /** Resolves once the save is written; rejects if it failed. */
+  onSave: () => Promise<void>;
+  onQuit: () => void;
+}
+
+const CONTROLS: [string, string][] = [
+  ['Move', 'A / D or ← / →'],
+  ['Jump', 'Space, W or ↑'],
+  ['Mine', 'Hold left mouse'],
+  ['Place block', 'Right mouse'],
+  ['Select hotbar slot', '1–0 or mouse wheel'],
+  ['Inventory / crafting', 'E or Tab'],
+  ['Pause', 'Esc'],
+  ['Debug overlay', 'F3'],
+];
+
+/** The HTML menus. Only one screen shows at a time; hide() clears it. */
+export class Menus {
+  private readonly root: HTMLElement;
+
+  constructor(root: HTMLElement) {
+    this.root = root;
+  }
+
+  hide(): void {
+    this.root.className = '';
+    this.root.replaceChildren();
+  }
+
+  showTitle(options: TitleOptions): void {
+    const { save } = options;
+    const menu = this.open('title');
+    menu.append(el('h1', 'DIG DEEP'), el('p', 'dig · collect · craft · build', 'sub'));
+
+    const resume = button('Continue', options.onContinue);
+    if (save.kind === 'ok') {
+      resume.append(el('span', `seed ${save.save.seed} · saved ${timeAgo(save.save.savedAt)}`, 'detail'));
+    } else {
+      resume.disabled = true;
+    }
+    menu.append(resume);
+    if (save.kind === 'outdated') {
+      const which = save.version < SAVE_VERSION ? 'an older' : 'a newer';
+      menu.append(el('p', `Save from ${which} version. Start a new world to keep playing.`, 'note'));
+    } else if (save.kind === 'broken') {
+      menu.append(el('p', "Your save couldn't be read. Start a new world to keep playing.", 'note'));
+    }
+
+    const seed = document.createElement('input');
+    seed.id = 'seed';
+    seed.placeholder = 'random';
+    seed.value = options.seedText;
+    seed.autocomplete = 'off';
+    seed.spellcheck = false;
+    const label = el('label', 'World seed (number or any text)');
+    label.htmlFor = 'seed';
+
+    // Starting over replaces the only save slot, so a working save needs a second click.
+    let confirming = false;
+    const fresh = button('New world', () => {
+      if (save.kind === 'ok' && !confirming) {
+        confirming = true;
+        fresh.textContent = 'Replace your saved world? Click again';
+        fresh.classList.add('danger');
+        return;
+      }
+      options.onNewWorld(seed.value);
+    });
+    seed.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') fresh.click();
+    });
+    menu.append(label, seed, fresh, button('Controls', () => this.showControls(() => this.showTitle(options))));
+
+    if (options.onMarkOutdated && save.kind === 'ok') {
+      menu.append(button('Debug: mark save as an older version', options.onMarkOutdated, 'small'));
+    }
+    (save.kind === 'ok' ? resume : fresh).focus();
+  }
+
+  showControls(onBack: () => void): void {
+    const menu = this.open('title');
+    menu.append(el('h2', 'Controls'));
+    const table = document.createElement('table');
+    for (const [action, keys] of CONTROLS) {
+      const row = table.insertRow();
+      row.insertCell().textContent = action;
+      row.insertCell().textContent = keys;
+    }
+    const back = button('Back', onBack);
+    menu.append(table, back);
+    back.focus();
+  }
+
+  showPause(options: PauseOptions): void {
+    const menu = this.open('pause');
+    menu.append(el('h2', 'Paused'));
+    const resume = button('Resume', options.onResume);
+    const save = button('Save', () => {
+      save.disabled = true;
+      save.textContent = 'Saving…';
+      options
+        .onSave()
+        .then(() => (save.textContent = 'Saved ✓'))
+        .catch(() => (save.textContent = 'Save failed, try again'))
+        .finally(() => (save.disabled = false));
+    });
+    menu.append(resume, save, button('Quit to title', options.onQuit));
+    resume.focus();
+  }
+
+  private open(kind: 'title' | 'pause'): HTMLElement {
+    const menu = el('div', '', 'menu');
+    this.root.className = `open ${kind}`;
+    this.root.replaceChildren(menu);
+    return menu;
+  }
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, text: string, className = ''): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+function button(text: string, onClick: () => void, className = ''): HTMLButtonElement {
+  const node = el('button', text, className);
+  node.type = 'button';
+  node.addEventListener('click', onClick);
+  return node;
+}
+
+function timeAgo(time: number): string {
+  const s = Math.max(0, Math.round((Date.now() - time) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(time).toLocaleDateString();
 }

@@ -153,8 +153,26 @@ export function* generateWorldSteps(world: World): Generator<GenProgress, void, 
   while (spawnTy < height - 1 && !tileDef(world.getTile(spawnTx, spawnTy + 1)).solid) spawnTy++;
   world.spawnTx = spawnTx;
   world.spawnTy = spawnTy;
+  world.changedChunks.clear(); // from here on, changes are the player's
 
   yield progress(STEP_COUNT, 'Done');
+}
+
+/**
+ * Seed from what the player typed: a whole number is used as is, any other text is hashed
+ * (FNV-1a), and an empty field picks a random seed.
+ */
+export function parseSeed(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return Math.floor(Math.random() * 1_000_000_000);
+  const n = Number(trimmed);
+  if (Number.isInteger(n)) return n >>> 0;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < trimmed.length; i++) {
+    h ^= trimmed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
 /** Absolute rows [top, bottom] an ore may occupy, clipped to above the bedrock floor. */

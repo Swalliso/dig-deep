@@ -27,6 +27,10 @@ These override the spec. Don't revert them.
   the light map (and "caves are dark") is unaffected.
 - **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
   pickaxe" hint (instead of a toast) were all reviewed and kept.
+- **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything
+  that changed is saved within `SAVE_CHANGES_AFTER` (2 s), because browsers drop IndexedDB
+  writes made while a page unloads. New world asks for a second click if it would replace a
+  working save.
 
 ## Debug mode
 
@@ -35,7 +39,8 @@ Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testi
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed), and
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), and **L** toggles lighting
-(fullbright) for exploring. Debug mode also opens the F3 overlay at start. All cheats live in
+(fullbright) for exploring. Debug mode also opens the F3 overlay at start, and the title screen
+gets a button that marks the save as an older version (to test the version-mismatch screen). All cheats live in
 `src/debug.ts`. When a new phase adds something slow to reach by playing, add
 a shortcut there and mention it in the phase's test steps.
 
@@ -55,7 +60,8 @@ a shortcut there and mention it in the phase's test steps.
 
 ```
 src/
-  main.ts            boot, game loop (fixed 60 Hz update, render each frame)
+  main.ts            boot, screens (title → loading → playing ⇄ paused), game loop, saving
+  game.ts            one play session: world, player, inventory, mining, lighting, HUD
   config.ts          every tunable number
   input.ts           keyboard + mouse state
   debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining)
@@ -76,7 +82,7 @@ src/
     mining.ts        reach + tier checks, break progress, crack stage, hints
     building.ts      placement rules (empty, in reach, supported, not on the player)
     crafting.ts      recipe table, station range checks, craft()
-    save.ts                                       (Phase 6)
+    save.ts          save format (seed + changed chunks, RLE) + IndexedDB slot via idb-keyval
   render/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
@@ -84,7 +90,7 @@ src/
     particles.ts     cosmetic break particles (Math.random is fine here)
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
-    menus.ts         inventory + crafting panel (pause and title screens: Phase 6)
+    menus.ts         inventory + crafting panel (canvas); title, controls, pause (HTML in #ui)
 tests/               Vitest unit tests (world gen, inventory, crafting)
 ```
 
@@ -118,6 +124,12 @@ they drop.
   only the box within light reach of the changes (plus any stretch of a column whose sky light
   moved), once per update step. A test checks incremental relighting against a full recompute;
   keep it passing when touching lighting.
+- **Saves**: a save is the seed plus only the chunks changed since generation (the rest is
+  regenerated), so **bump `SAVE_VERSION` in `systems/save.ts` whenever world generation, tile
+  ids, chunk/world size or the save format change**; old saves then show "Save from an older
+  version" instead of loading wrong. Items lying on the ground are saved (as an optional
+  `drops` field; adding optional fields like that needs no version bump). Particles and
+  half-mined tile damage aren't saved.
 - **Performance**: hold 60 FPS. Never do per-frame work over the whole world. World
   generation must take under 2 s.
 - Keep modules small and focused. Prefer plain functions and data over class hierarchies.

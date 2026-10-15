@@ -15,9 +15,12 @@ const BUTTONS: Record<number, string> = { 0: 'MouseLeft', 2: 'MouseRight' };
 
 export function initInput(canvas: HTMLCanvasElement): void {
   window.addEventListener('keydown', (e) => {
+    // Typing in a menu text field (the seed) isn't game input.
+    if (e.target instanceof HTMLInputElement) return;
     if (!e.repeat) pressed.add(e.code);
     down.add(e.code);
-    if (NO_DEFAULT.has(e.code)) e.preventDefault();
+    // Leave keys alone on menu buttons so Space/Enter still press them.
+    if (NO_DEFAULT.has(e.code) && !(e.target instanceof HTMLButtonElement)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => down.delete(e.code));
   // Releasing a key while the tab is unfocused never fires keyup, so forget everything.

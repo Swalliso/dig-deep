@@ -89,6 +89,12 @@ export const TOAST_DURATION = 1.5; // s
 export const TOAST_FADE = 0.5; // s of fade-out at the end of a toast
 export const MAX_TOASTS = 5;
 
+// --- Saving ---
+export const AUTOSAVE_INTERVAL = 60; // s of play between automatic saves (also saves on pause)
+// Browsers drop IndexedDB writes made while a page unloads, so a reload would lose everything
+// since the last autosave. Instead, anything that changed is saved within this many seconds.
+export const SAVE_CHANGES_AFTER = 2; // s
+
 // --- Debug mode (?debug in the URL) ---
 export const DEBUG_FLY_SPEED = 300; // px/s
 export const DEBUG_FLY_FAST = 4; // speed multiplier while Shift is held

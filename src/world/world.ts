@@ -20,6 +20,13 @@ export class World {
   spawnTy = 0;
   /** Called after any tile changes. Lighting listens here. */
   onTileChange: ((tx: number, ty: number) => void) | null = null;
+  /**
+   * Chunks changed since the world was generated. Saves store only these; everything else
+   * regenerates from the seed. Generation clears it when it finishes.
+   */
+  readonly changedChunks = new Set<number>();
+  /** Bumped on every tile change, so callers can cheaply tell whether anything changed. */
+  revision = 0;
 
   constructor(width: number, height: number, seed: number) {
     this.width = width;
@@ -59,6 +66,8 @@ export class World {
     if (chunk[i] === id) return;
     chunk[i] = id;
     this.chunkVersions[ci]++;
+    this.changedChunks.add(ci);
+    this.revision++;
     this.onTileChange?.(tx, ty);
   }
 

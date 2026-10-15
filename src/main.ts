@@ -1,70 +1,54 @@
 import {
+  AUTOSAVE_INTERVAL,
   GEN_FRAME_BUDGET_MS,
-  HOTBAR_SIZE,
   MAX_FRAME_TIME,
-  PICKAXES,
-  PLAYER_HEIGHT,
-  PLAYER_WIDTH,
-  SURFACE_LEVEL,
-  TILE_SIZE,
+  SAVE_CHANGES_AFTER,
   UPDATE_HZ,
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from './config';
-import {
-  brushNeighbours,
-  DEBUG,
-  DEBUG_KEYS,
-  debugHelpLines,
-  giveDebugKit,
-  nextInstantMine,
-  type InstantMine,
-} from './debug';
-import { ItemDrop, updateDrops } from './entities/itemDrop';
-import { Player } from './entities/player';
-import { consumeWheel, endInputStep, initInput, isDown, mouse, wasPressed } from './input';
-import { Camera } from './render/camera';
-import { Particles } from './render/particles';
+import { DEBUG } from './debug';
+import { Game, type FrameStats } from './game';
+import { consumeWheel, endInputStep, initInput, wasPressed } from './input';
 import { Renderer } from './render/renderer';
-import { canPlace, tryPlace } from './systems/building';
-import { nearbyStations } from './systems/crafting';
-import { Inventory } from './systems/inventory';
-import { itemDef, type ItemId } from './systems/items';
-import { checkMine, Mining, type BrokenTile } from './systems/mining';
-import { drawDebugInfo, drawDepthMeter, drawHotbar, drawToasts, Toasts } from './ui/hud';
-import { InventoryPanel } from './ui/menus';
-import { generateWorldSteps, type GenProgress } from './world/generate';
-import { LightMap } from './world/lighting';
-import { Tile, tileDef, type TileId } from './world/tiles';
-import { fellTreeAbove } from './world/trees';
+import {
+  applySavedChunks,
+  createSave,
+  markSaveOutdated,
+  readSave,
+  restoreDrops,
+  restoreInventory,
+  writeSave,
+  type SaveData,
+  type SaveStatus,
+} from './systems/save';
+import { Menus } from './ui/menus';
+import { generateWorldSteps, parseSeed, type GenProgress } from './world/generate';
 import { World } from './world/world';
+
+// Boot and the main loop: title screen → generating/loading → playing ⇄ paused.
 
 const STEP = 1 / UPDATE_HZ;
 
+type Screen =
+  | { kind: 'title' }
+  | { kind: 'loading'; world: World; steps: Generator<GenProgress, void, void>; status: GenProgress; save: SaveData | null }
+  | { kind: 'playing'; game: Game }
+  | { kind: 'paused'; game: Game };
+
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const renderer = new Renderer(canvas);
-const camera = new Camera();
-camera.setView(renderer.viewWidth, renderer.viewHeight);
 initInput(canvas);
+const menus = new Menus(document.getElementById('ui') as HTMLElement);
+/** `?seed=` pre-fills the title screen's seed field. */
+const urlSeed = new URLSearchParams(location.search).get('seed') ?? '';
 
-const world = new World(WORLD_WIDTH, WORLD_HEIGHT, readSeed());
-const generation = generateWorldSteps(world);
-let genStatus: GenProgress = { label: 'Starting', progress: 0 };
-let generating = true;
-let worldHash = '';
-let player = new Player(0, 0);
-const inventory = Inventory.withStartingItems();
-const inventoryPanel = new InventoryPanel();
-const mining = new Mining();
-const particles = new Particles();
-let drops: ItemDrop[] = [];
-let lightMap: LightMap | null = null;
-const toasts = new Toasts();
-let instantMine: InstantMine = 'off';
-let fullbright = false;
-/** F3 overlay: FPS, seed, position, controls. Starts open in debug mode. */
-let showOverlay = DEBUG;
-
+let screen: Screen = { kind: 'title' };
+let lastSavedAt = 0;
+let sinceAutosave = 0;
+let sinceChangeCheck = 0;
+/** What the game looked like at the last save; see snapshot(). */
+let savedSnapshot = '';
 let accumulator = 0;
 let lastTime = 0;
 // FPS counter: frames counted over half-second windows, plus smoothed time spent per frame.
@@ -75,242 +59,124 @@ let frameWorkMs = 0;
 
 window.addEventListener('resize', () => {
   renderer.resize();
-  camera.setView(renderer.viewWidth, renderer.viewHeight);
-  camera.clampTo(world.width * TILE_SIZE, world.height * TILE_SIZE);
+  if (screen.kind === 'playing' || screen.kind === 'paused') screen.game.resize();
 });
 
-/**
- * Seed comes from `?seed=` in the URL. Without one, pick a random seed and write it into the
- * URL so a reload regenerates the same world. (The title screen's seed field replaces this
- * in Phase 6.)
- */
-function readSeed(): number {
-  const params = new URLSearchParams(location.search);
-  const raw = params.get('seed')?.trim();
-  if (raw) {
-    const n = Number(raw);
-    return Number.isInteger(n) ? n >>> 0 : hashString(raw);
-  }
-  const seed = Math.floor(Math.random() * 1_000_000_000);
-  params.set('seed', String(seed));
-  history.replaceState(null, '', `${location.pathname}?${params}`);
-  return seed;
+// Hiding or leaving the page saves too (best effort), so a reload loses as little as possible.
+function saveIfInGame(): void {
+  if (screen.kind === 'playing' || screen.kind === 'paused') void saveGame(screen.game).catch(() => {});
+}
+window.addEventListener('pagehide', saveIfInGame);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveIfInGame();
+});
+
+async function saveGame(game: Game): Promise<void> {
+  const snap = snapshot(game);
+  await writeSave(createSave(game.world, game.player, game.inventory, game.drops));
+  lastSavedAt = Date.now();
+  savedSnapshot = snap;
 }
 
-/** Text seeds ("hello") become numbers via FNV-1a. */
-function hashString(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
+/** Save without waiting, telling the player if it fails. */
+function autosave(game: Game): void {
+  sinceAutosave = 0;
+  saveGame(game).catch(() => game.toasts.show('Could not save the game'));
 }
 
-/** Run world generation for up to one frame's budget. */
-function stepGeneration(): void {
-  const start = performance.now();
-  while (performance.now() - start < GEN_FRAME_BUDGET_MS) {
-    const next = generation.next();
-    if (next.done) {
-      generating = false;
-      worldHash = world.hash().toString(16).padStart(8, '0');
-      player = new Player(world.spawnTx, world.spawnTy);
-      lightMap = new LightMap(world);
-      camera.centerOn(player.centerX, player.centerY);
-      camera.clampTo(world.width * TILE_SIZE, world.height * TILE_SIZE);
-      toasts.show('Press F3 for controls and debug info', 6);
-      return;
-    }
-    genStatus = next.value;
-  }
+/** Cheap summary of everything a save holds, to tell whether there's anything new to save. */
+function snapshot(game: Game): string {
+  const { world, player, inventory, drops } = game;
+  const ground = drops.map((d) => `${d.item}:${d.count}@${Math.round(d.x)},${Math.round(d.y)}`).join(';');
+  return `${world.revision}|${Math.round(player.x)},${Math.round(player.y)}|${inventory.selected}|${JSON.stringify(inventory.slots)}|${ground}`;
 }
 
-const anyDown = (...codes: string[]): boolean => codes.some(isDown);
-const anyPressed = (...codes: string[]): boolean => codes.some(wasPressed);
-
-/** Tile under the mouse pointer. */
-function cursorTile(): [number, number] {
-  const x = Math.round(camera.x) + mouse.x / renderer.scale;
-  const y = Math.round(camera.y) + mouse.y / renderer.scale;
-  return [Math.floor(x / TILE_SIZE), Math.floor(y / TILE_SIZE)];
-}
-
-function update(dt: number): void {
-  // Hotbar selection: keys 1..9, 0 and the mouse wheel.
-  for (let i = 0; i < HOTBAR_SIZE; i++) {
-    if (wasPressed(`Digit${(i + 1) % 10}`)) inventory.selected = i;
-  }
-  inventory.scrollSelection(consumeWheel());
-  if (wasPressed('F3')) showOverlay = !showOverlay;
-
-  if (DEBUG) {
-    if (wasPressed(DEBUG_KEYS.give)) {
-      giveDebugKit(inventory);
-      toasts.show('Debug: materials added');
-    }
-    if (wasPressed(DEBUG_KEYS.fly)) player.setFlying(!player.flying, world);
-    if (wasPressed(DEBUG_KEYS.instantMine)) instantMine = nextInstantMine(instantMine);
-    if (wasPressed(DEBUG_KEYS.fullbright)) fullbright = !fullbright;
-  }
-
-  const right = anyDown('KeyD', 'ArrowRight');
-  const left = anyDown('KeyA', 'ArrowLeft');
-  player.update(dt, world, {
-    move: (right ? 1 : 0) - (left ? 1 : 0),
-    jumpPressed: anyPressed('Space', 'KeyW', 'ArrowUp'),
-    jumpHeld: anyDown('Space', 'KeyW', 'ArrowUp'),
-    climb: (anyDown('KeyS', 'ArrowDown') ? 1 : 0) - (anyDown('KeyW', 'ArrowUp', 'Space') ? 1 : 0),
-    fast: anyDown('ShiftLeft', 'ShiftRight'),
+/** `override` replaces what's read from storage (used when a save turns out to be unreadable). */
+async function showTitle(override?: SaveStatus): Promise<void> {
+  screen = { kind: 'title' };
+  const save = override ?? (await readSave());
+  if (screen.kind !== 'title') return;
+  menus.showTitle({
+    save,
+    seedText: urlSeed,
+    onContinue: () => {
+      if (save.kind === 'ok') startLoading(save.save.seed, save.save);
+    },
+    onNewWorld: (text) => startLoading(parseSeed(text), null),
+    onMarkOutdated: DEBUG ? () => void markSaveOutdated().then(() => showTitle()) : undefined,
   });
-
-  // E / Tab toggles the inventory + crafting panel (Esc also closes it). It pauses mining
-  // and building; the mouse works the panel instead.
-  if (anyPressed('KeyE', 'Tab') || (inventoryPanel.open && wasPressed('Escape'))) {
-    inventoryPanel.open = !inventoryPanel.open;
-    if (!inventoryPanel.open) {
-      const leftover = inventory.returnCursor();
-      if (leftover) dropAtPlayer(leftover.item, leftover.count);
-    }
-  }
-
-  const [tx, ty] = cursorTile();
-  if (inventoryPanel.open) {
-    mining.update(dt, world, player, tx, ty, false, 0); // lets any hint fade out
-    if (wasPressed('MouseLeft')) {
-      const shift = anyDown('ShiftLeft', 'ShiftRight');
-      const stations = nearbyStations(world, player.centerX, player.centerY);
-      const crafted = inventoryPanel.click(canvas, renderer.scale, mouse.x, mouse.y, shift, inventory, stations);
-      if (crafted) toasts.gained(crafted.output, crafted.count);
-    }
-  } else {
-    const held = isDown('MouseLeft');
-    const tier = inventory.bestPickaxeTier();
-    const broken = mining.update(dt, world, player, tx, ty, held, tier, instantMine !== 'off');
-    if (broken) onTileBroken(broken);
-    if (held) {
-      for (const [dx, dy] of brushNeighbours(instantMine)) {
-        const extra = mining.breakInstantly(world, player, tx + dx, ty + dy, tier);
-        if (extra) onTileBroken(extra);
-      }
-    }
-    if (wasPressed('MouseRight')) tryPlace(world, player, inventory, tx, ty);
-  }
-
-  drops = updateDrops(drops, dt, world, player, inventory, (item, count) => toasts.gained(item, count));
-  lightMap?.update(); // relight around any tiles that changed this step
-  particles.update(dt, world);
-  toasts.update(dt);
-  camera.follow(player.centerX, player.centerY, dt);
-  camera.clampTo(world.width * TILE_SIZE, world.height * TILE_SIZE);
 }
 
-function onTileBroken({ tx, ty, tile }: BrokenTile): void {
-  shatter(tx, ty, tile);
-  // Cutting a trunk brings down the rest of the tree above the cut.
-  if (tile === Tile.Wood) {
-    for (const felled of fellTreeAbove(world, tx, ty)) shatter(felled.tx, felled.ty, felled.tile);
-  }
+/** Generate the world from its seed (the loading screen shows progress), then apply the save if any. */
+function startLoading(seed: number, save: SaveData | null): void {
+  menus.hide();
+  const world = new World(WORLD_WIDTH, WORLD_HEIGHT, seed);
+  screen = { kind: 'loading', world, steps: generateWorldSteps(world), status: { label: 'Starting', progress: 0 }, save };
 }
 
-function dropAtPlayer(item: ItemId, count: number): void {
-  const drop = new ItemDrop(item, count, player.centerX, player.centerY);
-  drop.vx = player.facing * 120;
-  drops.push(drop);
-}
-
-/** Particles and the item drop for a tile that just broke. */
-function shatter(tx: number, ty: number, tile: TileId): void {
-  const def = tileDef(tile);
-  particles.breakBurst(tx, ty, def.color);
-  if (def.drop) drops.push(new ItemDrop(def.drop, 1, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
-}
-
-/** Outline the tile under the cursor: white if it can be mined, red if not. */
-function drawCursor(camX: number, camY: number): void {
-  const [tx, ty] = cursorTile();
-  const check = checkMine(world, player, tx, ty, inventory.bestPickaxeTier());
-  if (check !== 'empty') {
-    renderer.drawTileOutline(tx, ty, check === 'ok' ? '#ffffff' : '#ff4040', camX, camY);
+function finishLoading(world: World, save: SaveData | null): void {
+  let game: Game;
+  try {
+    if (save) applySavedChunks(world, save);
+    game = new Game(
+      world,
+      renderer,
+      save ? { player: save.player, inventory: restoreInventory(save), drops: restoreDrops(save, world) } : {},
+    );
+  } catch {
+    void showTitle({ kind: 'broken' });
     return;
   }
-  // Empty tile: a faint outline where the selected block could be placed.
-  const stack = inventory.selectedStack;
-  const tile = stack ? itemDef(stack.item).placeTile : null;
-  if (tile !== null && canPlace(world, player, tx, ty, tile)) {
-    renderer.drawTileOutline(tx, ty, 'rgba(255, 255, 255, 0.45)', camX, camY);
-  }
+  screen = { kind: 'playing', game };
+  accumulator = 0;
+  autosave(game); // a new world is saved straight away, so Continue works after a reload
 }
 
-/** alpha (0..1) is how far we are between the last update step and the next one. */
-function render(alpha: number): void {
-  const camX = Math.round(lerp(camera.prevX, camera.x, alpha));
-  const camY = Math.round(lerp(camera.prevY, camera.y, alpha));
-  renderer.drawWorld(world, camX, camY);
-  for (const crack of mining.cracks(world)) renderer.drawCracks(crack.tx, crack.ty, crack.stage, camX, camY);
-  renderer.drawDrops(drops, alpha, camX, camY);
-  renderer.drawPlayer(player, lerp(player.prevX, player.x, alpha), lerp(player.prevY, player.y, alpha), camX, camY);
-  renderer.drawParticles(particles, camX, camY);
-  if (lightMap && !fullbright) {
-    const glowX = lerp(player.prevX, player.x, alpha) + PLAYER_WIDTH / 2;
-    const glowY = lerp(player.prevY, player.y, alpha) + PLAYER_HEIGHT / 2;
-    renderer.drawLight(lightMap, camX, camY, glowX, glowY);
-  }
-  if (!inventoryPanel.open) drawCursor(camX, camY);
-  if (mining.hint) renderer.drawHint(mining.hint, camX, camY);
-  if (inventoryPanel.open) {
-    const stations = nearbyStations(world, player.centerX, player.centerY);
-    inventoryPanel.draw(renderer.ctx, renderer.itemAtlas, renderer.scale, mouse.x, mouse.y, inventory, stations);
-  } else {
-    drawHotbar(renderer.ctx, renderer.itemAtlas, inventory, renderer.scale);
-  }
-  drawToasts(renderer.ctx, toasts, renderer.scale);
-  // Depth is measured at the player's feet: standing on the surface level reads 0 m.
-  drawDepthMeter(renderer.ctx, Math.floor((player.y + PLAYER_HEIGHT) / TILE_SIZE) - SURFACE_LEVEL, renderer.scale);
-  if (showOverlay) drawOverlay();
+function pause(game: Game): void {
+  screen = { kind: 'paused', game };
+  autosave(game);
+  menus.showPause({
+    onResume: () => resume(game),
+    onSave: () => saveGame(game),
+    onQuit: () => void saveGame(game).finally(() => showTitle()),
+  });
 }
 
-/** F3 debug overlay. */
-function drawOverlay(): void {
-  const tx = Math.floor(player.centerX / TILE_SIZE);
-  const ty = Math.floor(player.centerY / TILE_SIZE);
-  const tier = inventory.bestPickaxeTier();
-  const light = lightMap ? lightMap.level(tx, ty) : 0;
-  const debugLines = DEBUG ? debugHelpLines(player.flying, instantMine, fullbright) : [];
-  drawDebugInfo(renderer.ctx, [
-    `FPS ${fps}   frame ${frameWorkMs.toFixed(1)} ms`,
-    `Seed ${world.seed}   World hash ${worldHash}`,
-    `Player tile (${tx}, ${ty})   Light ${light}`,
-    `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
-    'A/D or ←/→: move   Space, W or ↑: jump',
-    'Left mouse: mine   Right mouse: place   1–0 or wheel: select',
-    'E or Tab: inventory + crafting (shift-click: hotbar ↔ bag)',
-    'F3: hide this overlay',
-    ...debugLines,
-  ]);
+function resume(game: Game): void {
+  menus.hide();
+  screen = { kind: 'playing', game };
+  accumulator = 0;
 }
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
+function stats(): FrameStats {
+  return { fps, frameMs: frameWorkMs, lastSavedAt };
 }
 
 function frame(now: number): void {
   requestAnimationFrame(frame);
-  if (generating) {
-    stepGeneration();
-    renderer.drawLoading(genStatus);
-    lastTime = now;
-    return;
-  }
   const workStart = performance.now();
-  accumulator += Math.min((now - lastTime) / 1000, MAX_FRAME_TIME);
+  const dt = Math.min((now - lastTime) / 1000, MAX_FRAME_TIME);
   lastTime = now;
-  while (accumulator >= STEP) {
-    update(STEP);
-    endInputStep();
-    accumulator -= STEP;
+
+  switch (screen.kind) {
+    case 'title':
+      break; // the HTML title screen covers everything
+    case 'loading':
+      stepLoading(screen);
+      break;
+    case 'paused':
+      screen.game.render(1, stats());
+      if (wasPressed('Escape')) resume(screen.game);
+      break;
+    case 'playing':
+      play(screen.game, dt);
+      break;
   }
-  render(accumulator / STEP);
+  // Outside play, drop any input so it doesn't fire when play starts.
+  if (screen.kind !== 'playing') {
+    endInputStep();
+    consumeWheel();
+  }
 
   frameWorkMs += (performance.now() - workStart - frameWorkMs) * 0.1;
   fpsFrames++;
@@ -321,4 +187,46 @@ function frame(now: number): void {
   }
 }
 
+function play(game: Game, dt: number): void {
+  // Esc pauses, unless it's closing the inventory panel (the game handles that).
+  if (wasPressed('Escape') && !game.inventoryPanel.open) {
+    endInputStep();
+    pause(game);
+    game.render(1, stats());
+    return;
+  }
+  accumulator += dt;
+  while (accumulator >= STEP) {
+    game.update(STEP);
+    endInputStep();
+    accumulator -= STEP;
+  }
+  game.render(accumulator / STEP, stats());
+
+  // Autosave every AUTOSAVE_INTERVAL, and save any changes within SAVE_CHANGES_AFTER seconds.
+  sinceAutosave += dt;
+  sinceChangeCheck += dt;
+  if (sinceAutosave >= AUTOSAVE_INTERVAL) {
+    autosave(game);
+  } else if (sinceChangeCheck >= SAVE_CHANGES_AFTER) {
+    sinceChangeCheck = 0;
+    if (snapshot(game) !== savedSnapshot) autosave(game);
+  }
+}
+
+/** Run world generation for up to one frame's budget. */
+function stepLoading(loading: Extract<Screen, { kind: 'loading' }>): void {
+  const start = performance.now();
+  while (performance.now() - start < GEN_FRAME_BUDGET_MS) {
+    const next = loading.steps.next();
+    if (next.done) {
+      finishLoading(loading.world, loading.save);
+      return;
+    }
+    loading.status = next.value;
+  }
+  renderer.drawLoading(loading.status);
+}
+
+void showTitle();
 requestAnimationFrame(frame);

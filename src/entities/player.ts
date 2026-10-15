@@ -68,6 +68,14 @@ export class Player {
     this.prevY = this.y;
   }
 
+  /** Put the player's top-left at (x, y) world px, at rest. */
+  placeAt(x: number, y: number): void {
+    this.x = this.prevX = x;
+    this.y = this.prevY = y;
+    this.vx = 0;
+    this.vy = 0;
+  }
+
   get centerX(): number {
     return this.x + W / 2;
   }
