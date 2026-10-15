@@ -1,5 +1,7 @@
 // Tile type registry. IDs are stored directly in chunk Uint8Arrays, so never renumber them.
 
+import type { ItemId } from '../systems/items';
+
 export const Tile = {
   Air: 0,
   Grass: 1,
@@ -28,8 +30,8 @@ export interface TileDef {
   minTier: number;
   /** Base color: texture fill and break particles. */
   color: string;
-  /** Item id dropped when broken, or null. Items are defined in a later phase. */
-  drop: string | null;
+  /** Item dropped when broken, or null. */
+  drop: ItemId | null;
   /** Blocks movement. Tree trunks, leaves and torches can be walked through. */
   solid: boolean;
 }

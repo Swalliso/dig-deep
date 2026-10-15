@@ -1,4 +1,4 @@
-import { TEXTURE_SEED, TILE_SIZE } from '../config';
+import { CRACK_STAGES, TEXTURE_SEED, TILE_SIZE } from '../config';
 import { createRng, randInt, type Rng } from '../util/rng';
 import { Tile, TILE_COUNT, tileDef } from '../world/tiles';
 
@@ -164,6 +164,39 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.Torch: return torch(img);
     case Tile.Planks: return planks(img, rng);
   }
+}
+
+/**
+ * Crack overlays for mining progress: CRACK_STAGES frames side by side, each one adding more
+ * cracks to the last. Transparent except for the dark crack pixels.
+ */
+export function buildCrackAtlas(): HTMLCanvasElement {
+  const atlas = document.createElement('canvas');
+  atlas.width = CRACK_STAGES * S;
+  atlas.height = S;
+  const ctx = atlas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D not supported');
+  const rng = createRng(TEXTURE_SEED);
+  const img = new ImageData(S, S);
+  const dark: RGB = [20, 16, 14];
+  for (let stage = 0; stage < CRACK_STAGES; stage++) {
+    // Each stage grows two more crack lines out from near the centre.
+    for (let line = 0; line < 2; line++) {
+      let x = randInt(rng, 5, 10);
+      let y = randInt(rng, 5, 10);
+      const dx = rng() < 0.5 ? -1 : 1;
+      const dy = rng() < 0.5 ? -1 : 1;
+      for (let i = 0; i < 3 + stage * 2; i++) {
+        put(img, x, y, dark);
+        if (rng() < 0.6) x += dx;
+        if (rng() < 0.6) y += dy;
+        x = Math.min(S - 1, Math.max(0, x));
+        y = Math.min(S - 1, Math.max(0, y));
+      }
+    }
+    ctx.putImageData(img, stage * S, 0);
+  }
+  return atlas;
 }
 
 export function buildTileAtlas(): HTMLCanvasElement {

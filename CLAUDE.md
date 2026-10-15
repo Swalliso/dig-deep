@@ -13,6 +13,16 @@ this file is the short version plus the working rules.
 - The user commits after every working phase.
 - Out-of-scope items (combat, day/night, liquids, sound, etc.) wait until all 7 phases pass.
 
+## Changes from SPEC.md (agreed with the user)
+
+These override the spec. Don't revert them.
+
+- **Mining damage persists per tile.** The spec resets break progress when the cursor moves
+  to another tile; instead each tile keeps its damage (and cracks) until it breaks, even if
+  the cursor moves away or the button is released.
+- **Trees fall.** Breaking a trunk tile also breaks the trunk above it and the tree's canopy
+  (wood drops, leaves just burst); the stump below the cut stays.
+
 ## Stack
 
 | Piece     | Choice                                                    |
@@ -37,22 +47,30 @@ src/
     tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid)
     world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile
     generate.ts      seeded terrain, caves, ores, trees, bedrock, spawn
+    trees.ts         felling: cutting a trunk removes the tree above the cut
   entities/
     player.ts        movement, jump, tile collision, auto step-up
-    itemDrop.ts      (Phase 3)
-  systems/           mining, building, inventory, crafting, save   (Phase 3–6)
+    itemDrop.ts      dropped items: fall, fly to the player within 2 tiles, picked up on touch
+  systems/
+    items.ts         item registry (name, max stack, tile it places, icon)
+    inventory.ts     40 slots (10 hotbar + 30 bag), pickup/stacking rules, hotbar selection
+    mining.ts        reach + tier checks, break progress, crack stage, hints
+    building.ts      placement rules (empty, in reach, supported, not on the player)
+    crafting.ts, save.ts                          (Phase 4, 6)
   render/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile atlas, built once at startup
     renderer.ts      sky, cached chunk canvases, overlays
-    particles.ts     (Phase 3)
+    particles.ts     cosmetic break particles (Math.random is fine here)
   ui/
     hud.ts           hotbar, depth meter, toasts, debug text
     menus.ts         inventory/crafting, pause, title  (Phase 4, 6)
 tests/               Vitest unit tests (world gen, inventory, crafting)
 ```
 
-`util/rng.ts` and `render/textures.ts` are small additions to the spec's layout.
+`util/rng.ts`, `render/textures.ts` and `systems/items.ts` are small additions to the spec's
+layout. Item ids are string keys of `ITEMS` (`'dirt'`, `'copper_ore'`, ...); tiles name the item
+they drop.
 
 ## Conventions
 

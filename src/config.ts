@@ -36,6 +36,39 @@ export const COYOTE_TIME = 0.1; // s after leaving the ground that a jump still 
 export const JUMP_BUFFER = 0.1; // s before landing that a jump press is remembered
 export const MAX_MOVE_STEP = 8; // px; movement is split into steps this small so nothing tunnels
 
+// --- Mining and building ---
+export const REACH = 5; // tiles, measured from the player's centre to the tile's centre
+export const CRACK_STAGES = 4;
+export const HINT_DURATION = 1.5; // s a "Need better pickaxe" style hint stays up
+/** Pickaxe tiers; the index is the tier. Break time = tile hardness / speed. */
+export const PICKAXES = [
+  { name: 'Wooden', speed: 1.0 },
+  { name: 'Stone', speed: 1.4 },
+  { name: 'Copper', speed: 1.9 },
+  { name: 'Iron', speed: 2.6 },
+  { name: 'Gold', speed: 3.5 },
+] as const;
+
+// --- Break particles ---
+export const BREAK_PARTICLES_MIN = 6;
+export const BREAK_PARTICLES_MAX = 10;
+export const PARTICLE_LIFETIME = 0.6; // s
+export const PARTICLE_SPEED = 110; // px/s, maximum initial speed
+export const PARTICLE_GRAVITY = 700; // px/s^2
+
+// --- Item drops ---
+export const DROP_SIZE = 8; // px
+export const DROP_POP_SPEED = 110; // px/s upward kick when a tile breaks
+export const DROP_FRICTION = 500; // px/s^2 while resting on the ground
+export const DROP_PULL_RANGE = 2; // tiles; closer than this and the drop flies to the player
+export const DROP_PULL_ACCEL = 1600; // px/s^2
+export const DROP_PULL_MAX_SPEED = 420; // px/s
+
+// --- Inventory ---
+export const HOTBAR_SIZE = 10;
+export const BAG_SIZE = 30;
+export const MAX_STACK = 999;
+
 // --- World generation ---
 // Average surface row. Depth (in m) = ty - SURFACE_LEVEL, so the depth meter reads 0 here.
 export const SURFACE_LEVEL = 120;
@@ -69,6 +102,7 @@ export const TREE_TRUNK_MIN = 4;
 export const TREE_TRUNK_MAX = 7;
 export const TREE_EDGE_MARGIN = 4; // no trees this close to the world edges
 export const TREE_LEAF_RAGGEDNESS = 0.3; // chance each edge leaf of the blob is left out
+export const TREE_FELL_RADIUS = 3; // a felled tree takes leaves up to this many columns from its trunk
 
 export interface OreSpec {
   minDepth: number; // m below SURFACE_LEVEL

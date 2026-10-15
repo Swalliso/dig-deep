@@ -1,17 +1,23 @@
 import {
   CHUNK_CACHE_LIMIT,
   CHUNK_SIZE,
+  DROP_SIZE,
+  HINT_DURATION,
   PLAYER_WIDTH,
   SCALE_3X_MIN_HEIGHT,
   SKY_BOTTOM_COLOR,
   SKY_TOP_COLOR,
   TILE_SIZE,
 } from '../config';
+import type { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
+import { itemDef } from '../systems/items';
+import type { Hint } from '../systems/mining';
 import type { GenProgress } from '../world/generate';
 import { Tile } from '../world/tiles';
 import type { World } from '../world/world';
-import { buildTileAtlas } from './textures';
+import type { Particles } from './particles';
+import { buildCrackAtlas, buildTileAtlas } from './textures';
 
 const CHUNK_PX = CHUNK_SIZE * TILE_SIZE;
 
@@ -27,7 +33,9 @@ export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
   /** Device pixels per world pixel (2 or 3). */
   scale = 2;
-  private readonly atlas: HTMLCanvasElement;
+  /** Tile textures; tile id N at x = N * TILE_SIZE. Also used for item icons. */
+  readonly atlas: HTMLCanvasElement;
+  private readonly cracks: HTMLCanvasElement;
   private readonly chunkCache = new Map<number, CachedChunk>();
   private cacheWorld: World | null = null;
   private frame = 0;
@@ -39,6 +47,7 @@ export class Renderer {
     if (!ctx) throw new Error('Canvas 2D not supported');
     this.ctx = ctx;
     this.atlas = buildTileAtlas();
+    this.cracks = buildCrackAtlas();
     this.resize();
   }
 
@@ -88,6 +97,61 @@ export class Renderer {
       }
     }
     this.evictChunks();
+  }
+
+  // The draw* methods below use world px and expect drawWorld's transform to still be set.
+
+  /** Crack overlay on a tile being mined; stage is 1..CRACK_STAGES. */
+  drawCracks(tx: number, ty: number, stage: number, camX: number, camY: number): void {
+    const S = TILE_SIZE;
+    this.ctx.drawImage(this.cracks, (stage - 1) * S, 0, S, S, tx * S - camX, ty * S - camY, S, S);
+  }
+
+  /** 1-px outline around a tile. */
+  drawTileOutline(tx: number, ty: number, color: string, camX: number, camY: number): void {
+    const { ctx } = this;
+    const x = tx * TILE_SIZE - camX;
+    const y = ty * TILE_SIZE - camY;
+    const S = TILE_SIZE;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, S, 1);
+    ctx.fillRect(x, y + S - 1, S, 1);
+    ctx.fillRect(x, y + 1, 1, S - 2);
+    ctx.fillRect(x + S - 1, y + 1, 1, S - 2);
+  }
+
+  drawDrops(drops: readonly ItemDrop[], alpha: number, camX: number, camY: number): void {
+    for (const drop of drops) {
+      const x = Math.round(drop.prevX + (drop.x - drop.prevX) * alpha) - camX;
+      const y = Math.round(drop.prevY + (drop.y - drop.prevY) * alpha) - camY;
+      const icon = itemDef(drop.item).iconTile;
+      this.ctx.drawImage(this.atlas, icon * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE, x, y, DROP_SIZE, DROP_SIZE);
+    }
+  }
+
+  drawParticles(particles: Particles, camX: number, camY: number): void {
+    const { ctx } = this;
+    for (const p of particles.list) {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(Math.round(p.x) - camX, Math.round(p.y) - camY, p.size, p.size);
+    }
+  }
+
+  /** Short message above a tile, fading out over its last half second. */
+  drawHint(hint: Hint, camX: number, camY: number): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, hint.timeLeft / Math.min(0.5, HINT_DURATION));
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const x = Math.round(hint.x) - camX;
+    const y = Math.round(hint.y) - camY;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillText(hint.text, x + 0.5, y + 0.5);
+    ctx.fillStyle = '#ffd7d7';
+    ctx.fillText(hint.text, x, y);
+    ctx.restore();
   }
 
   /** Draw the player at top-left (x, y) in world px. Call after drawWorld. */
