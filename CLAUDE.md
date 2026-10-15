@@ -1,21 +1,38 @@
 # Dig Deep — project notes for Claude
 
-Side-view 2D mining/building sandbox that runs in the browser. Full design lives in `SPEC.md`;
-this file is the short version plus the working rules.
+Side-view 2D mining/building sandbox that runs in the browser. The original design lives in
+`SPEC.md` (phases 1–7, all done); what comes next is planned in `ROADMAP.md` (phases 8+). This
+file is the short version plus the working rules.
 
 ## How we work
 
-- The game is built in the 7 phases listed at the end of `SPEC.md`. Implement **only** the phase
-  the user asks for. Don't build later-phase features early, even small ones.
+- The game is built in phases: 1–7 at the end of `SPEC.md` (done), 8+ in `ROADMAP.md`.
+  Implement **only** the phase the user asks for. Don't build later-phase features early, even
+  small ones. ROADMAP.md's "Shared foundations" table says which phase builds each shared system.
 - Don't refactor earlier phases unless the current phase needs it; say so when you do.
 - At the end of a phase: `npm test`, `npm run build`, run `npm run dev`, then give the user
   exact steps to check that phase's acceptance criteria and stop.
-- The user commits after every working phase.
-- **Deployment**: the repo is github.com/Swalliso/dig-deep. Every push to `main` runs
-  `.github/workflows/deploy.yml` (npm ci → npm test → npm run build → GitHub Pages), so a push
-  publishes to https://swalliso.github.io/dig-deep/. Only push when the user asks. Commits in
-  this repo use the GitHub no-reply address (set in the local git config).
-- Out-of-scope items (combat, day/night, liquids, sound, etc.) wait until all 7 phases pass.
+- Each phase is built on its own branch, `feature/phase-N-short-name`, made from `develop`.
+  The user commits on that branch after every working phase.
+- **Branches and deployment** (repo github.com/Swalliso/dig-deep):
+
+  | Branch | Role | Deploys to |
+  | --- | --- | --- |
+  | `main` | Production; changes only through a release PR from `develop`, or a hotfix | https://swalliso.github.io/dig-deep/ |
+  | `develop` | Integration; finished phases are merged here by PR | https://swalliso.github.io/dig-deep/dev/ |
+  | `feature/…` | One per phase or extra, from `develop` | nothing (`ci.yml` tests and builds it) |
+  | `hotfix/…` | Urgent live fix from `main`; PR into `main`, then merge `main` into `develop` | via `main` |
+
+  Every push to `main` or `develop` runs `.github/workflows/deploy.yml`, which tests and builds
+  both branches (develop with `npm run build:dev`) and publishes them as one Pages site, so
+  pushing either branch publishes. `ci.yml` runs tests plus both builds on PRs and on feature and
+  hotfix pushes. **Only push, open PRs or merge when the user asks**, and never touch `main`
+  without being asked for a release or hotfix. Commits in this repo use the GitHub no-reply
+  address (set in the local git config).
+- **Dev-site builds** (`--mode develop`, see `src/channel.ts`) save under `dig-deep-dev:` keys,
+  title the page "Dig Deep (dev)" and show a DEV BUILD tag on the title screen. Both sites share
+  the swalliso.github.io origin, so every IndexedDB/localStorage key must go through
+  `storageKey()`; the live keys (`dig-deep:save`) must never change.
 
 ## Changes from SPEC.md (agreed with the user)
 
@@ -64,17 +81,22 @@ a shortcut there and mention it in the phase's test steps.
 
 ```
 index.html           page shell, menu styles, favicon link
-vite.config.ts       base './' so dist/ works from any folder on any static host
+vite.config.ts       base './' so dist/ works from any folder on any static host; dev-site title
+                     and noindex for `--mode develop`
+.github/workflows/   deploy.yml (main + develop → Pages), ci.yml (PRs, feature/hotfix branches)
 public/favicon.svg   pixel-art favicon (copied into dist/ as is)
 public/og-image.png  1200x630 link-preview image (Discord/Slack/etc., via the og:/twitter: tags in
                      index.html, which use absolute swalliso.github.io URLs). Rendered with the
                      game's own renderer: seed 42, view centred on tile x 821 from row 112, with a
                      shaft, three torches and a few ores added, then upscaled 2x nearest-neighbour
-README.md            how to play, develop and deploy
+README.md            how to play, develop, branches and deploys
+SPEC.md              original design and phases 1–7
+ROADMAP.md           post-MVP design and phases 8+
 src/
   main.ts            boot, screens (title → loading → playing ⇄ paused), game loop, saving
   game.ts            one play session: world, player, inventory, mining, lighting, HUD
   config.ts          every tunable number
+  channel.ts         live vs dev-site build, storageKey() for every saved key
   input.ts           keyboard + mouse state
   debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining)
   util/rng.ts        seeded PRNG (shared by world gen and textures)

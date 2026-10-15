@@ -1,10 +1,14 @@
-# Build the game and publish dist/ to GitHub Pages on every push to main.
-# Tests must pass before anything is deployed.
+# Publish one GitHub Pages site built from two branches:
+#   main    -> https://swalliso.github.io/dig-deep/      (live game, `npm run build`)
+#   develop -> https://swalliso.github.io/dig-deep/dev/  (dev site, `npm run build:dev`)
+# A Pages deploy replaces the whole site, so every run rebuilds both branches. Tests must pass
+# before a branch is published. A broken develop never blocks the live game: on a push to main
+# it is left out (so /dev/ is missing until develop is fixed); on a push to develop the run fails.
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -22,17 +26,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
+          path: main
+      # Problems with develop only fail the run when develop is what was pushed.
+      - id: checkout-develop
+        uses: actions/checkout@v7
+        continue-on-error: ${{ github.ref_name != 'develop' }}
+        with:
+          ref: develop
+          path: develop
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+          cache-dependency-path: '*/package-lock.json'
+
+      - name: Test and build main (live site)
+        working-directory: main
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - id: build-develop
+        name: Test and build develop (dev site)
+        if: steps.checkout-develop.outcome == 'success'
+        continue-on-error: ${{ github.ref_name != 'develop' }}
+        working-directory: develop
+        run: |
+          npm ci
+          npm test
+          VITE_COMMIT=$(git rev-parse HEAD) npm run build:dev
+
+      - name: Put the site together
+        env:
+          DEVELOP_BUILT: ${{ steps.build-develop.outcome == 'success' }}
+        run: |
+          mkdir site
+          cp -r main/dist/. site/
+          if [ "$DEVELOP_BUILT" = "true" ]; then
+            mkdir site/dev
+            cp -r develop/dist/. site/dev/
+          else
+            echo "::warning::develop didn't build, so this deploy has no /dev/ site"
+          fi
+
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: dist
+          path: site
 
   deploy:
     needs: build

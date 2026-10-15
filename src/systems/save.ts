@@ -1,4 +1,5 @@
 import { del, get, set } from 'idb-keyval';
+import { storageKey } from '../channel';
 import { CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE } from '../config';
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
@@ -11,7 +12,8 @@ import { ITEMS, itemDef, type ItemId } from './items';
  * optional field that old saves can do without, like `drops`, doesn't need a bump.)
  */
 export const SAVE_VERSION = 1;
-const SAVE_KEY = 'dig-deep:save';
+/** 'dig-deep:save' on the live site; the dev site uses its own key (see channel.ts). */
+export const SAVE_KEY = storageKey('save');
 
 /** The one save slot, as stored in IndexedDB. */
 export interface SaveData {

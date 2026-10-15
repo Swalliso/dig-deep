@@ -39,6 +39,7 @@ npm install
 npm run dev       # dev server at http://localhost:5173 (opens a browser)
 npm test          # unit tests (Vitest)
 npm run build     # type-check, then build the static site into dist/
+npm run build:dev # the same, as the dev-site build (own save slot, "DEV BUILD" tag)
 npm run preview   # serve the built dist/ locally
 ```
 
@@ -47,17 +48,36 @@ Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing
 3x3), and **L** toggles lighting. The title screen also gets a button that marks your save
 as an older version.
 
-`SPEC.md` is the design spec and `CLAUDE.md` describes the code layout and conventions. All
-tunable numbers (physics, mining, lighting, world generation) live in `src/config.ts`.
+`SPEC.md` is the original design spec, `ROADMAP.md` plans what comes next, and `CLAUDE.md`
+describes the code layout and conventions. All tunable numbers (physics, mining, lighting,
+world generation) live in `src/config.ts`.
+
+## Branches and deploys
+
+| Branch      | Role                                                   | Published at                                |
+| ----------- | ------------------------------------------------------ | ------------------------------------------- |
+| `main`      | The live game; updated by release PRs from `develop`   | https://swalliso.github.io/dig-deep/        |
+| `develop`   | Work in progress; finished features are merged here    | https://swalliso.github.io/dig-deep/dev/    |
+| `feature/…` | One branch per roadmap phase, made from `develop`      | not published; CI runs the tests and builds |
+| `hotfix/…`  | Urgent fixes, made from `main` and merged back to both | via `main`                                  |
+
+Features go `feature/…` → pull request into `develop` → (when a batch is ready) pull request
+from `develop` into `main`. The CI workflow tests and builds every pull request.
+
+The dev site is built with `npm run build:dev`. It keeps its own save, separate from the live
+game's (both sites share the `swalliso.github.io` origin, and with it the browser storage), and
+shows a "DEV BUILD" tag on the title screen.
 
 ## Deploying
 
 `npm run build` writes a fully static site to `dist/`. It uses relative paths, so it works
 from any folder on any static host:
 
-- **GitHub Pages** (set up for this repo): `.github/workflows/deploy.yml` runs the tests,
-  builds and publishes `dist/` on every push to `main`. The repo's Settings → Pages source is
-  "GitHub Actions". Each run shows up under the Actions tab.
+- **GitHub Pages** (set up for this repo): on every push to `main` or `develop`,
+  `.github/workflows/deploy.yml` tests and builds both branches and publishes `main` at the site
+  root and `develop` under `/dev/`. The repo's Settings → Pages source is "GitHub Actions", and
+  Settings → Environments → `github-pages` must allow deployments from both `main` and
+  `develop`. Each run shows up under the Actions tab.
 - **Netlify**: build command `npm run build`, publish directory `dist`. Or drag the `dist/`
   folder onto the Netlify dashboard.
 - **itch.io**: zip the *contents* of `dist/` (so `index.html` is at the top of the zip),
