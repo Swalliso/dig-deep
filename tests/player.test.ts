@@ -167,3 +167,29 @@ describe('player physics', () => {
     }
   });
 });
+
+describe('debug fly mode', () => {
+  it('ignores gravity and walls while flying', () => {
+    const world = flatWorld();
+    fill(world, 10, 0, 10, FLOOR - 1, Tile.Stone); // a wall from the sky to the floor
+    const player = standingPlayer(world, 5);
+    player.setFlying(true, world);
+    run(player, world, 30); // no input: hovers in place
+    expect(player.y + PLAYER_HEIGHT).toBe(FLOOR_Y);
+    run(player, world, 60, { move: 1, jumpPressed: false, jumpHeld: false, climb: 1 });
+    expect(player.x).toBeGreaterThan(10 * TILE_SIZE); // straight through the wall
+    expect(player.y + PLAYER_HEIGHT).toBeGreaterThan(FLOOR_Y); // and down into the floor
+  });
+
+  it('lifts the player out of terrain when fly mode is turned off', () => {
+    const world = flatWorld();
+    const player = standingPlayer(world, 5);
+    player.setFlying(true, world);
+    run(player, world, 30, { move: 0, jumpPressed: false, jumpHeld: false, climb: 1 });
+    expect(overlapsSolid(world, player.x, player.y)).toBe(true);
+    player.setFlying(false, world);
+    expect(overlapsSolid(world, player.x, player.y)).toBe(false);
+    run(player, world, 60);
+    expect(player.y + PLAYER_HEIGHT).toBe(FLOOR_Y);
+  });
+});

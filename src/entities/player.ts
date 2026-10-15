@@ -1,6 +1,8 @@
 import {
   AIR_CONTROL,
   COYOTE_TIME,
+  DEBUG_FLY_FAST,
+  DEBUG_FLY_SPEED,
   GRAVITY,
   JUMP_BUFFER,
   JUMP_CUT,
@@ -25,6 +27,10 @@ export interface PlayerControls {
   jumpPressed: boolean;
   /** Jump is being held. */
   jumpHeld: boolean;
+  /** Debug fly mode only: -1 up, 0 none, 1 down. */
+  climb?: number;
+  /** Debug fly mode only: move faster. */
+  fast?: boolean;
 }
 
 // Keeps a box's far edge out of the next tile when it sits exactly on a tile boundary.
@@ -47,6 +53,8 @@ export class Player {
   facing: 1 | -1 = 1;
   /** Horizontal distance walked on the ground, drives the walk animation. */
   walkDistance = 0;
+  /** Debug fly mode: free movement with no gravity or collision. Toggle with setFlying. */
+  flying = false;
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
   /** Rising from a jump with the button still held (early release cuts the jump). */
@@ -71,6 +79,10 @@ export class Player {
   update(dt: number, world: World, controls: PlayerControls): void {
     this.prevX = this.x;
     this.prevY = this.y;
+    if (this.flying) {
+      this.fly(dt, world, controls);
+      return;
+    }
 
     // Run: accelerate toward the target speed, or brake with friction.
     const control = this.grounded ? 1 : AIR_CONTROL;
@@ -107,6 +119,26 @@ export class Player {
       if (this.vy !== 0) this.moveY(dy / steps, world);
     }
     if (this.grounded) this.walkDistance += Math.abs(this.x - startX);
+  }
+
+  /** Turn debug fly mode on or off. Landing inside terrain lifts the player clear first. */
+  setFlying(on: boolean, world: World): void {
+    this.flying = on;
+    this.vx = 0;
+    this.vy = 0;
+    if (on) return;
+    while (this.y > 0 && overlapsSolid(world, this.x, this.y)) this.y -= TILE_SIZE;
+    this.prevY = this.y;
+  }
+
+  private fly(dt: number, world: World, controls: PlayerControls): void {
+    const speed = DEBUG_FLY_SPEED * (controls.fast ? DEBUG_FLY_FAST : 1);
+    this.vx = controls.move * speed;
+    this.vy = (controls.climb ?? 0) * speed;
+    if (controls.move !== 0) this.facing = controls.move > 0 ? 1 : -1;
+    this.x = Math.min(Math.max(this.x + this.vx * dt, 0), world.width * TILE_SIZE - W);
+    this.y = Math.min(Math.max(this.y + this.vy * dt, 0), world.height * TILE_SIZE - H);
+    this.grounded = false;
   }
 
   private moveX(dx: number, world: World, canStep: boolean): void {

@@ -23,6 +23,14 @@ These override the spec. Don't revert them.
 - **Trees fall.** Breaking a trunk tile also breaks the trunk above it and the tree's canopy
   (wood drops, leaves just burst); the stump below the cut stays.
 
+## Debug mode
+
+Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
+**G** gives a materials kit (enough for every recipe, plus a workbench and furnace) and **F**
+toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed). All
+cheats live in `src/debug.ts`. When a new phase adds something slow to reach by playing, add
+a shortcut there and mention it in the phase's test steps.
+
 ## Stack
 
 | Piece     | Choice                                                    |
@@ -42,6 +50,7 @@ src/
   main.ts            boot, game loop (fixed 60 Hz update, render each frame)
   config.ts          every tunable number
   input.ts           keyboard + mouse state
+  debug.ts           ?debug testing shortcuts (materials kit, fly mode)
   util/rng.ts        seeded PRNG (shared by world gen and textures)
   world/
     tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid)

@@ -69,6 +69,10 @@ export const HOTBAR_SIZE = 10;
 export const BAG_SIZE = 30;
 export const MAX_STACK = 999;
 
+// --- Debug mode (?debug in the URL) ---
+export const DEBUG_FLY_SPEED = 300; // px/s
+export const DEBUG_FLY_FAST = 4; // speed multiplier while Shift is held
+
 // --- Crafting ---
 export const STATION_RANGE = 4; // tiles; a workbench/furnace this close (centre to centre) counts
 

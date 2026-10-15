@@ -9,6 +9,7 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from './config';
+import { DEBUG, DEBUG_KEYS, debugHelpLine, giveDebugKit } from './debug';
 import { ItemDrop, updateDrops } from './entities/itemDrop';
 import { Player } from './entities/player';
 import { consumeWheel, endInputStep, initInput, isDown, mouse, wasPressed } from './input';
@@ -118,12 +119,19 @@ function update(dt: number): void {
   }
   inventory.scrollSelection(consumeWheel());
 
+  if (DEBUG) {
+    if (wasPressed(DEBUG_KEYS.give)) giveDebugKit(inventory);
+    if (wasPressed(DEBUG_KEYS.fly)) player.setFlying(!player.flying, world);
+  }
+
   const right = anyDown('KeyD', 'ArrowRight');
   const left = anyDown('KeyA', 'ArrowLeft');
   player.update(dt, world, {
     move: (right ? 1 : 0) - (left ? 1 : 0),
     jumpPressed: anyPressed('Space', 'KeyW', 'ArrowUp'),
     jumpHeld: anyDown('Space', 'KeyW', 'ArrowUp'),
+    climb: (anyDown('KeyS', 'ArrowDown') ? 1 : 0) - (anyDown('KeyW', 'ArrowUp', 'Space') ? 1 : 0),
+    fast: anyDown('ShiftLeft', 'ShiftRight'),
   });
 
   // E / Tab toggles the inventory + crafting panel (Esc also closes it). It pauses mining
@@ -214,6 +222,7 @@ function render(alpha: number): void {
   const tx = Math.floor(player.centerX / TILE_SIZE);
   const ty = Math.floor(player.centerY / TILE_SIZE);
   const tier = inventory.bestPickaxeTier();
+  const debugLines = DEBUG ? [debugHelpLine(player.flying)] : [];
   drawDebugInfo(renderer.ctx, [
     `Seed ${world.seed}   World hash ${worldHash}`,
     `Player tile (${tx}, ${ty})   Depth ${ty - SURFACE_LEVEL} m`,
@@ -221,6 +230,7 @@ function render(alpha: number): void {
     'A/D or ←/→: move   Space, W or ↑: jump',
     'Left mouse: mine   Right mouse: place   1–0 or wheel: select',
     'E or Tab: inventory + crafting (shift-click: hotbar ↔ bag)',
+    ...debugLines,
   ]);
 }
 
