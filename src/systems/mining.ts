@@ -70,9 +70,19 @@ export class Mining {
 
   /**
    * Advance one update step with the cursor on (tx, ty). `held` is the mine button. Returns
-   * the tile that broke, if any; the world has already been updated.
+   * the tile that broke, if any; the world has already been updated. `instant` (debug mode)
+   * breaks the tile this step, but reach and tier rules still apply.
    */
-  update(dt: number, world: World, player: Player, tx: number, ty: number, held: boolean, tier: number): BrokenTile | null {
+  update(
+    dt: number,
+    world: World,
+    player: Player,
+    tx: number,
+    ty: number,
+    held: boolean,
+    tier: number,
+    instant = false,
+  ): BrokenTile | null {
     if (this.hint) {
       this.hint.timeLeft -= dt;
       if (this.hint.timeLeft <= 0) this.hint = null;
@@ -86,6 +96,7 @@ export class Mining {
       return null;
     }
 
+    if (instant) return this.breakTile(world, tx, ty);
     const tile = world.getTile(tx, ty);
     const key = keyOf(tx, ty);
     let damage = this.damage.get(key);
@@ -94,10 +105,12 @@ export class Mining {
       this.damage.set(key, damage);
     }
     damage.progress += (dt * PICKAXES[tier].speed) / tileDef(tile).hardness;
-    if (damage.progress < 1) return null;
-    this.damage.delete(key);
-    world.setTile(tx, ty, Tile.Air);
-    return { tx, ty, tile };
+    return damage.progress < 1 ? null : this.breakTile(world, tx, ty);
+  }
+
+  /** Debug mode: break (tx, ty) right now if the normal reach and tier rules allow it. No hints. */
+  breakInstantly(world: World, player: Player, tx: number, ty: number, tier: number): BrokenTile | null {
+    return checkMine(world, player, tx, ty, tier) === 'ok' ? this.breakTile(world, tx, ty) : null;
   }
 
   /** Break progress (0..1) of the tile at (tx, ty). */
@@ -114,6 +127,13 @@ export class Mining {
       else result.push({ tx: d.tx, ty: d.ty, stage: crackStage(d.progress) });
     }
     return result;
+  }
+
+  private breakTile(world: World, tx: number, ty: number): BrokenTile {
+    const tile = world.getTile(tx, ty);
+    this.damage.delete(keyOf(tx, ty));
+    world.setTile(tx, ty, Tile.Air);
+    return { tx, ty, tile };
   }
 
   private showHint(text: string, tx: number, ty: number): void {

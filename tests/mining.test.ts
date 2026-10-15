@@ -100,6 +100,37 @@ describe('mining', () => {
     expect(mineFor(mining, world, player, PX + 3, FLOOR, 2)).toBeGreaterThan(0);
   });
 
+  it('debug instant mining breaks a tile in one step but keeps the tier and reach rules', () => {
+    const { world, player } = setup();
+    const mining = new Mining();
+    world.setTile(PX + 1, FLOOR, Tile.Stone);
+    expect(mining.update(DT, world, player, PX + 1, FLOOR, true, 0, true)).toEqual({ tx: PX + 1, ty: FLOOR, tile: Tile.Stone });
+
+    world.setTile(PX + 2, FLOOR, Tile.CopperOre);
+    expect(mining.update(DT, world, player, PX + 2, FLOOR, true, 0, true)).toBeNull();
+    expect(mining.hint?.text).toBe('Need better pickaxe');
+
+    world.setTile(PX - 1, FLOOR, Tile.Bedrock);
+    expect(mining.update(DT, world, player, PX - 1, FLOOR, true, PICKAXES.length - 1, true)).toBeNull();
+    expect(mining.update(DT, world, player, PX + REACH + 1, FLOOR, true, 0, true)).toBeNull();
+  });
+
+  it('breakInstantly (the debug brush) only breaks tiles the rules allow, and clears their damage', () => {
+    const { world, player } = setup();
+    const mining = new Mining();
+    for (let i = 0; i < 5; i++) mining.update(DT, world, player, PX + 1, FLOOR, true, 0);
+    expect(mining.cracks(world)).toHaveLength(1);
+    expect(mining.breakInstantly(world, player, PX + 1, FLOOR, 0)).not.toBeNull();
+    expect(mining.cracks(world)).toEqual([]);
+    expect(world.getTile(PX + 1, FLOOR)).toBe(Tile.Air);
+
+    expect(mining.breakInstantly(world, player, PX + REACH + 1, FLOOR, 0)).toBeNull();
+    world.setTile(PX + 2, FLOOR, Tile.IronOre);
+    expect(mining.breakInstantly(world, player, PX + 2, FLOOR, 1)).toBeNull();
+    expect(mining.breakInstantly(world, player, PX + 2, FLOOR, 2)).not.toBeNull();
+    expect(mining.hint).toBeNull();
+  });
+
   it('never breaks bedrock', () => {
     const { world, player } = setup();
     world.setTile(PX + 1, FLOOR, Tile.Bedrock);

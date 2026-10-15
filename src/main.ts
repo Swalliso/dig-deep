@@ -9,7 +9,15 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from './config';
-import { DEBUG, DEBUG_KEYS, debugHelpLine, giveDebugKit } from './debug';
+import {
+  brushNeighbours,
+  DEBUG,
+  DEBUG_KEYS,
+  debugHelpLines,
+  giveDebugKit,
+  nextInstantMine,
+  type InstantMine,
+} from './debug';
 import { ItemDrop, updateDrops } from './entities/itemDrop';
 import { Player } from './entities/player';
 import { consumeWheel, endInputStep, initInput, isDown, mouse, wasPressed } from './input';
@@ -47,6 +55,7 @@ const inventoryPanel = new InventoryPanel();
 const mining = new Mining();
 const particles = new Particles();
 let drops: ItemDrop[] = [];
+let instantMine: InstantMine = 'off';
 
 let accumulator = 0;
 let lastTime = 0;
@@ -122,6 +131,7 @@ function update(dt: number): void {
   if (DEBUG) {
     if (wasPressed(DEBUG_KEYS.give)) giveDebugKit(inventory);
     if (wasPressed(DEBUG_KEYS.fly)) player.setFlying(!player.flying, world);
+    if (wasPressed(DEBUG_KEYS.instantMine)) instantMine = nextInstantMine(instantMine);
   }
 
   const right = anyDown('KeyD', 'ArrowRight');
@@ -153,8 +163,16 @@ function update(dt: number): void {
       inventoryPanel.click(canvas, renderer.scale, mouse.x, mouse.y, shift, inventory, stations);
     }
   } else {
-    const broken = mining.update(dt, world, player, tx, ty, isDown('MouseLeft'), inventory.bestPickaxeTier());
+    const held = isDown('MouseLeft');
+    const tier = inventory.bestPickaxeTier();
+    const broken = mining.update(dt, world, player, tx, ty, held, tier, instantMine !== 'off');
     if (broken) onTileBroken(broken);
+    if (held) {
+      for (const [dx, dy] of brushNeighbours(instantMine)) {
+        const extra = mining.breakInstantly(world, player, tx + dx, ty + dy, tier);
+        if (extra) onTileBroken(extra);
+      }
+    }
     if (wasPressed('MouseRight')) tryPlace(world, player, inventory, tx, ty);
   }
 
@@ -222,7 +240,7 @@ function render(alpha: number): void {
   const tx = Math.floor(player.centerX / TILE_SIZE);
   const ty = Math.floor(player.centerY / TILE_SIZE);
   const tier = inventory.bestPickaxeTier();
-  const debugLines = DEBUG ? [debugHelpLine(player.flying)] : [];
+  const debugLines = DEBUG ? debugHelpLines(player.flying, instantMine) : [];
   drawDebugInfo(renderer.ctx, [
     `Seed ${world.seed}   World hash ${worldHash}`,
     `Player tile (${tx}, ${ty})   Depth ${ty - SURFACE_LEVEL} m`,
