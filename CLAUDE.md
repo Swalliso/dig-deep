@@ -11,6 +11,10 @@ this file is the short version plus the working rules.
 - At the end of a phase: `npm test`, `npm run build`, run `npm run dev`, then give the user
   exact steps to check that phase's acceptance criteria and stop.
 - The user commits after every working phase.
+- **Deployment**: the repo is github.com/Swalliso/dig-deep. Every push to `main` runs
+  `.github/workflows/deploy.yml` (npm ci → npm test → npm run build → GitHub Pages), so a push
+  publishes to https://swalliso.github.io/dig-deep/. Only push when the user asks. Commits in
+  this repo use the GitHub no-reply address (set in the local git config).
 - Out-of-scope items (combat, day/night, liquids, sound, etc.) wait until all 7 phases pass.
 
 ## Changes from SPEC.md (agreed with the user)
