@@ -59,6 +59,10 @@ a shortcut there and mention it in the phase's test steps.
 ## Folder layout
 
 ```
+index.html           page shell, menu styles, favicon link
+vite.config.ts       base './' so dist/ works from any folder on any static host
+public/favicon.svg   pixel-art favicon (copied into dist/ as is)
+README.md            how to play, develop and deploy
 src/
   main.ts            boot, screens (title → loading → playing ⇄ paused), game loop, saving
   game.ts            one play session: world, player, inventory, mining, lighting, HUD
