@@ -69,6 +69,26 @@ export const HOTBAR_SIZE = 10;
 export const BAG_SIZE = 30;
 export const MAX_STACK = 999;
 
+// --- Lighting ---
+export const LIGHT_MAX = 16; // full brightness: open sky
+export const TORCH_LIGHT = 16; // brightness at a torch's own tile
+export const LIGHT_FALLOFF_AIR = 2; // lost per tile through air and other non-solid tiles (16 / 2 = 8-tile torch radius)
+export const LIGHT_FALLOFF_SOLID = 4; // lost per tile into solid blocks, so lit walls fade into the rock
+// Light also spreads diagonally, costing a bit more (≈ √2 ×), which rounds a torch's glow
+// from a diamond into an octagon.
+export const LIGHT_FALLOFF_AIR_DIAGONAL = 3;
+export const LIGHT_FALLOFF_SOLID_DIAGONAL = 6;
+// A faint glow around the player so nearby walls show even in a pitch-black cave. It only
+// brightens what's drawn; it isn't part of the light map, so caves still count as dark.
+export const PLAYER_GLOW = 6; // light level at the player's centre (out of LIGHT_MAX = 16)
+export const PLAYER_GLOW_FALLOFF = 1.8; // levels lost per tile of distance (6 / 1.8 ≈ 3-tile radius)
+export const BACKDROP_BRIGHTNESS = 0.35; // underground backdrop = dirt texture at this brightness
+
+// --- HUD ---
+export const TOAST_DURATION = 1.5; // s
+export const TOAST_FADE = 0.5; // s of fade-out at the end of a toast
+export const MAX_TOASTS = 5;
+
 // --- Debug mode (?debug in the URL) ---
 export const DEBUG_FLY_SPEED = 300; // px/s
 export const DEBUG_FLY_FAST = 4; // speed multiplier while Shift is held

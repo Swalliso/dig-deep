@@ -1,6 +1,6 @@
-import { HOTBAR_SIZE, TILE_SIZE } from '../config';
+import { HOTBAR_SIZE, MAX_TOASTS, TILE_SIZE, TOAST_DURATION, TOAST_FADE } from '../config';
 import type { Inventory, ItemStack } from '../systems/inventory';
-import { itemDef, itemIndex } from '../systems/items';
+import { itemDef, itemIndex, type ItemId } from '../systems/items';
 
 /** Small text panel in the top-left corner, drawn in screen pixels. */
 export function drawDebugInfo(ctx: CanvasRenderingContext2D, lines: string[]): void {
@@ -100,5 +100,71 @@ export function drawHotbar(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasE
     ctx.textBaseline = 'bottom';
     shadowText(ctx, itemDef(selected.item).name, width / 2, y0 - 3 * u, '#fff', u);
   }
+  ctx.restore();
+}
+
+interface Toast {
+  text: string;
+  /** Set for "+N item" toasts so repeat pickups can add to them. */
+  item: ItemId | null;
+  count: number;
+  timeLeft: number;
+}
+
+/** Short messages in the bottom-left corner that fade out after TOAST_DURATION seconds. */
+export class Toasts {
+  readonly list: Toast[] = [];
+
+  show(text: string, duration = TOAST_DURATION): void {
+    this.list.push({ text, item: null, count: 0, timeLeft: duration });
+    if (this.list.length > MAX_TOASTS) this.list.shift();
+  }
+
+  /** "+3 Coal". Picking up more of the same item while its toast is up adds to it. */
+  gained(item: ItemId, count: number): void {
+    const existing = this.list.find((t) => t.item === item);
+    if (existing) {
+      existing.count += count;
+      existing.text = `+${existing.count} ${itemDef(item).name}`;
+      existing.timeLeft = TOAST_DURATION;
+      return;
+    }
+    this.show(`+${count} ${itemDef(item).name}`);
+    this.list[this.list.length - 1].item = item;
+    this.list[this.list.length - 1].count = count;
+  }
+
+  update(dt: number): void {
+    for (const t of this.list) t.timeLeft -= dt;
+    for (let i = this.list.length - 1; i >= 0; i--) if (this.list[i].timeLeft <= 0) this.list.splice(i, 1);
+  }
+}
+
+export function drawToasts(ctx: CanvasRenderingContext2D, toasts: Toasts, u: number): void {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = `${7 * u}px monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  const lineHeight = 10 * u;
+  let y = ctx.canvas.height - 8 * u;
+  for (let i = toasts.list.length - 1; i >= 0; i--) {
+    const t = toasts.list[i];
+    ctx.globalAlpha = Math.min(1, t.timeLeft / TOAST_FADE);
+    shadowText(ctx, t.text, 8 * u, y, '#fff', u);
+    y -= lineHeight;
+  }
+  ctx.restore();
+}
+
+/** "Depth: 87 m" in the top-right corner (1 tile = 1 m, 0 at surface level); "Height" above it. */
+export function drawDepthMeter(ctx: CanvasRenderingContext2D, depth: number, u: number): void {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = `${8 * u}px monospace`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  const text = depth >= 0 ? `Depth: ${depth} m` : `Height: ${-depth} m`;
+  shadowText(ctx, text, ctx.canvas.width - 8 * u, 6 * u, '#fff', u);
   ctx.restore();
 }

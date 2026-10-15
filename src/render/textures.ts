@@ -1,4 +1,4 @@
-import { CRACK_STAGES, TEXTURE_SEED, TILE_SIZE } from '../config';
+import { BACKDROP_BRIGHTNESS, CRACK_STAGES, TEXTURE_SEED, TILE_SIZE } from '../config';
 import { ITEM_IDS, itemDef } from '../systems/items';
 import { createRng, randInt, type Rng } from '../util/rng';
 import { Tile, TILE_COUNT, tileDef } from '../world/tiles';
@@ -287,6 +287,22 @@ export function buildCrackAtlas(): HTMLCanvasElement {
     ctx.putImageData(img, stage * S, 0);
   }
   return atlas;
+}
+
+/** Underground backdrop: the dirt texture, darkened. Tiled behind dug-out spaces. */
+export function buildBackdropTile(): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D not supported');
+  const img = new ImageData(S, S);
+  dirt(img, createRng(TEXTURE_SEED + 100));
+  for (let i = 0; i < img.data.length; i += 4) {
+    for (let c = 0; c < 3; c++) img.data[i + c] *= BACKDROP_BRIGHTNESS;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
 }
 
 export function buildTileAtlas(): HTMLCanvasElement {

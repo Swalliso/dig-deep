@@ -10,7 +10,7 @@ let wheelSteps = 0;
 export const mouse = { x: 0, y: 0 };
 
 // Keys whose browser default (scrolling, clicking a focused button) must not fire while playing.
-const NO_DEFAULT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab']);
+const NO_DEFAULT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab', 'F3']);
 const BUTTONS: Record<number, string> = { 0: 'MouseLeft', 2: 'MouseRight' };
 
 export function initInput(canvas: HTMLCanvasElement): void {

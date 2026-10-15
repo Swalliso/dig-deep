@@ -18,6 +18,8 @@ export class World {
   readonly surface: Int16Array;
   spawnTx = 0;
   spawnTy = 0;
+  /** Called after any tile changes. Lighting listens here. */
+  onTileChange: ((tx: number, ty: number) => void) | null = null;
 
   constructor(width: number, height: number, seed: number) {
     this.width = width;
@@ -57,6 +59,7 @@ export class World {
     if (chunk[i] === id) return;
     chunk[i] = id;
     this.chunkVersions[ci]++;
+    this.onTileChange?.(tx, ty);
   }
 
   /** FNV-1a hash of every tile. Same seed must give the same hash. */

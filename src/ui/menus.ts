@@ -82,7 +82,7 @@ const hit = (r: Rect, x: number, y: number): boolean => x >= r.x && x < r.x + r.
 export class InventoryPanel {
   open = false;
 
-  /** Left click at canvas pixel (mx, my) while the panel is open. */
+  /** Left click at canvas pixel (mx, my) while the panel is open. Returns the recipe crafted, if any. */
   click(
     canvas: HTMLCanvasElement,
     scale: number,
@@ -91,16 +91,16 @@ export class InventoryPanel {
     shift: boolean,
     inventory: Inventory,
     stations: ReadonlySet<Station>,
-  ): void {
+  ): Recipe | null {
     const layout = computeLayout(canvas.width, canvas.height, scale);
     const slot = layout.slots.findIndex((r) => hit(r, mx, my));
     if (slot >= 0) {
       if (shift && !inventory.cursor) inventory.quickMove(slot);
       else inventory.clickSlot(slot);
-      return;
+      return null;
     }
-    const recipe = layout.recipes.findIndex((r) => hit(r, mx, my));
-    if (recipe >= 0) craft(inventory, RECIPES[recipe], stations);
+    const recipe = RECIPES[layout.recipes.findIndex((r) => hit(r, mx, my))];
+    return recipe && craft(inventory, recipe, stations) ? recipe : null;
   }
 
   draw(

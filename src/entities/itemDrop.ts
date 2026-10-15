@@ -43,8 +43,8 @@ export class ItemDrop {
     this.vy = -DROP_POP_SPEED;
   }
 
-  /** Returns true once the whole stack has been picked up. */
-  update(dt: number, world: World, player: Player, inventory: Inventory): boolean {
+  /** Returns how many items were picked up this step. The drop is used up when count is 0. */
+  update(dt: number, world: World, player: Player, inventory: Inventory): number {
     this.prevX = this.x;
     this.prevY = this.y;
 
@@ -66,11 +66,12 @@ export class ItemDrop {
     }
 
     if (room && this.touches(player)) {
+      const before = this.count;
       this.count = inventory.add(this.item, this.count);
-      if (this.count === 0) return true;
-      this.pulled = false;
+      if (this.count > 0) this.pulled = false;
+      return before - this.count;
     }
-    return false;
+    return 0;
   }
 
   private fall(dt: number, world: World): void {
@@ -105,9 +106,20 @@ export class ItemDrop {
   }
 }
 
-/** Update every drop and return the ones still lying around. */
-export function updateDrops(drops: ItemDrop[], dt: number, world: World, player: Player, inventory: Inventory): ItemDrop[] {
-  return drops.filter((drop) => !drop.update(dt, world, player, inventory));
+/** Update every drop and return the ones still lying around. `onPickup` hears about each pickup. */
+export function updateDrops(
+  drops: ItemDrop[],
+  dt: number,
+  world: World,
+  player: Player,
+  inventory: Inventory,
+  onPickup?: (item: ItemId, count: number) => void,
+): ItemDrop[] {
+  return drops.filter((drop) => {
+    const picked = drop.update(dt, world, player, inventory);
+    if (picked > 0) onPickup?.(drop.item, picked);
+    return drop.count > 0;
+  });
 }
 
 function boxHitsSolid(world: World, x: number, y: number): boolean {

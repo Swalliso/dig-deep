@@ -3,6 +3,7 @@ import {
   CHUNK_SIZE,
   DROP_SIZE,
   HINT_DURATION,
+  LIGHT_MAX,
   PLAYER_WIDTH,
   SCALE_3X_MIN_HEIGHT,
   SKY_BOTTOM_COLOR,
@@ -14,10 +15,11 @@ import type { Player } from '../entities/player';
 import { itemIndex } from '../systems/items';
 import type { Hint } from '../systems/mining';
 import type { GenProgress } from '../world/generate';
+import { playerGlow, type LightMap } from '../world/lighting';
 import { Tile } from '../world/tiles';
 import type { World } from '../world/world';
 import type { Particles } from './particles';
-import { buildCrackAtlas, buildItemAtlas, buildTileAtlas } from './textures';
+import { buildBackdropTile, buildCrackAtlas, buildItemAtlas, buildTileAtlas } from './textures';
 
 const CHUNK_PX = CHUNK_SIZE * TILE_SIZE;
 
@@ -42,6 +44,11 @@ export class Renderer {
   private cacheWorld: World | null = null;
   private frame = 0;
   private sky: CanvasGradient | null = null;
+  private readonly backdrop: CanvasPattern | null;
+  /** One pixel per visible tile holding its darkness; scaled up over the view. */
+  private readonly lightCanvas: HTMLCanvasElement;
+  private readonly lightCtx: CanvasRenderingContext2D;
+  private lightImage: ImageData | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -51,6 +58,11 @@ export class Renderer {
     this.atlas = buildTileAtlas();
     this.itemAtlas = buildItemAtlas(this.atlas);
     this.cracks = buildCrackAtlas();
+    this.backdrop = ctx.createPattern(buildBackdropTile(), 'repeat');
+    this.lightCanvas = document.createElement('canvas');
+    const lightCtx = this.lightCanvas.getContext('2d');
+    if (!lightCtx) throw new Error('Canvas 2D not supported');
+    this.lightCtx = lightCtx;
     this.resize();
   }
 
@@ -72,7 +84,10 @@ export class Renderer {
     return this.canvas.height / this.scale;
   }
 
-  /** Draw the sky and tiles. (camX, camY) is the view's top-left in whole world pixels. */
+  /**
+   * Draw the sky, the underground backdrop and the tiles. (camX, camY) is the view's top-left
+   * in whole world pixels.
+   */
   drawWorld(world: World, camX: number, camY: number): void {
     const { ctx } = this;
     if (this.cacheWorld !== world) {
@@ -87,6 +102,7 @@ export class Renderer {
 
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.imageSmoothingEnabled = false;
+    this.drawBackdrop(world, camX, camY);
 
     // Chunks overlapping the view plus a 1-tile margin.
     const cx0 = Math.max(0, Math.floor((camX - TILE_SIZE) / CHUNK_PX));
@@ -102,7 +118,54 @@ export class Renderer {
     this.evictChunks();
   }
 
+  /**
+   * Dark dirt wall behind everything below each column's original surface, so dug-out spaces
+   * read as underground instead of showing the sky.
+   */
+  private drawBackdrop(world: World, camX: number, camY: number): void {
+    if (!this.backdrop) return;
+    const { ctx } = this;
+    this.backdrop.setTransform(new DOMMatrix([1, 0, 0, 1, -camX, -camY]));
+    ctx.fillStyle = this.backdrop;
+    const bottom = camY + this.viewHeight;
+    const c0 = Math.max(0, Math.floor(camX / TILE_SIZE));
+    const c1 = Math.min(world.width - 1, Math.floor((camX + this.viewWidth) / TILE_SIZE));
+    for (let c = c0; c <= c1; c++) {
+      const top = Math.max(world.surface[c] * TILE_SIZE, camY);
+      if (top < bottom) ctx.fillRect(c * TILE_SIZE - camX, top - camY, TILE_SIZE, bottom - top);
+    }
+  }
+
   // The draw* methods below use world px and expect drawWorld's transform to still be set.
+
+  /**
+   * Darkness over every visible tile: a black overlay with alpha = 1 - light. (glowX, glowY)
+   * is the player's centre in world px; tiles near it get at least the player's faint glow.
+   */
+  drawLight(lightMap: LightMap, camX: number, camY: number, glowX: number, glowY: number): void {
+    const tx0 = Math.floor(camX / TILE_SIZE);
+    const ty0 = Math.floor(camY / TILE_SIZE);
+    const tw = Math.ceil(this.viewWidth / TILE_SIZE) + 2;
+    const th = Math.ceil(this.viewHeight / TILE_SIZE) + 2;
+    if (!this.lightImage || this.lightImage.width !== tw || this.lightImage.height !== th) {
+      this.lightCanvas.width = tw;
+      this.lightCanvas.height = th;
+      this.lightImage = this.lightCtx.createImageData(tw, th);
+    }
+    const data = this.lightImage.data;
+    const gx = glowX / TILE_SIZE - 0.5;
+    const gy = glowY / TILE_SIZE - 0.5;
+    for (let y = 0; y < th; y++) {
+      for (let x = 0; x < tw; x++) {
+        const glow = playerGlow(Math.hypot(tx0 + x - gx, ty0 + y - gy));
+        const level = Math.max(lightMap.level(tx0 + x, ty0 + y), glow);
+        data[(y * tw + x) * 4 + 3] = 255 - Math.round((level * 255) / LIGHT_MAX);
+      }
+    }
+    this.lightCtx.putImageData(this.lightImage, 0, 0);
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(this.lightCanvas, tx0 * TILE_SIZE - camX, ty0 * TILE_SIZE - camY, tw * TILE_SIZE, th * TILE_SIZE);
+  }
 
   /** Crack overlay on a tile being mined; stage is 1..CRACK_STAGES. */
   drawCracks(tx: number, ty: number, stage: number, camX: number, camY: number): void {

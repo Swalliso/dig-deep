@@ -22,6 +22,11 @@ These override the spec. Don't revert them.
   the cursor moves away or the button is released.
 - **Trees fall.** Breaking a trunk tile also breaks the trunk above it and the tree's canopy
   (wood drops, leaves just burst); the stump below the cut stays.
+- **Player glow.** A faint ~3-tile glow around the player (`PLAYER_GLOW`) so you can see where
+  to put a torch in a pitch-black cave. It's applied when drawing the darkness overlay only;
+  the light map (and "caves are dark") is unaffected.
+- **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
+  pickaxe" hint (instead of a toast) were all reviewed and kept.
 
 ## Debug mode
 
@@ -29,7 +34,8 @@ Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testi
 **G** gives a materials kit (enough for every recipe, plus a workbench and furnace), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed), and
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
-bedrock stays unbreakable, drops and tree felling work as normal). All cheats live in
+bedrock stays unbreakable, drops and tree felling work as normal), and **L** toggles lighting
+(fullbright) for exploring. Debug mode also opens the F3 overlay at start. All cheats live in
 `src/debug.ts`. When a new phase adds something slow to reach by playing, add
 a shortcut there and mention it in the phase's test steps.
 
@@ -59,6 +65,7 @@ src/
     world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile
     generate.ts      seeded terrain, caves, ores, trees, bedrock, spawn
     trees.ts         felling: cutting a trunk removes the tree above the cut
+    lighting.ts      per-tile light: sky columns + torches, spread with falloff, incremental relight
   entities/
     player.ts        movement, jump, tile collision, auto step-up
     itemDrop.ts      dropped items: fall, fly to the player within 2 tiles, picked up on touch
@@ -73,10 +80,10 @@ src/
   render/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
-    renderer.ts      sky, cached chunk canvases, overlays
+    renderer.ts      sky, underground backdrop, cached chunk canvases, light overlay, entities
     particles.ts     cosmetic break particles (Math.random is fine here)
   ui/
-    hud.ts           hotbar, slot/stack drawing helpers, debug text (depth meter, toasts: Phase 5)
+    hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
     menus.ts         inventory + crafting panel (pause and title screens: Phase 6)
 tests/               Vitest unit tests (world gen, inventory, crafting)
 ```
@@ -107,6 +114,10 @@ they drop.
 - **Rendering**: `imageSmoothingEnabled = false`, integer camera positions, 2x or 3x pixel scale
   chosen by window size. Only draw what's on screen; chunk images are cached and redrawn only
   when one of their tiles changes (tracked with per-chunk version numbers).
+- **Lighting**: `World.onTileChange` tells the `LightMap` about every tile change; it relights
+  only the box within light reach of the changes (plus any stretch of a column whose sky light
+  moved), once per update step. A test checks incremental relighting against a full recompute;
+  keep it passing when touching lighting.
 - **Performance**: hold 60 FPS. Never do per-frame work over the whole world. World
   generation must take under 2 s.
 - Keep modules small and focused. Prefer plain functions and data over class hierarchies.

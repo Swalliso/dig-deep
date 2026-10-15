@@ -6,8 +6,8 @@ import type { ItemId } from './systems/items';
 
 export const DEBUG = new URLSearchParams(location.search).has('debug');
 
-/** G gives the materials kit, F toggles fly mode, I cycles instant mining. */
-export const DEBUG_KEYS = { give: 'KeyG', fly: 'KeyF', instantMine: 'KeyI' } as const;
+/** G gives the materials kit, F toggles fly mode, I cycles instant mining, L toggles lighting. */
+export const DEBUG_KEYS = { give: 'KeyG', fly: 'KeyF', instantMine: 'KeyI', fullbright: 'KeyL' } as const;
 
 /**
  * Instant mining: 'off', one tile per tick under the cursor, or a 3x3 brush around it.
@@ -48,9 +48,9 @@ export function giveDebugKit(inventory: Inventory): void {
   for (const [item, count] of KIT) inventory.add(item, count);
 }
 
-export function debugHelpLines(flying: boolean, instantMine: InstantMine): string[] {
+export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean): string[] {
   return [
-    'DEBUG  G: give materials',
+    `DEBUG  G: give materials   L: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
     `       F: fly ${flying ? 'ON' : 'off'} (W/S or ↑/↓, Shift fast)   I: instant mine ${instantMine}`,
   ];
 }
