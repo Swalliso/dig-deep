@@ -48,6 +48,12 @@ These override the spec. Don't revert them.
 - **Player glow.** A faint ~3-tile glow around the player (`PLAYER_GLOW`) so you can see where
   to put a torch in a pitch-black cave. It's applied when drawing the darkness overlay only;
   the light map (and "caves are dark") is unaffected.
+- **Mouse: left uses what's held, right interacts.** A left press decides what its hold does
+  (`primaryAction` in `systems/building.ts`): holding a block over an empty spot places it
+  (hold to sweep), anything else digs with the best carried pickaxe, and held tools will get
+  their own actions. Right-click only interacts (chests, doors, later beds and lift stops); it
+  never digs or places. E or Tab also opens the nearest chest in reach. The spec had left mine
+  and right place; a tester found right-click doing both placing and interacting confusing.
 - **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
   pickaxe" hint (instead of a toast) were all reviewed and kept.
 - **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything

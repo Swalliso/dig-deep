@@ -10,7 +10,7 @@ export interface ItemDef {
   description: string;
   /** Tools don't stack (1). */
   maxStack: number;
-  /** Tile placed by right-clicking with this item selected, or null if it can't be placed. */
+  /** Tile placed by left-clicking an empty spot with this item selected, or null if it can't be placed. */
   placeTile: TileId | null;
   icon: ItemIcon;
   /** Set on pickaxes: the tier it mines at (index into PICKAXES). */
