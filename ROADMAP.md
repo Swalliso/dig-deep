@@ -1,21 +1,25 @@
 # Dig Deep – Roadmap after the MVP
 
-All 7 phases of `SPEC.md` are done and live. This is the plan for what comes next. It continues
-the same way: one phase at a time, each phase ends playable, and each has acceptance criteria to
-check before moving on. Phase numbers continue from SPEC.md.
+All 7 phases of `SPEC.md` are done and live. Phases 8–10 are implemented on `develop`;
+**Arc 2, starting with Phase 11, is the current focus**. This plan continues the same way: one
+phase at a time, each phase ends playable, and each has acceptance criteria to check before
+moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
+targets; release status is separate from implementation status.
 
 Each phase is built on its own feature branch off `develop`. Finished phases go to the dev site
 first and reach the live site only when a batch is released. See "Branches and deploys" in
 `README.md`.
 
-## Where the MVP stands
+## Where the game stands after Phase 10
 
-- 16 tiles, 20 items, 11 recipes and 5 pickaxe tiers.
-- One fixed 1000×600 world in a single save slot, with torch lighting and tree felling.
-- No health, hazards, goals, sound, storage or way back up.
+- Five pickaxe tiers, procedural sound, mining feedback, torch lighting and tree felling.
+- Chests, crafting from nearby storage, tooltips and drag-building.
+- Ladders, platforms, doors, an explored map and minimap, and multiple named sandbox worlds.
+- Worlds are each 1000×600 tiles. No health, hazards or explicit progression goals yet.
 
 The loop runs out at the gold pickaxe, around 250–480 m down, with nothing new beyond it.
-Digging is never risky, and climbing back up a deep shaft is the hardest thing in the game.
+Ladders provide a way back up; deeper expeditions still need stronger reasons to prepare,
+explore side passages, build safe routes and return home.
 
 ## Direction
 
@@ -30,6 +34,13 @@ Digging is never risky, and climbing back up a deep shaft is the hardest thing i
   - **The way back**: lifts and a portable camp turn your base into a spine down the world.
 - In Descent the hooks interlock. Tremors (the weight) are the clock, darkness keeps the pressure
   on minute to minute, strata are the floors, and a lift is the exit.
+- **The expedition loop**: prepare → explore → take a calculated risk → gain something useful
+  → return and improve the next trip. Each new hazard needs a readable cue, an affordable
+  countermeasure, a chance to react and a reward worth the effort.
+- **Keep complexity useful.** Introduce one major rule at a time. Protected routes and bases
+  should visibly repay the effort of building them. Sandbox goals stay optional; expedition
+  deadlines belong to Descent. Add upkeep or extra resource meters only when a simpler
+  interaction cannot do the job.
 
 **Borrowed from Terraria and similar games:** quick stack, crafting from nearby chests,
 drag-building, a minimap with fog of war, tooltips, ladders and platforms, a bed as the respawn
@@ -37,6 +48,24 @@ point, accessories, bombs and ropes.
 
 **Not borrowed:** bosses, NPC towns, weapon and armor tier lists, sprawling horizontal biomes,
 mana or classes.
+
+## Playability checks for every new phase
+
+Mechanical acceptance checks below are necessary, and each phase also gets a fresh-world
+playtests. Keep a short note of the seed, browser/device and findings.
+
+- A new player can find a useful next goal and understand the new rule through play. Optional
+  hints can be dismissed and reopened.
+- The new danger has a recognizable warning and an available countermeasure before it can
+  cause a serious loss. Preparation makes the same encounter visibly safer.
+- A mistake has an understandable cause and a practical recovery route. Note time spent
+  exploring/mining versus travelling, sorting and recovering; adjust friction that crowds out
+  useful progress.
+- Important warnings remain readable with sound muted, shake disabled and reduced flashes on.
+  Use text, shape or motion as well as color.
+- Check the feature with the existing systems together: mining, lighting, storage, map and
+  autosave. Keep the 60 FPS target on a documented reference browser/device, including a busy
+  underground scene. Any missed target gets a concrete follow-up before adding more load.
 
 ## Shared foundations
 
@@ -49,13 +78,16 @@ phase that needs it, and that phase says so.
 | Tile entities (`src/world/tileEntities.ts`) | 9 | Data stored per tile (chest contents, lift stops, torch timers), keyed by `ty * width + tx` and cleared when the tile changes. `World.onTileChange` becomes a list of listeners. Saved in an optional `tileEntities` field, so no version bump. |
 | Save slots | 10 | Several sandbox worlds, plus a run slot and a meta-profile slot later on. The existing save key becomes slot 1, so current saves carry over. |
 | PlayerStats (`src/systems/stats.ts`) | 11 | Player stats computed from the base values in config, plus equipment and boons. Replaces direct reads of `REACH`, `STATION_RANGE`, `DROP_PULL_RANGE` and the run/jump constants. |
+| Session clock and saved state | 11 | Define when simulation pauses, then use that clock for damage, regeneration and later hazards. Save health, difficulty, respawn, satchels and fall progress; include their changes in autosave detection. Later phases extend this contract with their own state. |
 | Active tile updates (`src/world/tileUpdates.ts`) | 12 | A queue of tiles to recheck, fed by neighbours of changed tiles and worked through with a per-step budget, like the lighting's dirty box. Runs falling blocks, torch burnout and liquids. Never touches the whole world in one frame. |
-| Generation profiles | 14 | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, strata, ore table, caves, structures). Today's config values become the Sandbox profile, and Descent floors are smaller profiles. Bump `SAVE_VERSION` when Sandbox generation changes. |
+| World compatibility | 12, reviewed at 14 and 16 | Saves regenerate unchanged chunks from their seed. Before gravel, strata or structures change generation, choose retained older generation rules, an explicit migration, or a clearly communicated versioned reset. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11. |
+| Generation profiles | 14 | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, strata, ore table, caves, structures). Today's config values become the Sandbox profile, and Descent floors are smaller profiles. Apply the compatibility policy and bump `SAVE_VERSION` when required. |
+| Run rules and random streams | 18 | Record the seed, rules/generation version and eligible content pools. Derive separate generation, loot and boon streams from the seed and stable floor identifiers; keep cosmetics independent. Persist the state needed to resume without rerolling content. |
 
 Notes:
 
-- Tile ids are stored as `Uint8`, so there's room for 240 more tiles.
-- `PlayerControls.climb` already exists for debug fly mode, and ladders can reuse it.
+- Tile ids are stored as `Uint8`; keep existing ids stable when adding new tiles.
+- `PlayerControls.climb` already powers ladders and debug fly mode.
 - Every phase adds debug shortcuts in `src/debug.ts` for anything slow to reach by playing.
 
 ## Arc 1 – Feel and quality of life (no new danger)
@@ -118,24 +150,75 @@ Notes:
 
 ## Arc 2 – Danger (hazards first)
 
+### Companion work: guidance and polish
+
+The table is planned companion work, with target windows for small slices; it does not require
+every row to ship with Phase 11. Finish recovery, pause and save requirements first. Larger
+polish items such as remapping, UI scaling and animation may move without blocking a phase.
+Readable hazard cues and persistence are required when their feature ships, and crafting
+navigation must precede a large recipe expansion. These additions do not renumber phases.
+
+| Enhancement | Target | Scope and acceptance |
+| --- | --- | --- |
+| Optional next goal | 11–12 | Pin one recipe, show ingredient counts and the required station, and suggest the next pickaxe upgrade. Counts include nearby crafting storage. Add brief ore-depth guidance; no separate quest system. The pin survives reload and can be cleared. |
+| Introduction prompts | 11–13 | Short, dismissible hints for the first crafting station, bed, dangerous fall, unstable ceiling and dark cave. Teach each hazard in a forgiving encounter; hints can be reopened from help. |
+| Player map pins | 12 | A few named pins for veins, alternate routes and places to revisit. Save them per world, respect fog of war, and allow one selected pin to show direction and distance without forcing the map open. |
+| Action feedback | 11–13 | Visible mining swing, a held lantern when it arrives, hovered tile names, and specific tier hints such as "Requires copper pickaxe". Invalid building explains the reason; support previews arrive in Phase 12. |
+| Accessible controls and display | 11–13 | Remappable actions with reset-to-default and conflict feedback; independent UI/text scaling; reduced-flash setting; visual equivalents for sound warnings. Persist preferences per device and update displayed key hints. Introduce visual hazard cues with each hazard. |
+| Crafting grows with content | By 15 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. |
+
 ### Phase 11: Health, falls and respawn
 
 - Builds the PlayerStats foundation.
 - **Health**: 10 HP shown as 5 hearts, a red flash when hurt, and slow regeneration after 5 s
   without damage.
+- **Damage feedback**: brief hurt protection prevents simultaneous impacts from removing all
+  reaction time. Use one consistent rule across hazards, including Phase 12's falling-block
+  pileups, and show the protection state without relying on flashes alone. Phase 11 includes a
+  persisted reduced-flash setting and a readable non-flashing damage cue.
 - **Fall damage** only beyond about 12 tiles (tunable), so normal jumps and drops never hurt.
-- **Bed** sets the respawn point.
+- **Bed** sets the respawn point and gives visible confirmation. Mark the active bed on the map.
 - **Death**:
   - The bag contents drop in a satchel where you died, and the hotbar stays with you.
-  - You respawn at the bed, or at spawn if there isn't one.
-  - Going back for the satchel becomes a small goal.
-- **World option when creating a world**: *Cozy* (no damage at all) or *Normal*. It's stored
-  in the save, so the Sandbox can stay relaxing.
+  - Before danger is introduced, explain which items are kept. Offer a quick way to move the
+    best carried pickaxe into the hotbar; warn if it is still in the bag. Respawning without
+    any retained pickaxe supplies a basic recovery pickaxe, so the player can always dig.
+  - Every satchel gets a persistent map marker. Further deaths leave earlier satchels intact;
+    collecting with a full inventory leaves the remaining items in the satchel.
+  - Respawn at the bed if it has safe standing space. A destroyed or blocked bed uses a safe
+    fallback near spawn. Brief protection prevents immediate repeated hits after respawn.
+  - Show the cause of death and point toward the satchel. Going back for it becomes a small
+    goal, with no automatic expiry while the player prepares.
+- **World option**: *Cozy* disables damage, dread and destructive cave-ins; *Normal* enables
+  them. Save the choice per world. Existing relaxing worlds default to Cozy. Sandbox players
+  can change it from the pause menu without regenerating the world; Descent uses fixed run
+  rules. Later hazards must state how Cozy affects them.
+- **Pause policy**: the inventory/crafting panel, full map and pause menu freeze simulation.
+  Losing window focus or hiding the tab pauses too, and returning focus requires an explicit
+  resume. UI interactions still work while panels are open. Damage, regeneration and all later
+  hazard/run timers use the same simulation clock.
+- **Save reliability before introducing item loss**:
+  - Fix Save & Quit so a failed write keeps the live session available for retry.
+  - Preserve cursor-held items even when the inventory is full; saving never discards overflow.
+  - Add export/import backups with validation and an explicit choice before replacing a world.
+    Export can use the current live session after a save failure. An exported old-version save
+    still needs compatible generation rules to be playable.
+  - Save HP, damage/regeneration timers, difficulty, bed, every satchel and fall progress.
+    Reloading halfway down a shaft must not reset the fall's consequences. Changes while
+    standing still still trigger autosave.
 - Debug: H toggles god mode and heals.
 
 - [ ] A 20-tile fall hurts and a 10-tile fall doesn't.
 - [ ] On death, the satchel holds the bag and you respawn at the bed.
-- [ ] A Cozy world never takes damage.
+- [ ] Two deaths leave two marked, recoverable satchels across a reload. A full bag never loses loot.
+- [ ] A blocked or destroyed bed gives a safe fallback; respawn cannot immediately chain into death.
+- [ ] Rapid repeated hits respect hurt protection and the reduced-flash setting. Extend this
+      check to falling-block pileups in Phase 12.
+- [ ] Panel, map, pause and focus loss freeze simulation consistently, including timed effects.
+- [ ] A failed Save & Quit retains the session; full-inventory cursor items and an exported/imported
+      world retain all items. HP, world options and fall progress survive reload.
+- [ ] A Cozy world never takes damage, and its terrain stays protected from destructive cave-ins
+      when Phase 12 arrives. Existing worlds receive the documented default.
 
 ### Phase 12: Cave-ins and supports
 
@@ -150,11 +233,25 @@ Notes:
   - A *beam* (planks) is a vertical post you can walk through. It holds up the tile above it.
   - A *crossbeam* holds up the row above it.
   - Platforms also count as support.
+  - Specify anchoring and maximum supported spans. A placement preview highlights the tiles
+    actually stabilized, and removing a load-bearing support shows a warning.
+  - Supports are cheap and reclaimable, so using them routinely is practical. No durability or
+    recurring repair system.
+- **Readable risk and reward**: unstable material has a distinct texture and warning effect.
+  Include forgiving first encounters and some valuable veins where shoring up a chamber pays
+  off. Secondary collapses must communicate their danger before hitting the player.
+- **Persistence and compatibility**: apply the world-compatibility decision before adding
+  gravel to generation. Save warning/falling-block state, or settle it by an explicitly defined
+  equivalent rule, without losing material, duplicating drops or resetting the danger.
 - Stretch, also used later by Descent tremors: ceilings of "unstable rock" collapse when the
-  unsupported span gets wider than N tiles.
+  unsupported span gets wider than N tiles. If deferred here, this becomes required in Phase 20.
 
 - [ ] Mining under gravel collapses it after a visible shake. A beam underneath stops it.
 - [ ] Falling gravel hurts, and big collapses never stall the game.
+- [ ] A player can identify a risky ceiling, preview a useful support and safely mine its reward.
+      Warnings work with audio, shake and flashes disabled.
+- [ ] Save/reload during a warning or collapse preserves material and danger. Cozy worlds do not
+      suffer destructive collapses, and older worlds follow the documented compatibility policy.
 
 ### Phase 13: The dark
 
@@ -169,19 +266,33 @@ Notes:
     tile.
   - A **lantern** (iron + torch) lights a 6-tile radius while held. A helmet version comes in
     Phase 15.
+- **Light design gate before implementation**: prototype the lantern while moving and while
+  mining, alongside placed torches. Mining currently uses the best carried pickaxe regardless
+  of the selected item, so holding a lantern has no inherent mining tradeoff. Decide whether
+  portable light intentionally solves dread as an earned upgrade, or provides travel safety
+  while established light is needed for recovery. Update dread thresholds, regeneration,
+  helmet behavior and the Descent starting kit together after that decision. The rules above
+  and the lantern acceptance check below are the baseline for the prototype, not a settled
+  balance decision. Try simpler light/safety rules before adding fuel or another resource meter.
 - **Flare**: thrown, sticks where it lands, and lights a large area for 30 s, for scouting.
 - **Natural light**: glowing mushrooms and crystals as new tiles, placed once strata arrive, so
   not every cave is pitch black.
+- **Readable safety**: show whether the player is safe, accumulating dread or recovering, and
+  explain why. Make the drawn player glow visibly distinct from light that provides safety.
+  Save dread and active flare duration; paused time does not consume either.
 
 - [ ] Standing in an unlit cave fills dread and eventually hurts. A torch or lantern stops it.
 - [ ] The incremental-vs-full lighting test still passes with moving lights.
+- [ ] The light design gate is resolved and its final rules are reflected in these checks.
+      Preparing a lit route has a noticeable benefit under the chosen rules.
+- [ ] A muted, reduced-effects playtest can identify darkness danger and reach safety in time.
 
 ## Arc 3 – The deep (strata, gear, structures, lifts)
 
 ### Phase 14: Strata
 
-- Builds the generation profiles foundation, redoes the ore depth bands per stratum, and bumps
-  `SAVE_VERSION`.
+- Builds the generation profiles foundation, redoes the ore depth bands per stratum, and
+  applies the world-compatibility policy, including a `SAVE_VERSION` bump where required.
 - Strata at Sandbox depths (the world bottom is about 477 m):
 
 | Stratum | Depth | Ores | Rule |
@@ -195,6 +306,10 @@ Notes:
 - Each stratum gets its own backdrop tint, and a banner when you enter it ("Fungal Hollows — 110 m").
   F3 shows the current stratum.
 - A tier 5 pickaxe (Emberite), so gold no longer mines everything.
+- **Progression checks**: every new ore can be reached and mined using the preceding tier.
+  Each stratum introduces its rule in a forgiving area before combining it with earlier
+  hazards. Magma has reachable cooled refuges and a usable survival route before the Phase 15
+  heat ward exists; no accessory is a hidden prerequisite for entering its own crafting layer.
 - Optional capstone: a sealed **Heart of the Deep** chamber above the bedrock. Opening it is the
   Sandbox's ending.
 - Debug: T teleports to the top of the next stratum.
@@ -202,6 +317,8 @@ Notes:
 - [ ] Each stratum looks and plays differently at its depth, and the same seed gives the same
   world.
 - [ ] Generation stays under 2 s, and the generation tests cover strata bands and ore placement.
+- [ ] Fresh-world progression reaches every upgrade without circular tool requirements. Each
+      stratum has a learnable first encounter and a practical route back to established safety.
 
 ### Phase 15: Gear and tools
 
@@ -223,8 +340,14 @@ Notes:
   - **Rope coil**: throw it down a shaft and it unrolls a 20-tile rope ladder.
   - **Drill**: tier 5+. Mines continuously and fast, burning coal as fuel.
 - Gems from the Geode Depths go into accessory recipes.
+- Show equipment effects and tradeoffs in the inventory, including the resulting stat values.
+  Avoid mandatory accessories that consume a slot just to make basic exploration viable.
+- Show drill fuel and rope length before use. Expand crafting navigation from the companion
+  work before the larger recipe list makes text too small.
 
 - [ ] Every accessory's effect shows in play and in F3. Bombs respect pickaxe tier.
+- [ ] Equipment choices are understandable without F3; removing gear never deletes inventory
+      overflow or leaves the player trapped by an unexplained change in movement or reach.
 
 ### Phase 16: Structures and loot
 
@@ -235,10 +358,18 @@ Notes:
   - **Sealed vaults**: walls that need a higher pickaxe tier, with the best loot inside.
 - Loot tables per stratum, rolled with the seeded RNG.
 - Journal pages hint at a light story, e.g. *"the last expedition went quiet below 400 m"*.
+- **Useful discoveries**: structure entrances can be spotted from exploratory branches. A
+  detour offers a useful cache, shortcut, safe foothold or new information. Reuse early
+  structures to demonstrate supports and lighting before increasing the number of variants.
+- Keep found journal pages in a rereadable collection, and mark discovered structures on the
+  map. Do not reveal undiscovered structures through fog.
+- Apply the compatibility policy when structures change world generation.
 - Debug: a key that jumps to the nearest structure.
 
 - [ ] Each stratum has 3 or more structures, and loot is the same for the same seed.
 - [ ] Structures and their chests survive saving and reloading.
+- [ ] A normal expedition can discover and benefit from a structure without a debug teleport;
+      collected pages and discovered markers survive reload.
 
 ### Phase 17: Lifts and the camp
 
@@ -252,9 +383,14 @@ Notes:
   it to pack it up and set it up again deeper down.
 - **Homing flare** (consumable): teleports you to your camp.
 - Lift stops and the camp show on the map.
+- Name stops, show their depths and indicate an obstructed or disconnected rail before a trip.
+  Camp relocation clearly confirms the new respawn point. A failed or blocked homing-flare
+  destination does not consume the flare or place the player inside terrain.
 
 - [ ] Can build a 300 m lift and ride it both ways.
 - [ ] The camp crafts like both stations and sets the respawn point.
+- [ ] Save/reload during travel or camp relocation leaves the player at a valid location with
+      one consistent camp and respawn point. The return route saves meaningful expedition time.
 
 ## Arc 4 – Descent mode (roguelike)
 
@@ -272,9 +408,21 @@ Notes:
   - Aim for 6–9 minutes per floor, so 35–45 minutes per run.
 - **Floor objective**: one per floor, shown on arrival. Completing it powers the exit lift.
   - Reach the exit.
-  - Deliver a quota, e.g. 30 copper + 10 iron to the lift.
+  - Deliver a quota suited to that floor, e.g. 30 copper on a Stone Caverns floor.
   - Recover a relic from a sealed vault.
   - Light 3 marked beacons.
+- **Floor supply and completion guarantees**:
+  - Each floor provides accessible wood or a usable substitute, coal/fuel, crafting stations
+    or the materials to make them, and enough ore for the next required tool. The starting kit
+    alone does not currently cover those needs.
+  - Generate objectives from that floor's available resources and a defined baseline arrival
+    kit for its position in the run. Quotas must leave enough accessible material for necessary
+    upgrades and safety supplies. Show the next floor's required tool before the player leaves.
+  - Check that the objective and exit are achievable before accepting a floor seed. Use
+    deterministic retries or a known valid fallback if needed. Validate against the baseline
+    kit and fixed floor rules; actual arrival inventory must not change layouts or seed retries.
+  - Explain the objective, exit direction and current tremor stage without revealing the whole
+    unexplored floor. Protect arrival space from unavoidable immediate hazards.
 - **Tremors are the clock**:
   - Every ~90 s the floor shakes.
   - They escalate: dust and shaking → loose rock falls → unstable ceilings near the player
@@ -307,41 +455,76 @@ Notes:
     - **Kit**: better starting items.
     - **Pool**: new boons, objectives and mutators. More variety, not raw power.
     - **Talents**: small permanent stat boosts, with caps.
-- **Seeds**: floors and boon offers come from the run seed, so a seed replays exactly. **Daily
-  Descent** uses a seed made from the date. It's local only, with no server.
+- **Seeds**: the same seed, rules version and eligible pools reproduce floor layouts, loot and
+  boon offers. Save/resume does not reroll them. Player actions still determine the outcome.
+  **Daily Descent** uses a seed made from the UTC date, displayed in the menu, and standardized
+  kit, talent and content-pool rules so profile unlocks do not change the daily challenge. It
+  stays local only, with no server. Personal seeded runs use the player's own profile rules.
 
 ### Phase 18: Run skeleton
 
 - Mode select on the title screen, and the floor profiles.
-- The arrival lift and exit lift, with "reach the exit" as the only objective for now.
+- Use simple arrival/exit gates for the skeleton; use the full lifts if Phase 17 is complete.
+  Start with "reach the exit" as the objective. The starting boon choice waits for Phase 19;
+  include the lantern only if Phase 13's light rules are ready.
 - Moving between floors, the run summary on death, and a save slot for resuming a run.
-- Debug: N skips the current floor.
+- Establish the floor supply guarantees and versioned run rules. Save floor time, objectives,
+  inventory, status and random state with the run.
+- **Pressure prototype before expanding content**: once the skeleton works, play one floor
+  with one delivery or beacon objective and escalating tremor warnings plus a small collapse.
+  Use Phase 12's falling blocks; the full objective pool, unstable ceilings and mutators remain
+  in Phase 20. Validate preparation, optional extra looting and escape before building 20 boons.
+- Debug: Shift + N skips the current floor (plain N remains the minimap toggle).
 
 - [ ] A run can be played through all 5 floors to the end.
 - [ ] Death shows the summary, and quitting mid-floor resumes in the same place.
+- [ ] Generated floors have reachable objectives/exits and enough usable supplies for required
+      progression across a fixed collection of seeds. Resume preserves content and floor time.
+- [ ] The pressure prototype produces a readable choice between leaving and taking another
+      reward; playtest notes support the target floor length before Phase 19's full boon pool.
 
 ### Phase 19: Boons
 
 - The pick-1-of-3 screen, and about 20 boons wired into PlayerStats and existing systems.
 - Rarities, and offers that are deterministic per run seed.
+- Begin with a few distinct boons against Phase 18's pressure prototype, then expand toward
+  20 once the choices change how a run is played. Preview the effect and any curse before pick.
+- Define stacking and trigger limits for chained mining, extra drops and free construction;
+  combinations must not create infinite triggers or duplicate items.
 - Debug: R rerolls the offer.
 
 - [ ] Every boon has a noticeable effect, and the same seed gives the same offers.
+- [ ] Save/resume preserves offered and chosen boons; representative combinations respect
+      their limits and leave useful choices across mining, light, movement and safety.
 
 ### Phase 20: Objectives, tremors and mutators
 
 - The objective pool, escalating tremors and floor mutators.
 - An objective HUD and a tremor warning.
+- Implement unstable-ceiling support rules here if they were deferred from Phase 12. Warnings
+  and collapse budgets follow the same rules; terrain changes must leave an achievable escape
+  with the available kit rather than create an unavoidable death.
+- Validate mutator combinations against supplies, objectives and the chosen light rules. Start
+  with one mutator per floor; enable pairs only after testing their combined difficulty.
 
 - [ ] Every objective type can be completed.
 - [ ] Tremors escalate on schedule, and their collapses follow the cave-in rules.
+- [ ] Paused time never advances tremors, torch burnout or run duration. Every enabled mutator
+      combination leaves the floor completable; warnings communicate urgency with muted audio.
 
 ### Phase 21: Meta progression and dailies
 
 - Core shards, the Base Camp unlock screen, a persistent profile save, run history and Daily
   Descent.
+- Record daily date, rules version, standardized starting profile and content pools with each
+  daily. Explain how personal seeded runs differ. Do not reinterpret an in-progress run after
+  a rules update; retain compatible rules or communicate that it cannot be resumed.
+- Summaries explain the cause of death, objective progress and rewards earned, and offer a
+  quick retry. The ordinary run history helps players see progress without requiring a win.
 
 - [ ] Unlocks carry across runs and reloads, and two runs on the same daily seed match.
+- [ ] Two profiles with different personal unlocks receive identical daily layouts and offers
+      under the same daily rules. Profile rewards are credited once across reloads and retries.
 
 ## Arc 5 – Later (both modes)
 
@@ -359,8 +542,45 @@ Notes:
   - Gamepad and touch controls.
   - Horizontal surface biomes, such as desert sand and snow.
 
+### Optional enhancements to revisit after Arc 2
+
+These are candidates, not prerequisites for the next phase. Promote an item into an owning
+phase with acceptance criteria when playtests show it solves a real problem.
+
+- **Inventory control**: split stacks, choose an exact craft amount, sort storage and name
+  chests. Favorite/lock essential tools and supplies so quick stack, deposit and trash respect
+  the player's loadout. Start with the action causing the most sorting friction.
+- **Quick light action**: temporarily select or place a carried torch, then return to the
+  previous selection. Keep this compatible with remapped controls and the final light rules.
+- **Renewable supplies**: replantable saplings or a stratum-appropriate wood substitute for
+  long-lived sandbox worlds. Keep growth simple before considering a farming system.
+- **Personal milestones**: optional records for deepest point, first ore discoveries, safe
+  routes built and recovered expeditions. Tie them to the journal or cosmetic keepsakes, with
+  no required daily chores. Finding the Heart can show a completion moment and allow continued
+  sandbox building afterward.
+- **Building comfort**: clearer placement ghosts for doors, camp and lift pieces; preview
+  invalid footprints and safe dismantling. Consider decorative variants after functional
+  underground building feels useful.
+- **Replay and sharing**: copy a world/run seed with its rules version and offer a clean
+  screenshot view. Sharing is explicit and local-first; no account or leaderboard is required.
+- **Run variety**: test an optional cache or side objective that offers supplies versus a
+  boon, or an early extraction choice. Adopt only if it improves the existing risk/reward loop
+  without extending runs beyond their target length.
+
 ## Order
 
-The recommended path is to work through the phases in number order. For a rough version of
-Descent sooner, Phase 18 strictly needs only Phase 11 (health and PlayerStats) and Phase 14
-(generation profiles). Everything in between makes Descent better but isn't required.
+Work through the phases in number order, with the companion polish in small slices:
+
+1. Phase 11: save reliability, safe recovery and consistent pause behavior; start goal clarity.
+2. Phase 12: readable, affordable supports and rewarding hazard encounters; add map pins.
+3. Phase 13: resolve portable light versus established safety through a playable prototype.
+4. Phases 14–17: distinct strata, understandable equipment choices, useful discoveries and a
+   reliable way home. Expand crafting navigation before the recipe list grows.
+5. Phase 18: validate a complete floor and the pressure loop before expanding boons in 19 and
+   objectives/mutators in 20. Meta progression and standardized dailies follow in 21.
+
+For an early Descent skeleton, Phase 18 needs Phase 11's session/health foundations and Phase
+14's generation profiles plus its own supply guarantees and simple gates. Its pressure
+prototype also needs Phase 12's falling blocks. Full darkness uses Phase 13, complete lift/camp
+behavior uses Phase 17, and starting boons arrive in Phase 19. Defer these explicitly when
+building the smaller skeleton; do not assume they already exist.
