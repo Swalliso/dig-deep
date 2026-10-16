@@ -343,7 +343,9 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 | Geode Depths | 230–350 m (deepstone) | Gold, gems | Huge glowing crystal caverns; floatstone lowers gravity in open caverns |
 | Magma Layer | 350 m–bedrock | Emberite (tier 5) | Heat builds away from cooled areas; lava pools that don't flow (they hurt and give light) |
 
-- Each stratum gets its own backdrop tint, and a banner when you enter it ("Fungal Hollows — 110 m").
+- Each stratum gets its own backdrop tint and parallax background set (layers like the
+  surface's `SURFACE_BACKGROUND`, built by `render/parallax.ts`), and a banner when you enter it
+  ("Fungal Hollows — 110 m").
   F3 shows the current stratum.
 - A tier 5 pickaxe (Emberite), so gold no longer mines everything.
 - **Progression checks**: every new ore can be reached and mined using the preceding tier.

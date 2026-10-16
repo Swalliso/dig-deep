@@ -11,25 +11,26 @@ Built with TypeScript, Vite and plain HTML5 Canvas: no game engine, no external 
 **Continue** your most recent world from the title screen, pick another one under **Worlds**,
 or start a **New world** (give it a name and a seed, or leave the seed blank for a random one).
 
-| Action                                        | Input                                                 |
-| --------------------------------------------- | ----------------------------------------------------- |
-| Move                                          | A / D or ← / →                                        |
-| Jump                                          | Space, W or ↑                                         |
-| Climb a ladder                                | W / S or ↑ / ↓ on it                                  |
-| Drop through a platform                       | S + Space                                             |
-| Dig                                           | Hold left mouse on a tile                             |
-| Place the held block                          | Left mouse on an empty spot (hold and sweep to build) |
-| Pick block onto hotbar                        | Middle mouse                                          |
-| Open chest, open or close door                | Right-click it                                        |
-| Select hotbar slot                            | 1–0 or mouse wheel                                    |
-| Drop selected stack                           | Q                                                     |
-| Quick stack to nearby chests                  | C                                                     |
-| Inventory / crafting (with the nearest chest) | E or Tab                                              |
-| Move stack (hotbar ↔ bag ↔ chest)             | Shift-click                                           |
-| Craft 10                                      | Shift-click a recipe                                  |
-| Map / minimap                                 | M / N                                                 |
-| Pause                                         | Esc                                                   |
-| Debug overlay (FPS)                           | F3                                                    |
+| Action                             | Input                     |
+| ---------------------------------- | ------------------------- |
+| Move                               | A / D or ← / →            |
+| Jump                               | Space, W or ↑             |
+| Dig                                | Hold left mouse on a tile |
+| Place the held block               | Left mouse on empty space |
+| Build a row                        | Hold left mouse and sweep |
+| Pick block onto hotbar             | Middle mouse              |
+| Open chest, open or close door     | Right-click it            |
+| Climb a ladder                     | W / S or ↑ / ↓ on it      |
+| Drop through a platform            | S + Space                 |
+| Map / minimap                      | M / N                     |
+| Select hotbar slot                 | 1–0 or mouse wheel        |
+| Drop selected stack                | Q                         |
+| Quick stack to nearby chests       | C                         |
+| Inventory, crafting, nearest chest | E or Tab                  |
+| Move stack (hotbar ↔ bag ↔ chest)  | Shift-click               |
+| Craft 10                           | Shift-click a recipe      |
+| Pause                              | Esc                       |
+| Debug overlay (FPS)                | F3                        |
 
 - **Left mouse uses what you're holding.** Holding a block and pointing at an empty spot places
   it (hold and sweep to build a row); pointing at a tile digs it with your best pickaxe,
