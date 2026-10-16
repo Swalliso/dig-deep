@@ -1,6 +1,9 @@
 import { CHUNK_SIZE } from '../config';
 import { Tile, type TileId } from './tiles';
 
+/** Hears about every tile change, after the new tile is in place. */
+export type TileListener = (tx: number, ty: number) => void;
+
 /**
  * Fixed-size tile grid stored as CHUNK_SIZE x CHUNK_SIZE chunks of Uint8Array tile ids.
  * Each chunk has a version number that bumps on every change, so caches (rendering now,
@@ -18,8 +21,8 @@ export class World {
   readonly surface: Int16Array;
   spawnTx = 0;
   spawnTy = 0;
-  /** Called after any tile changes. Lighting listens here. */
-  onTileChange: ((tx: number, ty: number) => void) | null = null;
+  /** Called after any tile changes. Lighting and tile entities listen here (see onTileChange). */
+  private readonly tileListeners: TileListener[] = [];
   /**
    * Chunks changed since the world was generated. Saves store only these; everything else
    * regenerates from the seed. Generation clears it when it finishes.
@@ -40,6 +43,11 @@ export class World {
     }
     this.chunkVersions = new Uint32Array(this.chunksX * this.chunksY);
     this.surface = new Int16Array(width);
+  }
+
+  /** Call `listener` after every tile change from now on. */
+  onTileChange(listener: TileListener): void {
+    this.tileListeners.push(listener);
   }
 
   inBounds(tx: number, ty: number): boolean {
@@ -68,7 +76,7 @@ export class World {
     this.chunkVersions[ci]++;
     this.changedChunks.add(ci);
     this.revision++;
-    this.onTileChange?.(tx, ty);
+    for (const listener of this.tileListeners) listener(tx, ty);
   }
 
   /** FNV-1a hash of every tile. Same seed must give the same hash. */

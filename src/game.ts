@@ -1,6 +1,7 @@
 import * as sfx from './audio/sfx';
 import {
   DIG_TICK_INTERVAL,
+  DROP_THROW_SPEED,
   FOOTSTEP_DISTANCE,
   HOTBAR_SIZE,
   LAND_FULL_SPEED,
@@ -29,15 +30,17 @@ import { Camera } from './render/camera';
 import { breakFlashAlpha, ScreenShake, type BreakFlash } from './render/juice';
 import { Particles } from './render/particles';
 import type { Renderer } from './render/renderer';
-import { canPlace, tryPlace } from './systems/building';
+import { canPlace, itemForTile, tilesOnLine, tryPlace } from './systems/building';
+import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
 import { nearbyStations } from './systems/crafting';
 import { Inventory } from './systems/inventory';
 import { itemDef, type ItemId } from './systems/items';
-import { checkMine, Mining, type BrokenTile } from './systems/mining';
+import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import type { Settings } from './systems/settings';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
-import { InventoryPanel } from './ui/menus';
+import { InventoryPanel, type PanelState } from './ui/menus';
 import { LightMap } from './world/lighting';
+import { TileEntities, type TileEntity } from './world/tileEntities';
 import { Tile, tileDef, type TileId } from './world/tiles';
 import { fellTreeAbove } from './world/trees';
 import type { World } from './world/world';
@@ -50,6 +53,8 @@ export interface GameStart {
   inventory?: Inventory;
   /** Items lying on the ground; defaults to none. */
   drops?: ItemDrop[];
+  /** Chest contents and other per-tile data; defaults to none. Must belong to this world. */
+  tileEntities?: TileEntities;
 }
 
 /** Numbers from the main loop shown on the F3 overlay. */
@@ -69,6 +74,7 @@ export class Game {
   readonly world: World;
   readonly player: Player;
   readonly inventory: Inventory;
+  readonly tileEntities: TileEntities;
   readonly inventoryPanel = new InventoryPanel();
   readonly toasts = new Toasts();
   private readonly renderer: Renderer;
@@ -92,6 +98,16 @@ export class Game {
   private digTickIn = 0;
   /** player.walkDistance at the last footstep. */
   private lastStepAt = 0;
+  /** The chest shown next to the inventory (opened with right-click), if any. */
+  private openChest: { tx: number; ty: number } | null = null;
+  /**
+   * Drag-building: true while a right-button hold that started on the world (not on a chest
+   * or the panel) is going on. Each step places along the cursor's path since the last step.
+   */
+  private building = false;
+  private lastBuildTile: [number, number] = [0, 0];
+  /** Tiles placed during this hold (keys ty * width + tx), so a tile mined meanwhile isn't refilled. */
+  private readonly builtThisHold = new Set<number>();
 
   constructor(world: World, renderer: Renderer, settings: Settings, start: GameStart = {}) {
     this.world = world;
@@ -101,6 +117,9 @@ export class Game {
     if (start.player) this.player.placeAt(start.player.x, start.player.y);
     this.inventory = start.inventory ?? Inventory.withStartingItems();
     this.dropList = start.drops ?? [];
+    this.tileEntities = start.tileEntities ?? new TileEntities(world);
+    // Whatever removes a chest (mining, or a debug patch over it) spills its contents.
+    this.tileEntities.onRemove = (tx, ty, entity) => this.spill(tx, ty, entity);
     this.lightMap = new LightMap(world);
     this.worldHash = world.hash().toString(16).padStart(8, '0');
     this.camera.setView(renderer.viewWidth, renderer.viewHeight);
@@ -157,26 +176,44 @@ export class Game {
     });
     this.playerFeedback();
 
+    if (wasPressed('KeyQ')) this.throwSelected();
+    if (wasPressed('KeyC')) this.quickStackNearby();
+
     // E / Tab toggles the inventory + crafting panel (Esc also closes it). It pauses mining
     // and building; the mouse works the panel instead.
     if (anyPressed('KeyE', 'Tab') || (inventoryPanel.open && wasPressed('Escape'))) {
-      inventoryPanel.open = !inventoryPanel.open;
-      if (!inventoryPanel.open) {
-        const leftover = inventory.returnCursor();
-        if (leftover) this.dropAtPlayer(leftover.item, leftover.count);
+      if (inventoryPanel.open) this.closePanel();
+      else inventoryPanel.open = true;
+    }
+    // An open chest closes when it's broken or the player walks out of reach.
+    const open = this.openChest;
+    if (open && !(this.chestAt(open.tx, open.ty) && inReach(player, open.tx, open.ty))) this.openChest = null;
+
+    const [tx, ty] = this.cursorTile();
+    const { canvas, scale } = this.renderer;
+    // Right-clicking a chest in reach opens it (unless the click is on the panel). Otherwise a
+    // right press on the world starts drag-building, which lasts until the button is let go.
+    if (wasPressed('MouseRight') && !inventoryPanel.covers(canvas, scale, mouse.x, mouse.y, this.panelState())) {
+      if (this.chestAt(tx, ty) && inReach(player, tx, ty)) {
+        this.openChest = { tx, ty };
+        inventoryPanel.open = true;
+        sfx.uiClick();
+      } else if (!inventoryPanel.open) {
+        this.building = true;
+        this.lastBuildTile = [tx, ty];
+        this.builtThisHold.clear();
       }
     }
 
-    const [tx, ty] = this.cursorTile();
     if (inventoryPanel.open) {
+      this.building = false;
       mining.update(dt, world, player, tx, ty, false, 0); // lets any hint fade out
       this.digTickIn = 0;
       if (wasPressed('MouseLeft')) {
         const shift = anyDown('ShiftLeft', 'ShiftRight');
-        const stations = nearbyStations(world, player.centerX, player.centerY);
-        const click = inventoryPanel.click(this.renderer.canvas, this.renderer.scale, mouse.x, mouse.y, shift, inventory, stations);
-        if (click?.crafted) {
-          toasts.gained(click.crafted.output, click.crafted.count);
+        const click = inventoryPanel.click(canvas, scale, mouse.x, mouse.y, shift, this.panelState());
+        if (click?.kind === 'crafted') {
+          toasts.gained(click.recipe.output, click.recipe.count * click.batches);
           sfx.craft();
         } else if (click) {
           sfx.uiClick();
@@ -195,9 +232,14 @@ export class Game {
           if (extra) this.onTileBroken(extra);
         }
       }
-      if (wasPressed('MouseRight') && tryPlace(world, player, inventory, tx, ty)) {
-        sfx.place(tileDef(world.getTile(tx, ty)).material, this.pan(tx));
+      if (this.building) {
+        const [lx, ly] = this.lastBuildTile;
+        for (const [bx, by] of tilesOnLine(lx, ly, tx, ty)) this.buildAt(bx, by);
+        this.lastBuildTile = [tx, ty];
+        // Checked after placing, so a click shorter than one step still places once.
+        if (!isDown('MouseRight')) this.building = false;
       }
+      if (wasPressed('MouseMiddle')) this.pickBlock(tx, ty);
     }
 
     this.dropList = updateDrops(this.dropList, dt, world, player, inventory, (item, count) => {
@@ -234,8 +276,7 @@ export class Game {
     if (!this.inventoryPanel.open) this.drawCursor(camX, camY);
     if (this.mining.hint) renderer.drawHint(this.mining.hint, camX, camY);
     if (this.inventoryPanel.open) {
-      const stations = nearbyStations(this.world, player.centerX, player.centerY);
-      this.inventoryPanel.draw(renderer.ctx, renderer.itemAtlas, renderer.scale, mouse.x, mouse.y, inventory, stations);
+      this.inventoryPanel.draw(renderer.ctx, renderer.itemAtlas, renderer.scale, mouse.x, mouse.y, this.panelState());
     } else {
       drawHotbar(renderer.ctx, renderer.itemAtlas, inventory, renderer.scale);
     }
@@ -264,6 +305,80 @@ export class Game {
     // Cutting a trunk brings down the rest of the tree above the cut.
     if (tile === Tile.Wood) {
       for (const felled of fellTreeAbove(this.world, tx, ty)) this.shatter(felled.tx, felled.ty, felled.tile);
+    }
+  }
+
+  /** The chest at (tx, ty), or null if that tile isn't a chest. */
+  private chestAt(tx: number, ty: number): Chest | null {
+    return chestAt(this.world, this.tileEntities, tx, ty);
+  }
+
+  /**
+   * What the inventory panel shows: nearby stations and chests, and the open chest. The open
+   * chest always counts for crafting, even when it's in reach but past STATION_RANGE.
+   */
+  private panelState(): PanelState {
+    const { world, player } = this;
+    const chest = this.openChest ? this.chestAt(this.openChest.tx, this.openChest.ty) : null;
+    const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY);
+    if (chest && !chests.includes(chest)) chests.push(chest);
+    return { inventory: this.inventory, stations: nearbyStations(world, player.centerX, player.centerY), chests, chest };
+  }
+
+  private closePanel(): void {
+    this.inventoryPanel.open = false;
+    this.openChest = null;
+    const leftover = this.inventory.returnCursor();
+    if (leftover) this.dropAtPlayer(leftover.item, leftover.count);
+  }
+
+  /** Drag-building: place the selected block at (tx, ty) unless this hold already did. */
+  private buildAt(tx: number, ty: number): void {
+    const key = ty * this.world.width + tx;
+    if (this.builtThisHold.has(key) || !tryPlace(this.world, this.player, this.inventory, tx, ty)) return;
+    this.builtThisHold.add(key);
+    sfx.place(tileDef(this.world.getTile(tx, ty)).material, this.pan(tx));
+  }
+
+  /** Middle click: put the block under the cursor in hand, if it's carried. */
+  private pickBlock(tx: number, ty: number): void {
+    const tile = this.world.getTile(tx, ty);
+    const item = tile === Tile.Air || !this.world.inBounds(tx, ty) ? null : itemForTile(tile);
+    if (!item) return;
+    if (this.inventory.pick(item)) sfx.uiClick();
+    else this.toasts.show(`No ${itemDef(item).name} to pick`);
+  }
+
+  /** Q: throw the selected hotbar stack forward. */
+  private throwSelected(): void {
+    const stack = this.inventory.selectedStack;
+    if (!stack) return;
+    this.inventory.slots[this.inventory.selected] = null;
+    this.dropAtPlayer(stack.item, stack.count);
+    sfx.uiClick();
+  }
+
+  /** C: quick stack into every chest in station range. */
+  private quickStackNearby(): void {
+    const { world, player, toasts } = this;
+    const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY);
+    if (chests.length === 0) {
+      toasts.show('No chests nearby');
+      return;
+    }
+    const { moved, chests: used } = quickStackAll(this.inventory, chests);
+    if (moved === 0) {
+      toasts.show('Nothing to quick stack');
+      return;
+    }
+    toasts.show(`Quick stacked ${moved} item${moved > 1 ? 's' : ''} into ${used} chest${used > 1 ? 's' : ''}`);
+    sfx.uiClick();
+  }
+
+  /** A removed chest's contents, popped out of its tile. */
+  private spill(tx: number, ty: number, entity: TileEntity): void {
+    for (const stack of entity.slots) {
+      if (stack) this.dropList.push(new ItemDrop(stack.item, stack.count, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
     }
   }
 
@@ -315,9 +430,11 @@ export class Game {
     return ((tx + 0.5) * TILE_SIZE - this.player.centerX) / (REACH * TILE_SIZE);
   }
 
+  /** Throw items forward from the player. They stay there until the player walks away and comes back. */
   private dropAtPlayer(item: ItemId, count: number): void {
     const drop = new ItemDrop(item, count, this.player.centerX, this.player.centerY);
-    drop.vx = this.player.facing * 120;
+    drop.vx = this.player.facing * DROP_THROW_SPEED;
+    drop.waitForPlayerToLeave = true;
     this.dropList.push(drop);
   }
 
@@ -353,8 +470,9 @@ export class Game {
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)}`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
       'A/D or ←/→: move   Space, W or ↑: jump',
-      'Left mouse: mine   Right mouse: place   1–0 or wheel: select',
-      'E or Tab: inventory + crafting (shift-click: hotbar ↔ bag)',
+      'Left mouse: mine   Right mouse: place (hold to sweep), open chest   Middle: pick block',
+      '1–0 or wheel: select   Q: drop stack   C: quick stack to nearby chests',
+      'E or Tab: inventory + crafting (shift-click: move stack, craft 10)',
       'Esc: pause   F3: hide this overlay',
       ...debugLines,
     ]);

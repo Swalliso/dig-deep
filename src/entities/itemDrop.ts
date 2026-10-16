@@ -33,6 +33,11 @@ export class ItemDrop {
   vy: number;
   /** Flying toward the player (ignores tiles). */
   pulled = false;
+  /**
+   * Set on stacks the player throws away: they aren't picked up again until the player has
+   * been more than DROP_PULL_RANGE away from them once, so they stay where they were thrown.
+   */
+  waitForPlayerToLeave = false;
 
   constructor(item: ItemId, count: number, centerX: number, centerY: number) {
     this.item = item;
@@ -51,7 +56,8 @@ export class ItemDrop {
     const dx = player.centerX - (this.x + S / 2);
     const dy = player.centerY - (this.y + S / 2);
     const dist = Math.hypot(dx, dy);
-    const room = inventory.canAdd(this.item);
+    if (dist > DROP_PULL_RANGE * TILE_SIZE) this.waitForPlayerToLeave = false;
+    const room = !this.waitForPlayerToLeave && inventory.canAdd(this.item);
     if (!room) this.pulled = false;
     else if (dist < DROP_PULL_RANGE * TILE_SIZE) this.pulled = true;
 

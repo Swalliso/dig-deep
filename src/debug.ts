@@ -34,7 +34,7 @@ export function brushNeighbours(mode: InstantMine): [number, number][] {
   return offsets;
 }
 
-/** Enough of every material to craft every recipe, plus both stations ready to place. */
+/** Enough of every material to craft every recipe, plus both stations and some chests ready to place. */
 const KIT: ReadonlyArray<[ItemId, number]> = [
   ['wood', 99],
   ['stone', 200],
@@ -46,6 +46,7 @@ const KIT: ReadonlyArray<[ItemId, number]> = [
   ['torch', 50],
   ['workbench', 1],
   ['furnace', 1],
+  ['chest', 3],
 ];
 
 /** Add the materials kit. Anything that doesn't fit is skipped. */

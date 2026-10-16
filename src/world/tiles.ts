@@ -19,6 +19,7 @@ export const Tile = {
   Planks: 13,
   Workbench: 14,
   Furnace: 15,
+  Chest: 16,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -37,7 +38,7 @@ export interface TileDef {
   color: string;
   /** Item dropped when broken, or null. */
   drop: ItemId | null;
-  /** Blocks movement. Tree trunks, leaves, torches and crafting stations can be walked through. */
+  /** Blocks movement. Tree trunks, leaves, torches, crafting stations and chests can be walked through. */
   solid: boolean;
   /** Picks its break, place and footstep sounds. */
   material: TileMaterial;
@@ -60,6 +61,7 @@ const defs: TileDef[] = [
   { id: Tile.Planks, name: 'Planks', hardness: 0.4, minTier: 0, color: '#b88a52', drop: 'planks', solid: true, material: 'wood' },
   { id: Tile.Workbench, name: 'Workbench', hardness: 0.5, minTier: 0, color: '#a0703c', drop: 'workbench', solid: false, material: 'wood' },
   { id: Tile.Furnace, name: 'Furnace', hardness: 1.0, minTier: 0, color: '#6e6e74', drop: 'furnace', solid: false, material: 'stone' },
+  { id: Tile.Chest, name: 'Chest', hardness: 0.5, minTier: 0, color: '#9a6834', drop: 'chest', solid: false, material: 'wood' },
 ];
 
 /** Indexed by tile id. */

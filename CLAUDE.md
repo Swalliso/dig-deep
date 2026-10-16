@@ -38,9 +38,11 @@ file is the short version plus the working rules.
 
 These override the spec. Don't revert them.
 
-- **Mining damage persists per tile.** The spec resets break progress when the cursor moves
-  to another tile; instead each tile keeps its damage (and cracks) until it breaks, even if
-  the cursor moves away or the button is released.
+- **Mining damage persists per tile, for a while.** The spec resets break progress when the
+  cursor moves to another tile; instead each tile keeps its damage (and cracks) even if the
+  cursor moves away or the button is released. After `DAMAGE_REPAIR_DELAY` (3 s) without a
+  hit it heals back to full over `DAMAGE_REPAIR_TIME`, so a stray hit doesn't leave a tile
+  cracked forever.
 - **Trees fall.** Breaking a trunk tile also breaks the trunk above it and the tree's canopy
   (wood drops, leaves just burst); the stump below the cut stays.
 - **Player glow.** A faint ~3-tile glow around the player (`PLAYER_GLOW`) so you can see where
@@ -56,7 +58,8 @@ These override the spec. Don't revert them.
 ## Debug mode
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
-**G** gives a materials kit (enough for every recipe, plus a workbench and furnace), **F**
+**G** gives a materials kit (enough for every recipe, plus a workbench, a furnace and three
+chests), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
@@ -110,16 +113,21 @@ src/
     generate.ts      seeded terrain, caves, ores, trees, bedrock, spawn
     trees.ts         felling: cutting a trunk removes the tree above the cut
     lighting.ts      per-tile light: sky columns + torches, spread with falloff, incremental relight
+    tileEntities.ts  per-tile data (chest contents), keyed by ty * width + tx, removed when the
+                     tile changes
   entities/
     player.ts        movement, jump, tile collision, auto step-up
     itemDrop.ts      dropped items: fall, fly to the player within 2 tiles, picked up on touch
   systems/
     items.ts         item registry (name, max stack, tile it places, icon, pickaxe tier)
     inventory.ts     40 slots (10 hotbar + 30 bag), stacking, cursor stack, shift-move,
-                     best pickaxe, starting items
+                     trash slot, pick block, best pickaxe, starting items
     mining.ts        reach + tier checks, break progress, crack stage, hints
-    building.ts      placement rules (empty, in reach, supported, not on the player)
-    crafting.ts      recipe table, station range checks, craft()
+    building.ts      placement rules (empty, in reach, supported, not on the player), drag-build
+                     lines, middle-click pick
+    crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
+                     then nearby chests)
+    chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
     save.ts          save format (seed + changed chunks, RLE) + IndexedDB slot via idb-keyval
     settings.ts      player settings (volumes, screen shake, pixel scale, FPS counter) in
                      localStorage
@@ -132,8 +140,8 @@ src/
     juice.ts         screen shake, break flash strength, where and when ores glint
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
-    menus.ts         inventory + crafting panel (canvas); title, controls, settings, pause (HTML
-                     in #ui)
+    menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, controls,
+                     settings, pause (HTML in #ui)
 tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 
@@ -163,16 +171,17 @@ they drop.
 - **Rendering**: `imageSmoothingEnabled = false`, integer camera positions, 2x or 3x pixel scale
   chosen by window size. Only draw what's on screen; chunk images are cached and redrawn only
   when one of their tiles changes (tracked with per-chunk version numbers).
-- **Lighting**: `World.onTileChange` tells the `LightMap` about every tile change; it relights
-  only the box within light reach of the changes (plus any stretch of a column whose sky light
-  moved), once per update step. A test checks incremental relighting against a full recompute;
+- **Lighting**: `World.onTileChange` (a list of listeners; tile entities listen too) tells the
+  `LightMap` about every tile change; it relights only the box within light reach of the
+  changes (plus any stretch of a column whose sky light moved), once per update step. A test checks incremental relighting against a full recompute;
   keep it passing when touching lighting.
 - **Saves**: a save is the seed plus only the chunks changed since generation (the rest is
   regenerated), so **bump `SAVE_VERSION` in `systems/save.ts` whenever world generation, tile
   ids, chunk/world size or the save format change**; old saves then show "Save from an older
   version" instead of loading wrong. Items lying on the ground are saved (as an optional
-  `drops` field; adding optional fields like that needs no version bump). Particles and
-  half-mined tile damage aren't saved.
+  `drops` field; adding optional fields like that needs no version bump). Chest contents are
+  saved the same way, as an optional `tileEntities` field. Particles, half-mined tile damage
+  and the trash slot aren't saved.
 - **Performance**: hold 60 FPS. Never do per-frame work over the whole world. World
   generation must take under 2 s.
 - Keep modules small and focused. Prefer plain functions and data over class hierarchies.
