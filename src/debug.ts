@@ -1,5 +1,6 @@
 import type { Inventory } from './systems/inventory';
 import type { ItemId } from './systems/items';
+import { keyPairs, mainKey } from './ui/controls';
 import { ORE_TILES, Tile } from './world/tiles';
 import type { World } from './world/world';
 
@@ -9,21 +10,13 @@ import type { World } from './world/world';
 export const DEBUG = new URLSearchParams(location.search).has('debug');
 
 /**
- * G gives the materials kit, F toggles fly mode, I cycles instant mining, L toggles lighting,
- * O puts a patch of every ore at the cursor, K digs a ladder shaft down from the cursor, and V
- * reveals the whole map.
+ * Debug-only switches. failSaves makes every save fail (the pause menu toggles it), so a failed
+ * Save & Quit can be tried by hand. The cheat keys themselves are bound in input.ts's action
+ * table (the debug* actions).
  */
-export const DEBUG_KEYS = {
-  give: 'KeyG',
-  fly: 'KeyF',
-  instantMine: 'KeyI',
-  fullbright: 'KeyL',
-  ores: 'KeyO',
-  ladderShaft: 'KeyK',
-  revealMap: 'KeyV',
-} as const;
+export const debugState = { failSaves: false };
 
-/** Length of the ladder shaft K digs. */
+/** Length of the debug ladder shaft. */
 export const LADDER_SHAFT_LENGTH = 100;
 
 /**
@@ -100,8 +93,8 @@ export function placeLadderShaft(world: World, tx: number, ty: number): number {
 
 export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean): string[] {
   return [
-    `DEBUG  G: give materials   L: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
-    `       F: fly ${flying ? 'ON' : 'off'} (W/S or ↑/↓, Shift fast)   I: instant mine ${instantMine}`,
-    '       O: ore patch at the cursor   K: 100 m ladder shaft down from the cursor   V: reveal the map',
+    `DEBUG  ${mainKey('debugGive')}: give materials   ${mainKey('debugLighting')}: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
+    `       ${mainKey('debugFly')}: fly ${flying ? 'ON' : 'off'} (${keyPairs('climbUp', 'climbDown', undefined, '/')}, ${mainKey('modifier')} fast)   ${mainKey('debugInstantMine')}: instant mine ${instantMine}`,
+    `       ${mainKey('debugOres')}: ore patch at the cursor   ${mainKey('debugLadderShaft')}: ${LADDER_SHAFT_LENGTH} m ladder shaft down from the cursor   ${mainKey('debugRevealMap')}: reveal the map`,
   ];
 }

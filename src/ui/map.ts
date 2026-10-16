@@ -1,5 +1,6 @@
 import { MAP_FOG_COLOR, MAP_PAN_SPEED, MAP_ZOOM_START, MAP_ZOOMS, MINIMAP_HEIGHT, MINIMAP_WIDTH, TILE_SIZE } from '../config';
 import type { MapImage } from '../render/mapImage';
+import { mapHelpText } from './controls';
 import { shadowText } from './hud';
 
 // The full-screen map (M) and the corner minimap (N), both drawn from the MapImage. Sizes are
@@ -111,7 +112,7 @@ export class FullMap {
     ctx.textBaseline = 'top';
     shadowText(ctx, 'Map', width / 2, 8 * u, '#fff', u);
     ctx.font = `${5 * u}px monospace`;
-    shadowText(ctx, 'Drag or WASD to pan · Wheel to zoom · M or Esc to close', width / 2, 19 * u, '#b8b8c8', u);
+    shadowText(ctx, mapHelpText(), width / 2, 19 * u, '#b8b8c8', u);
     drawLegend(ctx, width / 2, height - 12 * u, u);
     ctx.restore();
   }

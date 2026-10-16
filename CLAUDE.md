@@ -71,10 +71,15 @@ toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
 (fullbright) for exploring, **O** puts a 4 x 2 patch of every ore at the cursor (for ore
 sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, and **V** reveals the
-whole map. Debug mode also opens the F3 overlay at start, and the title screen gets a button
-that marks the most recent world as an older version (to test the version-mismatch screen). All cheats live in
-`src/debug.ts`. When a new phase adds something slow to reach by playing, add
-a shortcut there and mention it in the phase's test steps.
+whole map. Debug mode also opens the F3 overlay at start, the title screen gets a button
+that marks the most recent world as an older version (to test the version-mismatch screen), and
+the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
+mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
+and `window.digDeep` exposes the running game for scripted browser checks (`screen`, `game`,
+`pausedBy`, `lastSavedAt`, `state`, `save()`, `backupText()`, `importBackup(text)`). All cheats
+live in `src/debug.ts`; their keys are the `debug*` actions in `src/input.ts`. When a new phase
+adds something slow to reach by playing, add a shortcut there and mention it in the phase's
+test steps.
 
 ## Stack
 
@@ -110,7 +115,8 @@ src/
                      HUD
   config.ts          every tunable number
   channel.ts         live vs dev-site build, storageKey() for every saved key
-  input.ts           keyboard + mouse state
+  input.ts           the action table (every key binding) and keyboard + mouse state, read
+                     through actionDown/actionPressed
   debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining)
   util/rng.ts        seeded PRNG (shared by world gen and textures)
   audio/
@@ -139,11 +145,13 @@ src/
     mining.ts        reach + tier checks, break progress, crack stage, hints
     building.ts      placement rules (empty, in reach, supported, not on the player), door
                      placement, drag-build lines, middle-click pick
+    clock.ts         the session clock (seconds of simulated play) and what can pause it
     crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
                      then nearby chests)
     chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
     save.ts          save format (seed + changed chunks, RLE) + world slots in IndexedDB via
                      idb-keyval (each save stored with a small world-list entry)
+    backup.ts        world backup files: export a save as JSON, check one before importing
     settings.ts      player settings (volumes, screen shake, pixel scale, FPS counter) in
                      localStorage
   render/
@@ -158,6 +166,8 @@ src/
     mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
+    controls.ts      every on-screen key hint (Controls screen, F3 help, map help, tooltips),
+                     built from the action table
     menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
                      new world, controls, settings, pause (HTML in #ui)
     map.ts           full-screen map (M: pan, zoom, markers) and the corner minimap (N)
@@ -186,6 +196,18 @@ they drop.
   Moving things (player, camera) keep `prevX`/`prevY`, and render interpolates between the
   last two update steps so motion stays smooth on high-refresh screens. Keyboard edge
   presses (`wasPressed`) are cleared after each update step.
+- **Pausing**: the inventory panel, the full map, the pause menu and losing window focus (or
+  hiding the tab) all pause the world. `Game.update` still handles input for the HUD, the
+  panel and the map every step, but only calls `simulate()` while neither is open, and main.ts
+  doesn't call `update` at all while the pause menu is up. Everything timed in the world
+  (physics, drops, mining damage and healing, ore glints, later hazards) takes its time from
+  the simulation step and `Game.clock` (`systems/clock.ts`), never from `Date.now()` or
+  `performance.now()`. Toasts and UI animations run on real time. Focus loss needs an explicit
+  resume, except in debug mode, where it doesn't pause.
+- **Input**: game code reads keys only through actions (`actionDown('jump')`,
+  `actionPressed('inventory')`) from the table in `input.ts`. Any text that names a key builds
+  it with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test
+  rebinds every action and checks no default key name is left in the hints.
 - **Physics**: player intent comes in as a plain `PlayerControls` object, so physics can be
   unit-tested without the DOM. Movement is split into steps of at most `MAX_MOVE_STEP` px,
   resolved X then Y, so nothing tunnels through tiles.
@@ -202,8 +224,15 @@ they drop.
   version" instead of loading wrong. Items lying on the ground are saved (as an optional
   `drops` field; adding optional fields like that needs no version bump). Chest contents are
   saved the same way, as an optional `tileEntities` field, and so are the map's explored tiles
-  (`explored`, per chunk, RLE). Particles, half-mined tile damage and the trash slot aren't
-  saved. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
+  (`explored`, per chunk, RLE), and so is the session clock (`playTime`). A stack held on the
+  mouse is saved as if put away; whatever doesn't fit is saved as a drop at the player, so
+  saving never loses it. Particles, half-mined tile damage and the trash slot aren't saved.
+  Autosave's change check compares `savedState()` (everything but tiles, map and play time)
+  plus the world's and map's revisions, so new saved state goes in `savedState()`; a test
+  enforces it. Save & quit only leaves once the write succeeds. Backups (`systems/backup.ts`)
+  are the save as JSON with Uint8Arrays as `{ "$bytes": base64 }`; imports must pass
+  `checkSave` and `findSaveProblem` before anything is written, and replacing a world needs a
+  second click. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
   `dig-deep:save` key so older saves carry over) plus a small `WorldMeta` entry written with it
   in one transaction, so the title screen lists worlds without loading every save. Keeping
   old worlds working is nice but never a constraint (testers know breaking changes may come):

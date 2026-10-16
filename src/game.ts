@@ -5,7 +5,6 @@ import {
   DROP_THROW_SPEED,
   EXPLORE_INTERVAL,
   FOOTSTEP_DISTANCE,
-  HOTBAR_SIZE,
   LAND_FULL_SPEED,
   LAND_MIN_SPEED,
   PICKAXES,
@@ -18,7 +17,6 @@ import {
 import {
   brushNeighbours,
   DEBUG,
-  DEBUG_KEYS,
   debugHelpLines,
   giveDebugKit,
   nextInstantMine,
@@ -28,7 +26,7 @@ import {
 } from './debug';
 import { ItemDrop, updateDrops } from './entities/itemDrop';
 import { Player } from './entities/player';
-import { consumeWheel, isDown, mouse, wasPressed } from './input';
+import { actionDown, actionPressed, consumeWheel, HOTBAR_ACTIONS, mouse } from './input';
 import { Camera } from './render/camera';
 import { breakFlashAlpha, ScreenShake, type BreakFlash } from './render/juice';
 import { MapImage } from './render/mapImage';
@@ -36,11 +34,13 @@ import { Particles } from './render/particles';
 import type { Renderer } from './render/renderer';
 import { canPlace, itemForTile, overlapsPlayer, primaryAction, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
+import { SessionClock, type PauseReason } from './systems/clock';
 import { nearbyStations } from './systems/crafting';
 import { Inventory } from './systems/inventory';
 import { itemDef, type ItemId } from './systems/items';
 import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { saveSettings, type Settings } from './systems/settings';
+import { mainKey, overlayHelpLines } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
 import { drawMinimap, FullMap, type MapInput, type MapMarkers } from './ui/map';
 import { InventoryPanel, type PanelState } from './ui/menus';
@@ -64,6 +64,8 @@ export interface GameStart {
   tileEntities?: TileEntities;
   /** Tiles seen so far (the map's fog of war); defaults to none. Must belong to this world. */
   explored?: ExploredMap;
+  /** Seconds already played in this world (where the session clock starts); defaults to 0. */
+  playTime?: number;
 }
 
 /** Numbers from the main loop shown on the F3 overlay. */
@@ -74,11 +76,7 @@ export interface FrameStats {
   lastSavedAt: number;
 }
 
-const anyDown = (...codes: string[]): boolean => codes.some(isDown);
-const anyPressed = (...codes: string[]): boolean => codes.some(wasPressed);
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-/** Player controls while the full map is open. */
-const STAND_STILL = { move: 0, jumpPressed: false, jumpHeld: false, climb: 0 };
 
 /** One play session in one world: everything that updates and draws while playing. */
 export class Game {
@@ -91,6 +89,11 @@ export class Game {
   readonly inventoryPanel = new InventoryPanel();
   readonly fullMap = new FullMap();
   readonly toasts = new Toasts();
+  /**
+   * Seconds of simulated play. It only moves while nothing pauses the world, and everything
+   * timed in the world runs on it: physics, drops, mining damage and healing, ore glints.
+   */
+  readonly clock: SessionClock;
   private readonly renderer: Renderer;
   /** Shared with the Settings screen, which changes it while the game is paused. */
   private readonly settings: Settings;
@@ -106,8 +109,6 @@ export class Game {
   private fullbright = false;
   /** F3 overlay: FPS, seed, position, controls. Starts open in debug mode. */
   private showOverlay = DEBUG;
-  /** Seconds of play (stops while paused); times the ore glints. */
-  private time = 0;
   /** Seconds until the next dig tick while the mine button is held on a tile. */
   private digTickIn = 0;
   /** player.walkDistance at the last footstep. */
@@ -134,6 +135,7 @@ export class Game {
     this.renderer = renderer;
     this.settings = settings;
     this.player = new Player(world.spawnTx, world.spawnTy);
+    this.clock = new SessionClock(start.playTime ?? 0);
     if (start.player) this.player.placeAt(start.player.x, start.player.y);
     this.inventory = start.inventory ?? Inventory.withStartingItems();
     this.dropList = start.drops ?? [];
@@ -147,7 +149,7 @@ export class Game {
     this.camera.setView(renderer.viewWidth, renderer.viewHeight);
     this.camera.centerOn(this.player.centerX, this.player.centerY);
     this.clampCamera();
-    this.toasts.show('Press F3 for controls and debug info', 6);
+    this.toasts.show(`Press ${mainKey('overlay')} for controls and debug info`, 6);
   }
 
   /** Items lying on the ground. */
@@ -160,101 +162,69 @@ export class Game {
     return this.inventoryPanel.open || this.fullMap.open;
   }
 
+  /** What pauses the world from inside the game (the inventory panel or the full map), or null. */
+  get pausedBy(): PauseReason | null {
+    if (this.inventoryPanel.open) return 'panel';
+    if (this.fullMap.open) return 'map';
+    return null;
+  }
+
   /** Call after the renderer has resized. */
   resize(): void {
     this.camera.setView(this.renderer.viewWidth, this.renderer.viewHeight);
     this.clampCamera();
   }
 
+  /**
+   * One fixed step. The HUD, the inventory panel and the map take input every step, but the
+   * world only moves (on the session clock) while neither the panel nor the map is open. The
+   * pause menu and focus loss stop update() being called at all (see main.ts).
+   */
   update(dt: number): void {
-    const { world, player, inventory, mining, toasts } = this;
-    this.time += dt;
+    // A break flash lasts one drawn frame, paused or not.
     this.flashes = this.flashes.filter((f) => !f.drawn);
+    this.handleKeys();
+    if (this.fullMap.open) {
+      const { canvas, scale } = this.renderer;
+      this.fullMap.update(dt, this.mapInput(), canvas.width, canvas.height, scale, this.world.width, this.world.height);
+    } else {
+      this.handlePanelInput();
+    }
+    if (this.pausedBy) {
+      this.leftAction = null;
+      this.digTickIn = 0;
+    } else {
+      this.simulate(dt);
+    }
+    this.lightMap.update(); // relight around any tiles that changed this step
+    this.toasts.update(dt);
+  }
 
-    if (wasPressed('F3')) this.showOverlay = !this.showOverlay;
+  /** Keys that work whether or not the world is paused: the overlay, map, hotbar, panel and cheats. */
+  private handleKeys(): void {
+    const { inventory, inventoryPanel } = this;
+    if (actionPressed('overlay')) this.showOverlay = !this.showOverlay;
     // M opens the full map (closing the inventory panel); M or Esc closes it. While it's open the
-    // player stands still, and the mouse wheel, dragging and the movement keys move the map.
-    if (wasPressed('KeyM') || (this.fullMap.open && wasPressed('Escape'))) this.toggleMap();
-    if (wasPressed('KeyN')) {
+    // mouse wheel, dragging and the movement keys move the map.
+    if (actionPressed('map') || (this.fullMap.open && actionPressed('pause'))) this.toggleMap();
+    if (actionPressed('minimap')) {
       this.settings.showMinimap = !this.settings.showMinimap;
       saveSettings(this.settings);
     }
-    const mapOpen = this.fullMap.open;
 
     // Hotbar selection: keys 1..9, 0 and the mouse wheel.
-    for (let i = 0; i < HOTBAR_SIZE; i++) {
-      if (wasPressed(`Digit${(i + 1) % 10}`)) inventory.selected = i;
-    }
-    if (!mapOpen) inventory.scrollSelection(consumeWheel());
-
-    if (DEBUG) {
-      if (wasPressed(DEBUG_KEYS.give)) {
-        giveDebugKit(inventory);
-        toasts.show('Debug: materials added');
-      }
-      if (wasPressed(DEBUG_KEYS.fly)) player.setFlying(!player.flying, world);
-      if (wasPressed(DEBUG_KEYS.instantMine)) this.instantMine = nextInstantMine(this.instantMine);
-      if (wasPressed(DEBUG_KEYS.fullbright)) this.fullbright = !this.fullbright;
-      if (wasPressed(DEBUG_KEYS.ores)) {
-        const [ox, oy] = this.cursorTile();
-        placeOreSampler(world, ox, oy);
-      }
-      if (wasPressed(DEBUG_KEYS.ladderShaft) && !mapOpen) {
-        const [lx, ly] = this.cursorTile();
-        toasts.show(`Debug: ${placeLadderShaft(world, lx, ly)} m ladder shaft`);
-      }
-      if (wasPressed(DEBUG_KEYS.revealMap)) {
-        this.explored.revealAll();
-        toasts.show('Debug: whole map revealed');
-      }
-    }
-
-    const right = anyDown('KeyD', 'ArrowRight');
-    const left = anyDown('KeyA', 'ArrowLeft');
-    player.update(dt, world, mapOpen ? STAND_STILL : {
-      move: (right ? 1 : 0) - (left ? 1 : 0),
-      jumpPressed: anyPressed('Space', 'KeyW', 'ArrowUp'),
-      jumpHeld: anyDown('Space', 'KeyW', 'ArrowUp'),
-      climb: (anyDown('KeyS', 'ArrowDown') ? 1 : 0) - (anyDown('KeyW', 'ArrowUp') ? 1 : 0),
-      fast: anyDown('ShiftLeft', 'ShiftRight'),
+    HOTBAR_ACTIONS.forEach((action, i) => {
+      if (actionPressed(action)) inventory.selected = i;
     });
-    this.playerFeedback();
+    if (!this.fullMap.open) inventory.scrollSelection(consumeWheel());
+    if (DEBUG) this.debugKeys();
+    if (this.fullMap.open) return;
 
-    if (mapOpen) {
-      this.fullMap.update(dt, this.mapInput(), this.renderer.canvas.width, this.renderer.canvas.height, this.renderer.scale, world.width, world.height);
-      mining.update(dt, world, player, 0, 0, false, 0); // lets any hint fade out
-      this.digTickIn = 0;
-      this.leftAction = null;
-    } else {
-      this.handlePlayInput(dt);
-    }
-
-    this.dropList = updateDrops(this.dropList, dt, world, player, inventory, (item, count) => {
-      toasts.gained(item, count);
-      sfx.pickup();
-    });
-    this.lightMap.update(); // relight around any tiles that changed this step
-    this.exploreIn -= dt;
-    if (this.exploreIn <= 0) {
-      this.exploreIn = EXPLORE_INTERVAL;
-      this.lookAround();
-    }
-    this.particles.update(dt, world);
-    this.shake.update(dt);
-    toasts.update(dt);
-    this.camera.follow(player.centerX, player.centerY, dt);
-    this.clampCamera();
-  }
-
-  /** Keys and mouse while playing (not while the full map is open): the panel, mining, building. */
-  private handlePlayInput(dt: number): void {
-    const { world, player, inventory, inventoryPanel, mining, toasts } = this;
-    if (wasPressed('KeyQ')) this.throwSelected();
-    if (wasPressed('KeyC')) this.quickStackNearby();
-
+    if (actionPressed('dropStack')) this.throwSelected();
+    if (actionPressed('quickStack')) this.quickStackNearby();
     // E / Tab toggles the inventory + crafting panel (Esc also closes it), opening the nearest
-    // chest in reach alongside it. It pauses mining and building; the mouse works the panel instead.
-    if (anyPressed('KeyE', 'Tab') || (inventoryPanel.open && wasPressed('Escape'))) {
+    // chest in reach alongside it. While it's open the world is paused and the mouse works the panel.
+    if (actionPressed('inventory') || (inventoryPanel.open && actionPressed('pause'))) {
       if (inventoryPanel.open) {
         this.closePanel();
       } else {
@@ -262,6 +232,36 @@ export class Game {
         this.openChest = this.nearestChestInReach();
       }
     }
+  }
+
+  private debugKeys(): void {
+    const { world, player, toasts } = this;
+    if (actionPressed('debugGive')) {
+      giveDebugKit(this.inventory);
+      toasts.show('Debug: materials added');
+    }
+    if (actionPressed('debugFly')) player.setFlying(!player.flying, world);
+    if (actionPressed('debugInstantMine')) this.instantMine = nextInstantMine(this.instantMine);
+    if (actionPressed('debugLighting')) this.fullbright = !this.fullbright;
+    if (actionPressed('debugRevealMap')) {
+      this.explored.revealAll();
+      toasts.show('Debug: whole map revealed');
+    }
+    // These two change tiles at the cursor, so they need the world in view.
+    if (this.pausedBy) return;
+    if (actionPressed('debugOres')) {
+      const [ox, oy] = this.cursorTile();
+      placeOreSampler(world, ox, oy);
+    }
+    if (actionPressed('debugLadderShaft')) {
+      const [lx, ly] = this.cursorTile();
+      toasts.show(`Debug: ${placeLadderShaft(world, lx, ly)} m ladder shaft`);
+    }
+  }
+
+  /** Right-click (chests and doors) and clicks in the open inventory panel. Not while the map is open. */
+  private handlePanelInput(): void {
+    const { player, inventoryPanel, toasts } = this;
     // An open chest closes when it's broken or the player walks out of reach.
     const open = this.openChest;
     if (open && !(this.chestAt(open.tx, open.ty) && inReach(player, open.tx, open.ty))) this.openChest = null;
@@ -270,7 +270,7 @@ export class Game {
     const { canvas, scale } = this.renderer;
     // Right-click interacts: a chest in reach opens (unless the click is on the panel), and a
     // door opens or closes. It never places or mines anything.
-    if (wasPressed('MouseRight') && !inventoryPanel.covers(canvas, scale, mouse.x, mouse.y, this.panelState())) {
+    if (actionPressed('interact') && !inventoryPanel.covers(canvas, scale, mouse.x, mouse.y, this.panelState())) {
       if (this.chestAt(tx, ty) && inReach(player, tx, ty)) {
         this.openChest = { tx, ty };
         inventoryPanel.open = true;
@@ -280,56 +280,84 @@ export class Game {
       }
     }
 
-    if (inventoryPanel.open) {
-      this.leftAction = null;
-      mining.update(dt, world, player, tx, ty, false, 0); // lets any hint fade out
-      this.digTickIn = 0;
-      if (wasPressed('MouseLeft')) {
-        const shift = anyDown('ShiftLeft', 'ShiftRight');
-        const click = inventoryPanel.click(canvas, scale, mouse.x, mouse.y, shift, this.panelState());
-        if (click?.kind === 'crafted') {
-          toasts.gained(click.recipe.output, click.recipe.count * click.batches);
-          sfx.craft();
-        } else if (click) {
-          sfx.uiClick();
-        }
+    if (inventoryPanel.open && actionPressed('click')) {
+      const click = inventoryPanel.click(canvas, scale, mouse.x, mouse.y, actionDown('modifier'), this.panelState());
+      if (click?.kind === 'crafted') {
+        toasts.gained(click.recipe.output, click.recipe.count * click.batches);
+        sfx.craft();
+      } else if (click) {
+        sfx.uiClick();
       }
-    } else {
-      // Left-click uses what's held: the press decides whether this hold digs or builds.
-      if (wasPressed('MouseLeft')) {
-        const stack = inventory.selectedStack;
-        this.leftAction = primaryAction(stack ? stack.item : null, world.getTile(tx, ty));
-        this.lastBuildTile = [tx, ty];
-        this.builtThisHold.clear();
-      }
-      const held = this.leftAction === 'dig' && isDown('MouseLeft');
-      const tier = inventory.bestPickaxeTier();
-      const instant = this.instantMine !== 'off';
-      const broken = mining.update(dt, world, player, tx, ty, held, tier, instant);
-      if (broken) this.onTileBroken(broken);
-      else this.digTick(dt, held && !instant && checkMine(world, player, tx, ty, tier) === 'ok', tx, ty);
-      if (held) {
-        for (const [dx, dy] of brushNeighbours(this.instantMine)) {
-          const extra = mining.breakInstantly(world, player, tx + dx, ty + dy, tier);
-          if (extra) this.onTileBroken(extra);
-        }
-      }
-      if (this.leftAction === 'build') {
-        const [lx, ly] = this.lastBuildTile;
-        for (const [bx, by] of tilesOnLine(lx, ly, tx, ty)) this.buildAt(bx, by);
-        this.lastBuildTile = [tx, ty];
-      }
-      // Checked after placing, so a click shorter than one step still places once.
-      if (!isDown('MouseLeft')) this.leftAction = null;
-      if (wasPressed('MouseMiddle')) this.pickBlock(tx, ty);
     }
+  }
 
+  /** One step of the world: the player, mining and building, drops, and everything else timed. */
+  private simulate(dt: number): void {
+    const { world, player } = this;
+    this.clock.advance(dt);
+    player.update(dt, world, {
+      move: (actionDown('moveRight') ? 1 : 0) - (actionDown('moveLeft') ? 1 : 0),
+      jumpPressed: actionPressed('jump'),
+      jumpHeld: actionDown('jump'),
+      climb: (actionDown('climbDown') ? 1 : 0) - (actionDown('climbUp') ? 1 : 0),
+      fast: actionDown('modifier'),
+    });
+    this.playerFeedback();
+    this.useHeldItem(dt);
+
+    this.dropList = updateDrops(this.dropList, dt, world, player, this.inventory, (item, count) => {
+      this.toasts.gained(item, count);
+      sfx.pickup();
+    });
+    this.exploreIn -= dt;
+    if (this.exploreIn <= 0) {
+      this.exploreIn = EXPLORE_INTERVAL;
+      this.lookAround();
+    }
+    this.particles.update(dt, world);
+    this.shake.update(dt);
+    this.camera.follow(player.centerX, player.centerY, dt);
+    this.clampCamera();
+  }
+
+  /** Left mouse uses what's held (the press decides whether the hold digs or builds); middle mouse picks a block. */
+  private useHeldItem(dt: number): void {
+    const { world, player, inventory, mining } = this;
+    const [tx, ty] = this.cursorTile();
+    if (actionPressed('use')) {
+      const stack = inventory.selectedStack;
+      this.leftAction = primaryAction(stack ? stack.item : null, world.getTile(tx, ty));
+      this.lastBuildTile = [tx, ty];
+      this.builtThisHold.clear();
+    }
+    const held = this.leftAction === 'dig' && actionDown('use');
+    const tier = inventory.bestPickaxeTier();
+    const instant = this.instantMine !== 'off';
+    const broken = mining.update(dt, world, player, tx, ty, held, tier, instant);
+    if (broken) this.onTileBroken(broken);
+    else this.digTick(dt, held && !instant && checkMine(world, player, tx, ty, tier) === 'ok', tx, ty);
+    if (held) {
+      for (const [dx, dy] of brushNeighbours(this.instantMine)) {
+        const extra = mining.breakInstantly(world, player, tx + dx, ty + dy, tier);
+        if (extra) this.onTileBroken(extra);
+      }
+    }
+    if (this.leftAction === 'build') {
+      const [lx, ly] = this.lastBuildTile;
+      for (const [bx, by] of tilesOnLine(lx, ly, tx, ty)) this.buildAt(bx, by);
+      this.lastBuildTile = [tx, ty];
+    }
+    // Checked after placing, so a click shorter than one step still places once.
+    if (!actionDown('use')) this.leftAction = null;
+    if (actionPressed('pickBlock')) this.pickBlock(tx, ty);
   }
 
   /** alpha (0..1) is how far we are between the last update step and the next one. */
-  render(alpha: number, stats: FrameStats): void {
+  render(stepAlpha: number, stats: FrameStats): void {
     const { renderer, player, camera, inventory } = this;
-    const shake = this.settings.screenShake ? this.shake : { x: 0, y: 0 };
+    // A paused world shows its latest step, standing still (no interpolation, no shake).
+    const alpha = this.pausedBy ? 1 : stepAlpha;
+    const shake = this.settings.screenShake && !this.pausedBy ? this.shake : { x: 0, y: 0 };
     const camX = Math.round(lerp(camera.prevX, camera.x, alpha)) + shake.x;
     const camY = Math.round(lerp(camera.prevY, camera.y, alpha)) + shake.y;
     const px = lerp(player.prevX, player.x, alpha);
@@ -337,13 +365,13 @@ export class Game {
     const glowX = px + PLAYER_WIDTH / 2;
     const glowY = py + PLAYER_HEIGHT / 2;
 
-    renderer.drawWorld(this.world, camX, camY, this.time);
+    renderer.drawWorld(this.world, camX, camY, this.clock.time);
     for (const crack of this.mining.cracks(this.world)) renderer.drawCracks(crack.tx, crack.ty, crack.stage, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
     renderer.drawPlayer(player, px, py, camX, camY);
     renderer.drawParticles(this.particles, camX, camY);
     if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
-    renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.time, camX, camY, glowX, glowY);
+    renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.clock.time, camX, camY, glowX, glowY);
     renderer.drawFlashes(this.flashes, camX, camY);
     if (!this.inventoryPanel.open) this.drawCursor(camX, camY);
     if (this.mining.hint) renderer.drawHint(this.mining.hint, camX, camY);
@@ -379,9 +407,9 @@ export class Game {
       wheel: consumeWheel(),
       mouseX: mouse.x,
       mouseY: mouse.y,
-      dragging: isDown('MouseLeft'),
-      panX: (anyDown('KeyD', 'ArrowRight') ? 1 : 0) - (anyDown('KeyA', 'ArrowLeft') ? 1 : 0),
-      panY: (anyDown('KeyS', 'ArrowDown') ? 1 : 0) - (anyDown('KeyW', 'ArrowUp') ? 1 : 0),
+      dragging: actionDown('click'),
+      panX: (actionDown('moveRight') ? 1 : 0) - (actionDown('moveLeft') ? 1 : 0),
+      panY: (actionDown('climbDown') ? 1 : 0) - (actionDown('climbUp') ? 1 : 0),
     };
   }
 
@@ -635,14 +663,10 @@ export class Game {
       `FPS ${stats.fps}   frame ${stats.frameMs.toFixed(1)} ms   saved ${saved}`,
       `Audio ${sfx.audioStatus()}   master ${percent(this.settings.masterVolume)}   SFX ${percent(this.settings.sfxVolume)}`,
       `Seed ${this.world.seed}   World hash ${this.worldHash}`,
+      `Play time ${this.clock.time.toFixed(1)} s   World ${this.pausedBy ? `paused (${this.pausedBy})` : 'running'}`,
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)}`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
-      'A/D or ←/→: move   Space, W or ↑: jump   W/S on a ladder: climb   S + Space: drop through',
-      'Left mouse: dig, or place the held block on an empty spot (hold to sweep)',
-      'Right mouse: open chest or door   Middle mouse: pick block',
-      '1–0 or wheel: select   Q: drop stack   C: quick stack to nearby chests',
-      'E or Tab: inventory + crafting, with the nearest chest (shift-click: move stack, craft 10)',
-      'M: map   N: minimap   Esc: pause   F3: hide this overlay',
+      ...overlayHelpLines(),
       ...debugLines,
     ]);
   }

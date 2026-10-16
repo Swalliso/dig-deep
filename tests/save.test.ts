@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { storageKey } from '../src/channel';
-import { CHEST_SLOTS, CHUNK_SIZE, MAX_STACK, TILE_SIZE } from '../src/config';
+import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, MAX_STACK, TILE_SIZE } from '../src/config';
 import { ItemDrop } from '../src/entities/itemDrop';
 import { Player } from '../src/entities/player';
 import { chestAt } from '../src/systems/chests';
@@ -11,19 +11,23 @@ import {
   createSave,
   decodeRle,
   encodeRle,
+  findSaveProblem,
   FIRST_WORLD_ID,
   metaFromSave,
   metaKeyFor,
   nextWorldId,
   restoreDrops,
   restoreInventory,
+  restorePlayTime,
   restoreTileEntities,
   SAVE_KEY,
   SAVE_VERSION,
   saveKeyFor,
+  savedState,
   type SaveData,
 } from '../src/systems/save';
 import { createRng, randInt } from '../src/util/rng';
+import { ExploredMap } from '../src/world/explored';
 import { generateWorld } from '../src/world/generate';
 import { TileEntities } from '../src/world/tileEntities';
 import { Tile } from '../src/world/tiles';
@@ -284,5 +288,88 @@ describe('world slots', () => {
     const unnamed = { ...save, name: undefined };
     expect(metaFromSave('1', unnamed).name).toBe('World 1');
     expect(metaFromSave('3', undefined)).toEqual({ id: '3', name: 'World 3', seed: 0, savedAt: 0, version: -1 });
+  });
+});
+
+describe('save reliability', () => {
+  /** An inventory with every slot full of stone. */
+  function fullInventory(): Inventory {
+    const inventory = new Inventory();
+    for (let i = 0; i < inventory.slots.length; i++) inventory.add('stone', MAX_STACK);
+    expect(inventory.canAdd('stone')).toBe(false);
+    return inventory;
+  }
+
+  it('keeps a stack held on the mouse when the inventory is full, at the player', () => {
+    const world = generateWorld(1);
+    const player = new Player(world.spawnTx, world.spawnTy);
+    const inventory = fullInventory();
+    inventory.cursor = { item: 'torch', count: 9 };
+    const save = structuredClone(createSave(world, player, inventory, [new ItemDrop('coal', 2, 100, 100)])) as SaveData;
+    expect(restoreInventory(save).count('torch')).toBe(0);
+    const drops = restoreDrops(save, world);
+    expect(drops.map((d) => [d.item, d.count])).toEqual([
+      ['coal', 2],
+      ['torch', 9],
+    ]);
+    const torch = drops[1];
+    expect(Math.abs(torch.x + DROP_SIZE / 2 - player.centerX)).toBeLessThan(1);
+    expect(Math.abs(torch.y + DROP_SIZE / 2 - player.centerY)).toBeLessThan(1);
+    expect(inventory.cursor).toEqual({ item: 'torch', count: 9 }); // the live game is untouched
+  });
+
+  it('puts away what fits of a held stack and keeps the rest', () => {
+    const world = generateWorld(1);
+    const inventory = fullInventory();
+    inventory.slots[5] = { item: 'stone', count: MAX_STACK - 20 };
+    inventory.cursor = { item: 'stone', count: 50 };
+    const save = createSave(world, new Player(0, 0), inventory, []);
+    expect(restoreInventory(save).count('stone')).toBe(inventory.slots.length * MAX_STACK);
+    expect(save.drops).toEqual([expect.objectContaining({ item: 'stone', count: 30 })]);
+  });
+
+  it('notices every saved change: only tiles, the map, play time and save details are left out of savedState', () => {
+    const world = generateWorld(1);
+    const player = new Player(0, 0);
+    const inventory = Inventory.withStartingItems();
+    const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5 });
+    const state = savedState(player, inventory, [], new TileEntities(world));
+    // Autosave compares savedState (plus the world's and map's revisions), so new saved state
+    // must go through it to trigger the 2 s save.
+    const rest = Object.keys(save).filter((key) => !(key in state));
+    expect(rest.sort()).toEqual(['chunks', 'explored', 'name', 'playTime', 'savedAt', 'seed', 'version']);
+    for (const key of Object.keys(state)) expect(save[key as keyof SaveData]).toEqual(state[key as keyof typeof state]);
+  });
+
+  it('saves the session clock, and loads older saves at 0', () => {
+    const world = generateWorld(1);
+    const save = createSave(world, new Player(0, 0), new Inventory(), [], undefined, { playTime: 321.25 });
+    expect(restorePlayTime(structuredClone(save))).toBe(321.25);
+    expect(restorePlayTime({ ...save, playTime: undefined })).toBe(0);
+    expect(restorePlayTime({ ...save, playTime: Number.NaN })).toBe(0);
+    expect(restorePlayTime({ ...save, playTime: -4 })).toBe(0);
+  });
+});
+
+describe('deep save checks', () => {
+  const valid = () => {
+    const world = generateWorld(1);
+    world.setTile(world.spawnTx, world.spawnTy + 2, Tile.Air);
+    return createSave(world, new Player(0, 0), new Inventory(), []);
+  };
+
+  it('find nothing wrong with a real save', () => {
+    expect(findSaveProblem(valid())).toBeNull();
+  });
+
+  it('find damaged or impossible tile data', () => {
+    const save = valid();
+    expect(findSaveProblem({ ...save, chunks: [{ index: 3, data: Uint8Array.from([255, 1]) }] })).toMatch(/damaged/);
+    expect(findSaveProblem({ ...save, chunks: [{ index: -1, data: save.chunks[0].data }] })).toMatch(/outside/);
+    expect(findSaveProblem({ ...save, chunks: [save.chunks[0], save.chunks[0]] })).toMatch(/outside/);
+    const unknown = encodeRle(new Uint8Array(CHUNK_BYTES).fill(200));
+    expect(findSaveProblem({ ...save, chunks: [{ index: 0, data: unknown }] })).toMatch(/does not know/);
+    expect(findSaveProblem({ ...save, seed: Number.POSITIVE_INFINITY })).toMatch(/seed/);
+    expect(findSaveProblem({ ...save, player: { x: Number.NaN, y: 0 } })).toMatch(/player/);
   });
 });
