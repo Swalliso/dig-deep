@@ -35,11 +35,20 @@ export const JUMP_CUT = 0.4; // upward speed is multiplied by this when jump is 
 export const COYOTE_TIME = 0.1; // s after leaving the ground that a jump still works
 export const JUMP_BUFFER = 0.1; // s before landing that a jump press is remembered
 export const MAX_MOVE_STEP = 8; // px; movement is split into steps this small so nothing tunnels
+// Ladders: W/S on a ladder grabs it; Space hops off, S + Space lets go and drops.
+export const CLIMB_SPEED = 140; // px/s up or down (a 100 m shaft takes about 11 s)
+export const CLIMB_SIDE_SPEED = 60; // px/s sideways while on a ladder; stepping off its column lets go
+export const LADDER_REGRAB_DELAY = 0.25; // s after letting go before the ladder can be grabbed again
+export const CLIMB_STEP_DISTANCE = 16; // px climbed per rung sound
 
 // --- Mining and building ---
 export const REACH = 5; // tiles, measured from the player's centre to the tile's centre
 export const CRACK_STAGES = 4;
 export const HINT_DURATION = 1.5; // s a "Need better pickaxe" style hint stays up
+// A part-mined tile keeps its damage (and cracks) for a while after you stop hitting it, so you
+// can come back and finish it, then heals back to full.
+export const DAMAGE_REPAIR_DELAY = 3; // s without a hit before the damage starts to heal
+export const DAMAGE_REPAIR_TIME = 0.5; // s to heal from fully cracked (less damage heals sooner)
 /** Pickaxe tiers; the index is the tier. Break time = tile hardness / speed. */
 export const PICKAXES = [
   { name: 'Wooden', speed: 1.0 },
@@ -63,11 +72,18 @@ export const DROP_FRICTION = 500; // px/s^2 while resting on the ground
 export const DROP_PULL_RANGE = 2; // tiles; closer than this and the drop flies to the player
 export const DROP_PULL_ACCEL = 1600; // px/s^2
 export const DROP_PULL_MAX_SPEED = 420; // px/s
+export const DROP_THROW_SPEED = 120; // px/s forward when the player throws a stack (Q)
 
 // --- Inventory ---
 export const HOTBAR_SIZE = 10;
 export const BAG_SIZE = 30;
 export const MAX_STACK = 999;
+export const CHEST_SLOTS = 20;
+// Which inventory slots the chest buttons take from. The hotbar is your loadout, so Deposit all
+// leaves it alone; Quick stack moves only items the chest already holds, so it takes from the
+// hotbar too (that's where pickups land first).
+export const DEPOSIT_ALL_HOTBAR = false;
+export const QUICK_STACK_HOTBAR = true;
 
 // --- Lighting ---
 export const LIGHT_MAX = 16; // full brightness: open sky
@@ -83,6 +99,81 @@ export const LIGHT_FALLOFF_SOLID_DIAGONAL = 6;
 export const PLAYER_GLOW = 6; // light level at the player's centre (out of LIGHT_MAX = 16)
 export const PLAYER_GLOW_FALLOFF = 1.8; // levels lost per tile of distance (6 / 1.8 ≈ 3-tile radius)
 export const BACKDROP_BRIGHTNESS = 0.35; // underground backdrop = dirt texture at this brightness
+
+// --- Sound (synthesized in src/audio/sfx.ts) ---
+// Volume settings are 0..1 sliders; the gain applied is the square, which sounds more even.
+export const DEFAULT_MASTER_VOLUME = 0.8;
+export const DEFAULT_SFX_VOLUME = 0.8;
+export const SFX_MAX_VOICES = 32; // sounds playing at once; any more are skipped
+export const SFX_PITCH_JITTER = 0.05; // each sound's pitch varies by up to +/- this fraction
+export const SFX_PAN = 0.45; // stereo pan of a tile sound at the edge of reach (0 = none, 1 = hard left/right)
+/** Loudness of each sound before the volume settings. */
+export const SFX_VOLUMES = {
+  dig: 0.3,
+  break: 0.55,
+  pickup: 0.22,
+  place: 0.45,
+  craft: 0.4,
+  step: 0.22,
+  jump: 0.18,
+  land: 0.5,
+  ui: 0.3,
+  door: 0.4,
+} as const;
+export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
+export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile
+export const DIG_TICK_FREQ = 180; // Hz of a dig tick on a tile of hardness 0...
+export const DIG_TICK_FREQ_PER_HARDNESS = 320; // ...plus this per point of hardness (dirt ~280 Hz, deepstone ~980 Hz)
+export const PICKUP_FREQ = 523; // Hz (C5) of the first blip in a run of pickups
+export const PICKUP_RUN_WINDOW = 0.6; // s; a pickup this soon after the last one climbs a step of the scale
+export const PICKUP_RUN_STEPS = 10; // pentatonic steps a run can climb (10 = two octaves)
+export const PICKUP_SPACING = 0.05; // s; pickups in the same moment play one after another, as an arpeggio
+export const PICKUP_MAX_DELAY = 0.3; // s; pickups that would queue up longer than this are skipped
+export const FOOTSTEP_DISTANCE = 26; // px walked per footstep (~7 a second at full speed)
+export const LAND_MIN_SPEED = 250; // px/s; landing faster than this thuds and kicks up dust (a 2-tile drop or a jump)
+export const LAND_FULL_SPEED = 750; // px/s; the thud and the dust puff are at full size from here up
+
+// --- Juice ---
+// Screen shake on breaking a tile: a "trauma" of hardness x SHAKE_PER_HARDNESS (at most 1)
+// shakes the view up to SHAKE_MAX world px, fading out at SHAKE_DECAY per second. A new break
+// shakes at least as hard as its own trauma; breaks don't add up.
+export const SHAKE_MAX = 3; // px
+export const SHAKE_PER_HARDNESS = 0.35; // dirt barely moves, stone ~1 px, deepstone ~2.6 px
+export const SHAKE_DECAY = 4; // trauma lost per second
+// A broken tile flashes white for one frame, more opaque the harder it was.
+export const BREAK_FLASH_ALPHA = 0.3; // at hardness 0...
+export const BREAK_FLASH_ALPHA_PER_HARDNESS = 0.2; // ...plus this per point of hardness...
+export const BREAK_FLASH_ALPHA_MAX = 0.8; // ...up to this
+// Dust puff when the player lands (see LAND_MIN_SPEED).
+export const DUST_PARTICLES_MIN = 3;
+export const DUST_PARTICLES_MAX = 10;
+export const DUST_LIFETIME = 0.45; // s
+export const DUST_SPEED = 70; // px/s, sideways
+export const DUST_RISE = 25; // px/s, upward drift
+export const DUST_DRAG = 6; // 1/s; how fast the puff slows down
+// Ores glint now and then wherever they're lit: each ore tile glints once per SPARKLE_PERIOD
+// (at a random moment of its own), for SPARKLE_DURATION.
+export const SPARKLE_PERIOD = 3; // s
+export const SPARKLE_DURATION = 0.4; // s
+export const SPARKLE_ALPHA = 0.85; // brightest glint, on a fully lit ore
+export const SPARKLE_MIN_LIGHT = 3; // light level (out of LIGHT_MAX) below which ores don't glint
+
+// --- Map ---
+// The map shows only tiles you've seen: on screen while lit (light level above 0), or within
+// EXPLORE_RADIUS tiles of the player even in the dark.
+export const EXPLORE_RADIUS = 5; // tiles
+export const EXPLORE_INTERVAL = 0.1; // s between looks around (cheap: just the tiles on screen)
+export const MAP_SKY_COLOR = '#8cc6f2'; // air above the surface on the map
+export const MAP_CAVE_COLOR = '#2a2018'; // dug-out or cave air below the surface
+export const MAP_FOG_COLOR = '#0c0c12'; // tiles not seen yet
+// Full map (M): zoom levels in UI units per tile (a UI unit is one world pixel on screen, so
+// 2 or 3 screen pixels); it opens at MAP_ZOOM_START.
+export const MAP_ZOOMS = [0.25, 0.5, 1, 2, 4, 8] as const;
+export const MAP_ZOOM_START = 3; // index into MAP_ZOOMS
+export const MAP_PAN_SPEED = 300; // UI units per second when panning with WASD or the arrow keys
+// Minimap (corner, N toggles): its size in UI units, at one tile per UI unit.
+export const MINIMAP_WIDTH = 100;
+export const MINIMAP_HEIGHT = 64;
 
 // --- HUD ---
 export const TOAST_DURATION = 1.5; // s
@@ -101,6 +192,8 @@ export const DEBUG_FLY_FAST = 4; // speed multiplier while Shift is held
 
 // --- Crafting ---
 export const STATION_RANGE = 4; // tiles; a workbench/furnace this close (centre to centre) counts
+// Chests within STATION_RANGE also lend their items to crafting, and take quick stacks (C).
+export const CRAFT_MANY = 10; // batches made by shift-clicking a recipe
 
 // --- World generation ---
 // Average surface row. Depth (in m) = ty - SURFACE_LEVEL, so the depth meter reads 0 here.

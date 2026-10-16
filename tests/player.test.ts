@@ -193,3 +193,49 @@ describe('debug fly mode', () => {
     expect(player.y + PLAYER_HEIGHT).toBe(FLOOR_Y);
   });
 });
+
+describe('player events (for sound and dust)', () => {
+  it('flags the step a jump starts and the step it lands, with the fall speed', () => {
+    const world = flatWorld();
+    const player = standingPlayer(world, 5);
+    expect(player.jumped).toBe(false);
+    player.update(DT, world, { move: 0, jumpPressed: true, jumpHeld: true });
+    expect(player.jumped).toBe(true);
+    player.update(DT, world, { move: 0, jumpPressed: false, jumpHeld: true });
+    expect(player.jumped).toBe(false);
+    let landed = 0;
+    for (let i = 0; i < 120 && !landed; i++) {
+      player.update(DT, world, { move: 0, jumpPressed: false, jumpHeld: true });
+      landed = player.landingSpeed;
+    }
+    // Coming down from a full jump is about as fast as going up.
+    expect(landed).toBeGreaterThan(400);
+    run(player, world, 1);
+    expect(player.landingSpeed).toBe(0);
+  });
+
+  it('never reports a landing while walking on flat ground', () => {
+    const world = flatWorld();
+    const player = standingPlayer(world, 5);
+    for (let i = 0; i < 60; i++) {
+      player.update(DT, world, { move: 1, jumpPressed: false, jumpHeld: false });
+      expect(player.landingSpeed).toBe(0);
+    }
+  });
+
+  it('knows the tile under its feet', () => {
+    const world = flatWorld();
+    world.setTile(5, FLOOR, Tile.Planks);
+    const player = standingPlayer(world, 5);
+    expect(player.groundTile(world)).toBe(Tile.Planks);
+    // A hole under the player: nothing under its feet...
+    world.setTile(5, FLOOR, Tile.Air);
+    expect(player.groundTile(world)).toBe(Tile.Air);
+    // ...until one foot is over the stone next to it.
+    player.placeAt(5 * TILE_SIZE - PLAYER_WIDTH / 2, player.y);
+    expect(player.groundTile(world)).toBe(Tile.Stone);
+    // In the air: nothing.
+    player.placeAt(5 * TILE_SIZE, 10 * TILE_SIZE);
+    expect(player.groundTile(world)).toBe(Tile.Air);
+  });
+});

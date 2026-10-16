@@ -1,3 +1,4 @@
+import { initAudio, setVolumes } from './audio/sfx';
 import {
   AUTOSAVE_INTERVAL,
   GEN_FRAME_BUDGET_MS,
@@ -14,15 +15,23 @@ import { Renderer } from './render/renderer';
 import {
   applySavedChunks,
   createSave,
-  markSaveOutdated,
-  readSave,
+  deleteWorld,
+  listWorlds,
+  markWorldOutdated,
+  nextWorldId,
+  readWorld,
   restoreDrops,
+  restoreExplored,
   restoreInventory,
-  writeSave,
+  restoreTileEntities,
+  savedTileEntities,
+  SAVE_VERSION,
+  writeWorld,
   type SaveData,
-  type SaveStatus,
+  type WorldMeta,
 } from './systems/save';
-import { Menus } from './ui/menus';
+import { loadSettings, saveSettings } from './systems/settings';
+import { Menus, type SettingsHooks } from './ui/menus';
 import { generateWorldSteps, parseSeed, type GenProgress } from './world/generate';
 import { World } from './world/world';
 
@@ -30,20 +39,41 @@ import { World } from './world/world';
 
 const STEP = 1 / UPDATE_HZ;
 
+/** Which world slot a game saves to, and the world's name. */
+interface Slot {
+  id: string;
+  name: string;
+}
+
 type Screen =
   | { kind: 'title' }
-  | { kind: 'loading'; world: World; steps: Generator<GenProgress, void, void>; status: GenProgress; save: SaveData | null }
+  | {
+      kind: 'loading';
+      world: World;
+      steps: Generator<GenProgress, void, void>;
+      status: GenProgress;
+      save: SaveData | null;
+      slot: Slot;
+    }
   | { kind: 'playing'; game: Game }
   | { kind: 'paused'; game: Game };
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
+const settings = loadSettings();
 const renderer = new Renderer(canvas);
+renderer.setPixelScale(settings.pixelScale);
 initInput(canvas);
+initAudio();
+setVolumes(settings.masterVolume, settings.sfxVolume);
 const menus = new Menus(document.getElementById('ui') as HTMLElement);
+/** The Settings screen edits `settings` in place; every change is applied and saved at once. */
+const settingsHooks: SettingsHooks = { settings, onChange: applySettings };
 /** `?seed=` pre-fills the title screen's seed field. */
 const urlSeed = new URLSearchParams(location.search).get('seed') ?? '';
 
 let screen: Screen = { kind: 'title' };
+/** The world being played (or last played). */
+let activeSlot: Slot | null = null;
 let lastSavedAt = 0;
 let sinceAutosave = 0;
 let sinceChangeCheck = 0;
@@ -71,9 +101,19 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveIfInGame();
 });
 
+function applySettings(): void {
+  saveSettings(settings);
+  setVolumes(settings.masterVolume, settings.sfxVolume);
+  renderer.setPixelScale(settings.pixelScale);
+  if (screen.kind === 'playing' || screen.kind === 'paused') screen.game.resize();
+}
+
 async function saveGame(game: Game): Promise<void> {
+  const slot = activeSlot;
+  if (!slot) return;
   const snap = snapshot(game);
-  await writeSave(createSave(game.world, game.player, game.inventory, game.drops));
+  const save = createSave(game.world, game.player, game.inventory, game.drops, game.tileEntities, { explored: game.explored, name: slot.name });
+  await writeWorld(slot.id, save);
   lastSavedAt = Date.now();
   savedSnapshot = snap;
 }
@@ -88,48 +128,81 @@ function autosave(game: Game): void {
 function snapshot(game: Game): string {
   const { world, player, inventory, drops } = game;
   const ground = drops.map((d) => `${d.item}:${d.count}@${Math.round(d.x)},${Math.round(d.y)}`).join(';');
-  return `${world.revision}|${Math.round(player.x)},${Math.round(player.y)}|${inventory.selected}|${JSON.stringify(inventory.slots)}|${ground}`;
+  const chests = JSON.stringify(savedTileEntities(game.tileEntities));
+  return `${world.revision}|${game.explored.revision}|${Math.round(player.x)},${Math.round(player.y)}|${inventory.selected}|${JSON.stringify(inventory.slots)}|${ground}|${chests}`;
 }
 
-/** `override` replaces what's read from storage (used when a save turns out to be unreadable). */
-async function showTitle(override?: SaveStatus): Promise<void> {
+/** `note` is shown under the title (e.g. why a world couldn't be loaded). */
+async function showTitle(note?: string): Promise<void> {
   screen = { kind: 'title' };
-  const save = override ?? (await readSave());
+  const worlds = await listWorlds();
   if (screen.kind !== 'title') return;
   menus.showTitle({
-    save,
+    worlds,
     seedText: urlSeed,
-    onContinue: () => {
-      if (save.kind === 'ok') startLoading(save.save.seed, save.save);
+    note,
+    onPlay: (world) => void playWorld(world),
+    onCreate: (name, seedText) =>
+      void listWorlds().then((current) => startLoading(parseSeed(seedText), null, { id: nextWorldId(current.map((w) => w.id)), name })),
+    onDelete: async (world) => {
+      await deleteWorld(world.id).catch(() => {});
+      return listWorlds();
     },
-    onNewWorld: (text) => startLoading(parseSeed(text), null),
-    onMarkOutdated: DEBUG ? () => void markSaveOutdated().then(() => showTitle()) : undefined,
+    onMarkOutdated: DEBUG ? (world) => void markWorldOutdated(world.id).then(() => showTitle()) : undefined,
+    settings: settingsHooks,
   });
 }
 
-/** Generate the world from its seed (the loading screen shows progress), then apply the save if any. */
-function startLoading(seed: number, save: SaveData | null): void {
-  menus.hide();
-  const world = new World(WORLD_WIDTH, WORLD_HEIGHT, seed);
-  screen = { kind: 'loading', world, steps: generateWorldSteps(world), status: { label: 'Starting', progress: 0 }, save };
+/** Load a saved world, or go back to the title saying why it can't be. */
+async function playWorld(world: WorldMeta): Promise<void> {
+  const status = await readWorld(world.id);
+  if (screen.kind !== 'title') return;
+  if (status.kind === 'ok') {
+    startLoading(status.save.seed, status.save, { id: world.id, name: world.name });
+    return;
+  }
+  const why =
+    status.kind === 'outdated'
+      ? `was saved by ${status.version < SAVE_VERSION ? 'an older' : 'a newer'} version`
+      : status.kind === 'none'
+        ? 'has no save'
+        : "couldn't be read";
+  void showTitle(`"${world.name}" ${why}, so it can't be loaded.`);
 }
 
-function finishLoading(world: World, save: SaveData | null): void {
+/** Generate the world from its seed (the loading screen shows progress), then apply the save if any. */
+function startLoading(seed: number, save: SaveData | null, slot: Slot): void {
+  menus.hide();
+  const world = new World(WORLD_WIDTH, WORLD_HEIGHT, seed);
+  screen = { kind: 'loading', world, steps: generateWorldSteps(world), status: { label: 'Starting', progress: 0 }, save, slot };
+}
+
+function finishLoading(world: World, save: SaveData | null, slot: Slot): void {
   let game: Game;
   try {
     if (save) applySavedChunks(world, save);
     game = new Game(
       world,
       renderer,
-      save ? { player: save.player, inventory: restoreInventory(save), drops: restoreDrops(save, world) } : {},
+      settings,
+      save
+        ? {
+            player: save.player,
+            inventory: restoreInventory(save),
+            drops: restoreDrops(save, world),
+            tileEntities: restoreTileEntities(save, world),
+            explored: restoreExplored(save, world),
+          }
+        : {},
     );
   } catch {
-    void showTitle({ kind: 'broken' });
+    void showTitle(`"${slot.name}" couldn't be loaded.`);
     return;
   }
+  activeSlot = slot;
   screen = { kind: 'playing', game };
   accumulator = 0;
-  autosave(game); // a new world is saved straight away, so Continue works after a reload
+  autosave(game); // a new world is saved straight away, so it's in the list after a reload
 }
 
 function pause(game: Game): void {
@@ -139,6 +212,7 @@ function pause(game: Game): void {
     onResume: () => resume(game),
     onSave: () => saveGame(game),
     onQuit: () => void saveGame(game).finally(() => showTitle()),
+    settings: settingsHooks,
   });
 }
 
@@ -157,23 +231,28 @@ function frame(now: number): void {
   const workStart = performance.now();
   const dt = Math.min((now - lastTime) / 1000, MAX_FRAME_TIME);
   lastTime = now;
+  const wasPlaying = screen.kind === 'playing';
 
   switch (screen.kind) {
     case 'title':
-      break; // the HTML title screen covers everything
+      // The HTML title screen covers everything. Esc backs out of Controls or Settings.
+      if (wasPressed('Escape')) menus.back();
+      break;
     case 'loading':
       stepLoading(screen);
       break;
     case 'paused':
       screen.game.render(1, stats());
-      if (wasPressed('Escape')) resume(screen.game);
+      // Esc backs out of Settings, or resumes from the pause menu.
+      if (wasPressed('Escape') && !menus.back()) resume(screen.game);
       break;
     case 'playing':
       play(screen.game, dt);
       break;
   }
-  // Outside play, drop any input so it doesn't fire when play starts.
-  if (screen.kind !== 'playing') {
+  // Unless the whole frame was play, drop any input so it doesn't fire when play starts (the
+  // Esc that resumes from the pause menu would pause again on the next frame).
+  if (!wasPlaying || screen.kind !== 'playing') {
     endInputStep();
     consumeWheel();
   }
@@ -188,8 +267,8 @@ function frame(now: number): void {
 }
 
 function play(game: Game, dt: number): void {
-  // Esc pauses, unless it's closing the inventory panel (the game handles that).
-  if (wasPressed('Escape') && !game.inventoryPanel.open) {
+  // Esc pauses, unless it's closing the inventory panel or the map (the game handles those).
+  if (wasPressed('Escape') && !game.capturesEscape) {
     endInputStep();
     pause(game);
     game.render(1, stats());
@@ -220,7 +299,7 @@ function stepLoading(loading: Extract<Screen, { kind: 'loading' }>): void {
   while (performance.now() - start < GEN_FRAME_BUDGET_MS) {
     const next = loading.steps.next();
     if (next.done) {
-      finishLoading(loading.world, loading.save);
+      finishLoading(loading.world, loading.save, loading.slot);
       return;
     }
     loading.status = next.value;

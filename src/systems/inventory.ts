@@ -6,6 +6,9 @@ export interface ItemStack {
   count: number;
 }
 
+/** A row of item slots (an inventory, a chest). Empty slots are null. */
+export type Slots = (ItemStack | null)[];
+
 /** What a new world starts with. */
 export const STARTING_ITEMS: ReadonlyArray<[ItemId, number]> = [
   ['wooden_pickaxe', 1],
@@ -14,11 +17,16 @@ export const STARTING_ITEMS: ReadonlyArray<[ItemId, number]> = [
 
 /** Hotbar (slots 0..HOTBAR_SIZE-1) followed by the bag. Empty slots are null. */
 export class Inventory {
-  readonly slots: (ItemStack | null)[] = new Array(HOTBAR_SIZE + BAG_SIZE).fill(null);
+  readonly slots: Slots = new Array(HOTBAR_SIZE + BAG_SIZE).fill(null);
   /** Selected hotbar slot. */
   selected = 0;
   /** Stack picked up with the mouse in the inventory panel, if any. */
   cursor: ItemStack | null = null;
+  /**
+   * The trash slot: the last stack thrown away, which can be taken back until something else
+   * replaces it. Not saved.
+   */
+  trash: ItemStack | null = null;
 
   static withStartingItems(): Inventory {
     const inventory = new Inventory();
@@ -78,6 +86,26 @@ export class Inventory {
     return best;
   }
 
+  /**
+   * Middle-click pick: select a hotbar slot holding `item`. If it's only in the bag, move it to
+   * the hotbar (the selected slot if empty, else the first empty one, else swap it with the
+   * selected stack) and select it. Returns false if the item isn't carried.
+   */
+  pick(item: ItemId): boolean {
+    const inHotbar = this.slots.findIndex((s, i) => i < HOTBAR_SIZE && s?.item === item);
+    if (inHotbar >= 0) {
+      this.selected = inHotbar;
+      return true;
+    }
+    const inBag = this.slots.findIndex((s, i) => i >= HOTBAR_SIZE && s?.item === item);
+    if (inBag < 0) return false;
+    const empty = this.slots.findIndex((s, i) => i < HOTBAR_SIZE && !s);
+    const target = !this.slots[this.selected] || empty < 0 ? this.selected : empty;
+    [this.slots[target], this.slots[inBag]] = [this.slots[inBag], this.slots[target]];
+    this.selected = target;
+    return true;
+  }
+
   /** Move the hotbar selection by `steps`, wrapping around. */
   scrollSelection(steps: number): void {
     this.selected = (((this.selected + steps) % HOTBAR_SIZE) + HOTBAR_SIZE) % HOTBAR_SIZE;
@@ -88,22 +116,21 @@ export class Inventory {
    * stack, put it down, merge it into the same item, or swap it with what's there.
    */
   clickSlot(index: number): void {
-    const slot = this.slots[index];
-    const held = this.cursor;
-    if (!held) {
-      this.cursor = slot;
-      this.slots[index] = null;
-      return;
+    this.cursor = clickSlotIn(this.slots, index, this.cursor);
+  }
+
+  /**
+   * Click on the trash slot: a held stack goes in (destroying what was there); with nothing
+   * held, take back what's in it.
+   */
+  clickTrash(): void {
+    if (this.cursor) {
+      this.trash = this.cursor;
+      this.cursor = null;
+    } else {
+      this.cursor = this.trash;
+      this.trash = null;
     }
-    if (slot && slot.item === held.item && slot.count < itemDef(slot.item).maxStack) {
-      const moved = Math.min(held.count, itemDef(slot.item).maxStack - slot.count);
-      slot.count += moved;
-      held.count -= moved;
-      if (held.count === 0) this.cursor = null;
-      return;
-    }
-    this.slots[index] = held;
-    this.cursor = slot;
   }
 
   /** Shift-click: move a stack from the hotbar to the bag or back, merging where it can. */
@@ -128,21 +155,55 @@ export class Inventory {
   }
 
   private addToRange(item: ItemId, count: number, from: number, to: number): number {
-    const max = itemDef(item).maxStack;
-    for (let i = from; i < to && count > 0; i++) {
-      const stack = this.slots[i];
-      if (stack && stack.item === item && stack.count < max) {
-        const moved = Math.min(count, max - stack.count);
-        stack.count += moved;
-        count -= moved;
-      }
-    }
-    for (let i = from; i < to && count > 0; i++) {
-      if (this.slots[i]) continue;
-      const moved = Math.min(count, max);
-      this.slots[i] = { item, count: moved };
+    return addToSlots(this.slots, item, count, from, to);
+  }
+}
+
+/**
+ * Add items to slots [from, to): top up stacks of the same item first, then fill empty slots
+ * in order. Returns how many didn't fit.
+ */
+export function addToSlots(slots: Slots, item: ItemId, count: number, from = 0, to = slots.length): number {
+  const max = itemDef(item).maxStack;
+  for (let i = from; i < to && count > 0; i++) {
+    const stack = slots[i];
+    if (stack && stack.item === item && stack.count < max) {
+      const moved = Math.min(count, max - stack.count);
+      stack.count += moved;
       count -= moved;
     }
-    return count;
   }
+  for (let i = from; i < to && count > 0; i++) {
+    if (slots[i]) continue;
+    const moved = Math.min(count, max);
+    slots[i] = { item, count: moved };
+    count -= moved;
+  }
+  return count;
+}
+
+/**
+ * Click on slot `index` while the mouse holds `held` (or nothing): pick the stack up, put the
+ * held one down, merge it into the same item, or swap the two. Returns what the mouse holds after.
+ */
+export function clickSlotIn(slots: Slots, index: number, held: ItemStack | null): ItemStack | null {
+  const slot = slots[index];
+  if (!held) {
+    slots[index] = null;
+    return slot;
+  }
+  const max = slot ? itemDef(slot.item).maxStack : 0;
+  if (slot && slot.item === held.item && slot.count < max) {
+    const moved = Math.min(held.count, max - slot.count);
+    slot.count += moved;
+    held.count -= moved;
+    return held.count === 0 ? null : held;
+  }
+  slots[index] = held;
+  return slot;
+}
+
+/** Copy of a row of slots (stacks copied too), for undoing a change. */
+export function copySlots(slots: Slots): Slots {
+  return slots.map((s) => s && { ...s });
 }

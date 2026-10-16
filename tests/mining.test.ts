@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CRACK_STAGES, MAX_STACK, PICKAXES, REACH, TILE_SIZE } from '../src/config';
+import { CRACK_STAGES, DAMAGE_REPAIR_DELAY, DAMAGE_REPAIR_TIME, MAX_STACK, PICKAXES, REACH, TILE_SIZE } from '../src/config';
 import { ItemDrop, updateDrops } from '../src/entities/itemDrop';
 import { Player } from '../src/entities/player';
-import { canPlace, tryPlace } from '../src/systems/building';
+import { canPlace, itemForTile, tilesOnLine, tryPlace } from '../src/systems/building';
 import { Inventory } from '../src/systems/inventory';
 import { Mining } from '../src/systems/mining';
 import { Tile, tileDef, type TileId } from '../src/world/tiles';
@@ -71,6 +71,32 @@ describe('mining', () => {
     // Coming back only needs the remaining time.
     const remaining = mineFor(mining, world, player, PX + 1, FLOOR, 5);
     expect(Math.abs(remaining - (full - 10))).toBeLessThanOrEqual(1);
+  });
+
+  it(`heals damage left alone for ${DAMAGE_REPAIR_DELAY} s, cracks receding back to none`, () => {
+    const { world, player } = setup();
+    const mining = new Mining();
+    const idle = (seconds: number) => {
+      for (let i = 0; i < Math.round(seconds / DT); i++) mining.update(DT, world, player, PX + 1, FLOOR, false, 0);
+    };
+    for (let i = 0; i < 15; i++) mining.update(DT, world, player, PX + 1, FLOOR, true, 0);
+    const damaged = mining.progressAt(world, PX + 1, FLOOR);
+
+    idle(DAMAGE_REPAIR_DELAY - 0.1);
+    expect(mining.progressAt(world, PX + 1, FLOOR)).toBe(damaged); // still holding its damage
+    idle(0.2);
+    const healing = mining.progressAt(world, PX + 1, FLOOR);
+    expect(healing).toBeGreaterThan(0);
+    expect(healing).toBeLessThan(damaged);
+
+    // A hit while it heals carries on from what's left and restarts the wait.
+    mining.update(DT, world, player, PX + 1, FLOOR, true, 0);
+    idle(DAMAGE_REPAIR_DELAY - 0.1);
+    expect(mining.progressAt(world, PX + 1, FLOOR)).toBeGreaterThan(healing);
+
+    idle(0.1 + DAMAGE_REPAIR_TIME + 0.05);
+    expect(mining.progressAt(world, PX + 1, FLOOR)).toBe(0);
+    expect(mining.cracks(world)).toEqual([]);
   });
 
   it('forgets damage on a tile that has changed', () => {
@@ -166,6 +192,43 @@ describe('building', () => {
     expect(canPlace(world, player, PX + 1, FLOOR - 1, Tile.Dirt)).toBe(true);
   });
 
+  it('fills every tile a fast sweep crosses, each one touching the last', () => {
+    for (const [x0, y0, x1, y1] of [
+      [0, 0, 5, 0],
+      [3, 3, 3, -2],
+      [0, 0, 4, 3],
+      [2, 1, -3, -4],
+      [7, 7, 7, 7],
+    ]) {
+      const line = tilesOnLine(x0, y0, x1, y1);
+      expect(line[0]).toEqual([x0, y0]);
+      expect(line[line.length - 1]).toEqual([x1, y1]);
+      expect(line).toHaveLength(Math.abs(x1 - x0) + Math.abs(y1 - y0) + 1);
+      for (let i = 1; i < line.length; i++) {
+        expect(Math.abs(line[i][0] - line[i - 1][0]) + Math.abs(line[i][1] - line[i - 1][1])).toBe(1);
+      }
+    }
+  });
+
+  it('a sweep along the floor builds a row of blocks', () => {
+    const { world, player } = setup();
+    const inv = new Inventory();
+    inv.add('dirt', 10);
+    for (const [tx, ty] of tilesOnLine(PX + 1, FLOOR - 1, PX + 4, FLOOR - 1)) tryPlace(world, player, inv, tx, ty);
+    for (let tx = PX + 1; tx <= PX + 4; tx++) expect(world.getTile(tx, FLOOR - 1)).toBe(Tile.Dirt);
+    expect(inv.count('dirt')).toBe(6);
+  });
+
+  it('picks the item that places a tile (grass gives dirt; ores and trunks give nothing)', () => {
+    expect(itemForTile(Tile.Stone)).toBe('stone');
+    expect(itemForTile(Tile.Chest)).toBe('chest');
+    expect(itemForTile(Tile.Torch)).toBe('torch');
+    expect(itemForTile(Tile.Grass)).toBe('dirt');
+    expect(itemForTile(Tile.IronOre)).toBeNull();
+    expect(itemForTile(Tile.Wood)).toBeNull();
+    expect(itemForTile(Tile.Bedrock)).toBeNull();
+  });
+
   it('does nothing when the selected item cannot be placed', () => {
     const { world, player } = setup();
     const inv = new Inventory();
@@ -197,6 +260,24 @@ describe('item drops', () => {
     expect(drops).toHaveLength(1);
     expect(drops[0].y + 8).toBe(FLOOR * TILE_SIZE);
     expect(inv.count('stone')).toBe(0);
+  });
+
+  it('a stack thrown with Q stays put until the player has walked away and come back', () => {
+    const { world, player } = setup();
+    const inv = new Inventory();
+    const drop = dropAt(PX + 1, FLOOR - 1);
+    drop.waitForPlayerToLeave = true;
+    let drops = [drop];
+    for (let i = 0; i < 180; i++) drops = updateDrops(drops, DT, world, player, inv);
+    expect(drops).toHaveLength(1); // three seconds right next to it
+
+    player.placeAt(player.x + 4 * TILE_SIZE, player.y); // walk off...
+    drops = updateDrops(drops, DT, world, player, inv);
+    expect(drops).toHaveLength(1);
+    player.placeAt(player.x - 4 * TILE_SIZE, player.y); // ...and back
+    for (let i = 0; i < 60 && drops.length; i++) drops = updateDrops(drops, DT, world, player, inv);
+    expect(drops).toHaveLength(0);
+    expect(inv.count('stone')).toBe(1);
   });
 
   it('stays on the ground when the inventory is full', () => {

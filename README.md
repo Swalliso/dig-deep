@@ -8,27 +8,55 @@ Built with TypeScript, Vite and plain HTML5 Canvas: no game engine, no external 
 
 ## How to play
 
-Start a **New world** from the title screen (type a seed, or leave it blank for a random one),
-or **Continue** your saved world.
+**Continue** your most recent world from the title screen, pick another one under **Worlds**,
+or start a **New world** (give it a name and a seed, or leave the seed blank for a random one).
 
-| Action               | Input              |
-| -------------------- | ------------------ |
-| Move                 | A / D or ← / →     |
-| Jump                 | Space, W or ↑      |
-| Mine                 | Hold left mouse    |
-| Place block          | Right mouse        |
-| Select hotbar slot   | 1–0 or mouse wheel |
-| Inventory / crafting | E or Tab           |
-| Pause                | Esc                |
-| Debug overlay (FPS)  | F3                 |
+| Action                            | Input                                 |
+| --------------------------------- | ------------------------------------- |
+| Move                              | A / D or ← / →                        |
+| Jump                              | Space, W or ↑                         |
+| Climb a ladder                    | W / S or ↑ / ↓ on it                  |
+| Drop through a platform           | S + Space                             |
+| Mine                              | Hold left mouse                       |
+| Place block                       | Right mouse (hold and sweep to build) |
+| Pick block onto hotbar            | Middle mouse                          |
+| Open chest, open or close door    | Right-click it                        |
+| Select hotbar slot                | 1–0 or mouse wheel                    |
+| Drop selected stack               | Q                                     |
+| Quick stack to nearby chests      | C                                     |
+| Inventory / crafting              | E or Tab                              |
+| Move stack (hotbar ↔ bag ↔ chest) | Shift-click                           |
+| Craft 10                          | Shift-click a recipe                  |
+| Map / minimap                     | M / N                                 |
+| Pause                             | Esc                                   |
+| Debug overlay (FPS)               | F3                                    |
 
 - You start with a wooden pickaxe and 10 torches. Better pickaxes mine faster and reach harder
   blocks: **Wooden → Stone → Copper → Iron → Gold**.
 - Chop trees for wood, turn it into planks and a **Workbench**, then mine stone for a
   **Furnace** to smelt ore into bars. Crafting needs the right station within 4 tiles.
 - Caves are dark, so place torches.
+- **Chests** (8 planks at a workbench) hold 20 stacks. Right-click one to open it next to your
+  inventory: **Loot all**, **Deposit all** (your bag, not the hotbar) and **Quick stack**
+  (only items the chest already holds). C quick-stacks into every chest within 4 tiles, and
+  crafting uses what's in chests within 4 tiles too (and in the chest you have open). Breaking
+  a chest drops what's in it.
+- **Ladders** (3 planks make 4), **platforms** (1 plank makes 2) and **doors** (6 planks) are
+  made at a workbench. Hold W or S on a ladder to climb; Space hops off and S + Space lets go.
+  You can stand on top of a ladder, so a shaft with a ladder in it can be walked over. Jump up
+  through platforms, and press S + Space to drop down through one. Doors are two tiles tall
+  and need ground under them; right-click to open or close one.
+- **M** opens the map: drag or use WASD to pan, scroll to zoom. It only shows what you've
+  seen: places you've had on screen in the light, and anything close to you in the dark. **N**
+  toggles the minimap in the corner (it's in Settings too).
+- In the inventory, hover anything for a tooltip. The trash slot (top right) destroys a stack;
+  you can take the last one back. **Craftable only** hides recipes you can't make yet.
 - The game saves to your browser (IndexedDB) automatically: within a couple of seconds of any
-  change, every 60 seconds, and when you pause. There's one save slot per browser and site.
+  change, every 60 seconds, and when you pause. Each world has its own save; delete one from
+  the Worlds screen (it asks you to click twice).
+- **Settings** (on the title screen and the pause menu) has the master and sound-effect
+  volumes, screen shake, pixel scale (auto, 2x or 3x), an FPS counter and the minimap. They're kept per
+  browser. Sound starts after your first click or key press, as browsers require.
 
 ## Development
 
@@ -45,8 +73,9 @@ npm run preview   # serve the built dist/ locally
 
 Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing shortcuts:
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
-3x3), and **L** toggles lighting. The title screen also gets a button that marks your save
-as an older version.
+3x3), **L** toggles lighting, **O** puts a patch of every ore at the cursor, **K** digs a
+100 m ladder shaft down from the cursor, and **V** reveals the whole map. The title screen also
+gets a button that marks your most recent world as an older version.
 
 `SPEC.md` is the original design spec, `ROADMAP.md` plans what comes next, and `CLAUDE.md`
 describes the code layout and conventions. All tunable numbers (physics, mining, lighting,

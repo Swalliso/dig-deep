@@ -173,3 +173,69 @@ describe('inventory panel clicks', () => {
     expect(inv.slots[0]).toEqual({ item: 'wood', count: 3 });
   });
 });
+
+describe('trash slot', () => {
+  it('destroys a stack put in it, but the last one can be taken back', () => {
+    const inv = new Inventory();
+    inv.slots[0] = { item: 'dirt', count: 40 };
+    inv.slots[1] = { item: 'stone', count: 3 };
+    inv.clickSlot(0);
+    inv.clickTrash();
+    expect(inv.cursor).toBeNull();
+    expect(inv.count('dirt')).toBe(0);
+    expect(inv.trash).toEqual({ item: 'dirt', count: 40 });
+
+    // Trashing something else replaces it for good.
+    inv.clickSlot(1);
+    inv.clickTrash();
+    expect(inv.trash).toEqual({ item: 'stone', count: 3 });
+
+    inv.clickTrash(); // nothing held: take it back
+    expect(inv.cursor).toEqual({ item: 'stone', count: 3 });
+    expect(inv.trash).toBeNull();
+  });
+});
+
+describe('pick block (middle click)', () => {
+  it('selects a hotbar slot that already holds the item', () => {
+    const inv = new Inventory();
+    inv.slots[4] = { item: 'stone', count: 9 };
+    expect(inv.pick('stone')).toBe(true);
+    expect(inv.selected).toBe(4);
+  });
+
+  it('brings the item up from the bag into the selected slot if it is empty', () => {
+    const inv = new Inventory();
+    inv.slots[0] = { item: 'wooden_pickaxe', count: 1 };
+    inv.slots[HOTBAR_SIZE + 3] = { item: 'planks', count: 20 };
+    inv.selected = 6;
+    expect(inv.pick('planks')).toBe(true);
+    expect(inv.selected).toBe(6);
+    expect(inv.slots[6]).toEqual({ item: 'planks', count: 20 });
+    expect(inv.slots[HOTBAR_SIZE + 3]).toBeNull();
+  });
+
+  it('otherwise uses the first empty hotbar slot, or swaps with the selected stack', () => {
+    const inv = new Inventory();
+    inv.slots[0] = { item: 'wooden_pickaxe', count: 1 };
+    inv.slots[HOTBAR_SIZE] = { item: 'planks', count: 20 };
+    inv.selected = 0;
+    expect(inv.pick('planks')).toBe(true);
+    expect(inv.selected).toBe(1);
+    expect(inv.slots[0]).toEqual({ item: 'wooden_pickaxe', count: 1 });
+
+    for (let i = 0; i < HOTBAR_SIZE; i++) inv.slots[i] = { item: 'dirt', count: 1 };
+    inv.slots[HOTBAR_SIZE + 1] = { item: 'stone', count: 5 };
+    inv.selected = 3;
+    expect(inv.pick('stone')).toBe(true);
+    expect(inv.slots[3]).toEqual({ item: 'stone', count: 5 });
+    expect(inv.slots[HOTBAR_SIZE + 1]).toEqual({ item: 'dirt', count: 1 });
+  });
+
+  it('does nothing when the item is not carried', () => {
+    const inv = new Inventory();
+    inv.selected = 2;
+    expect(inv.pick('stone')).toBe(false);
+    expect(inv.selected).toBe(2);
+  });
+});
