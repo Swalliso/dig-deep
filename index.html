@@ -175,6 +175,32 @@
         text-align: right;
       }
 
+      /* World list: one row per world, with its Delete button on the right. */
+      #ui .menu.worlds {
+        width: min(460px, calc(100vw - 32px));
+      }
+      #ui .world-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 55vh;
+        overflow-y: auto;
+      }
+      #ui .world-row {
+        display: flex;
+        align-items: stretch;
+        gap: 6px;
+      }
+      #ui .world-row .play {
+        flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      #ui .world-row button.small {
+        flex: none;
+        justify-content: center;
+      }
+
       /* Settings screen: one row per setting, name on the left and its control on the right. */
       #ui .menu.settings {
         width: min(420px, calc(100vw - 32px));

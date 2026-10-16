@@ -356,6 +356,18 @@ export function craft(): void {
   });
 }
 
+/** A door swung open (a creak) or shut (a creak and a knock as it meets the frame). */
+export function door(open: boolean, pan = 0): void {
+  play({ volume: SFX_VOLUMES.door, pan, key: 'door' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'bandpass', freq: 700 * p, to: 1100 * p, q: 6, attack: 0.03, decay: 0.16, gain: 0.5 });
+    tone(v, { type: 'sawtooth', freq: (open ? 180 : 230) * p, to: (open ? 260 : 170) * p, attack: 0.03, decay: 0.14, gain: 0.08 });
+    if (open) return;
+    noiseBurst(v, { filter: 'bandpass', freq: 600 * p, q: 3, delay: 0.14, attack: 0.001, decay: 0.06, gain: 1 });
+    tone(v, { type: 'triangle', freq: 150 * p, to: 110 * p, delay: 0.14, decay: 0.08, gain: 0.45 });
+  });
+}
+
 /** A menu button or an inventory slot was clicked. */
 export function uiClick(): void {
   play({ volume: SFX_VOLUMES.ui, key: 'ui' }, (v) => {

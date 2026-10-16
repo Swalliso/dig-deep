@@ -18,6 +18,7 @@ describe('settings', () => {
       screenShake: true,
       pixelScale: 'auto',
       showFps: false,
+      showMinimap: true,
     });
     expect(parseSettings(null)).toEqual(defaults);
     expect(parseSettings('not json')).toEqual(defaults);
@@ -25,7 +26,7 @@ describe('settings', () => {
   });
 
   it('round-trip through JSON', () => {
-    const settings = { masterVolume: 0, sfxVolume: 0.35, screenShake: false, pixelScale: 3 as const, showFps: true };
+    const settings = { masterVolume: 0, sfxVolume: 0.35, screenShake: false, pixelScale: 3 as const, showFps: true, showMinimap: false };
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
   });
 

@@ -2,7 +2,7 @@ import { CHEST_SLOTS, MAX_STACK } from '../config';
 import { Tile, type TileId } from '../world/tiles';
 
 /** A tile texture, or a shape drawn in code with a material color. */
-export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe'; color: string };
+export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door'; color: string };
 
 export interface ItemDef {
   name: string;
@@ -67,6 +67,10 @@ export const ITEMS = {
   iron_pickaxe: pickaxe('Iron pickaxe', 3, '#c9ccd2', 'Also mines gold ore.'),
   gold_pickaxe: pickaxe('Gold pickaxe', 4, '#f2c94c', 'The fastest pickaxe.'),
   chest: block('Chest', Tile.Chest, `Holds ${CHEST_SLOTS} stacks. Crafting uses what is in nearby chests.`),
+  ladder: block('Ladder', Tile.Ladder, 'Hold W or S on it to climb. You can stand on its top.'),
+  platform: block('Platform', Tile.Platform, 'Jump up through it. S + jump drops down through.'),
+  // Placed as the bottom half; building.ts adds the top half above it.
+  door: { ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'), icon: { shape: 'door', color: '#8f6236' } },
 } satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

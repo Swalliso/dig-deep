@@ -1,8 +1,9 @@
-import { del, get, set } from 'idb-keyval';
+import { delMany, get, getMany, keys, set, setMany } from 'idb-keyval';
 import { storageKey } from '../channel';
 import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE } from '../config';
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
+import { ExploredMap } from '../world/explored';
 import { TileEntities } from '../world/tileEntities';
 import { Tile } from '../world/tiles';
 import type { World } from '../world/world';
@@ -11,16 +12,23 @@ import { ITEMS, itemDef, type ItemId } from './items';
 
 /**
  * Bump whenever the save format, the world size or world generation changes. (Adding an
- * optional field that old saves can do without, like `drops` or `tileEntities`, doesn't need a
- * bump, and nor does a new tile id that doesn't renumber the others.)
+ * optional field that old saves can do without, like `drops`, `tileEntities` or `explored`,
+ * doesn't need a bump, and nor does a new tile id that doesn't renumber the others.)
  */
 export const SAVE_VERSION = 1;
-/** 'dig-deep:save' on the live site; the dev site uses its own key (see channel.ts). */
+/**
+ * The first world's save: 'dig-deep:save' on the live site (the dev site uses its own key; see
+ * channel.ts). It's the key the game used before there were several worlds, so those saves
+ * carry over as world 1.
+ */
 export const SAVE_KEY = storageKey('save');
+export const FIRST_WORLD_ID = '1';
 
-/** The one save slot, as stored in IndexedDB. */
+/** One world's save, as stored in IndexedDB. */
 export interface SaveData {
   version: number;
+  /** The world's name in the world list. Missing in older saves. */
+  name?: string;
   seed: number;
   /** Date.now() when saved. */
   savedAt: number;
@@ -33,6 +41,22 @@ export interface SaveData {
   drops?: SavedDrop[];
   /** Per-tile data such as chest contents. Missing in older saves. */
   tileEntities?: SavedTileEntity[];
+  /** Tiles seen so far (the map), per chunk: 1 byte per tile, RLE-compressed. Missing in older saves. */
+  explored?: { index: number; data: Uint8Array }[];
+}
+
+/**
+ * A world in the world list. Each one is stored next to its save (and written with it), so the
+ * title screen can list the worlds without loading every save.
+ */
+export interface WorldMeta {
+  id: string;
+  name: string;
+  seed: number;
+  /** Date.now() when last saved. */
+  savedAt: number;
+  /** The save's SAVE_VERSION; a world from another version can't be loaded. */
+  version: number;
 }
 
 /** A tile entity and where it is. Only chests so far. */
@@ -92,9 +116,11 @@ export function createSave(
   inventory: Inventory,
   drops: readonly ItemDrop[],
   entities?: TileEntities,
+  extra: { explored?: ExploredMap; name?: string } = {},
 ): SaveData {
   return {
     version: SAVE_VERSION,
+    name: extra.name,
     seed: world.seed,
     savedAt: Date.now(),
     chunks: [...world.changedChunks]
@@ -105,6 +131,9 @@ export function createSave(
     inventory: { slots: savedSlots(inventory), selected: inventory.selected },
     drops: drops.map((d) => ({ item: d.item, count: d.count, x: d.x, y: d.y })),
     tileEntities: entities ? savedTileEntities(entities) : [],
+    explored: extra.explored
+      ? [...extra.explored.chunks.entries()].sort(([a], [b]) => a - b).map(([index, data]) => ({ index, data: encodeRle(data) }))
+      : [],
   };
 }
 
@@ -191,6 +220,21 @@ export function restoreTileEntities(save: SaveData, world: World): TileEntities 
   return entities;
 }
 
+/** The map's explored tiles from a save. Chunks that are out of range or unreadable are skipped. */
+export function restoreExplored(save: SaveData, world: World): ExploredMap {
+  const explored = new ExploredMap(world);
+  for (const chunk of save.explored ?? []) {
+    if (!chunk || !Number.isInteger(chunk.index) || chunk.index < 0 || chunk.index >= world.chunks.length) continue;
+    if (!(chunk.data instanceof Uint8Array)) continue;
+    try {
+      explored.chunks.set(chunk.index, decodeRle(chunk.data, CHUNK_SIZE * CHUNK_SIZE).map((v) => (v ? 1 : 0)));
+    } catch {
+      // A corrupt chunk: those tiles just aren't explored.
+    }
+  }
+  return explored;
+}
+
 /** Classify whatever came out of storage. */
 export function checkSave(raw: unknown): SaveStatus {
   if (raw === undefined || raw === null) return { kind: 'none' };
@@ -207,30 +251,98 @@ export function checkSave(raw: unknown): SaveStatus {
     typeof save.player?.y === 'number' &&
     Array.isArray(save.inventory?.slots) &&
     (save.drops === undefined || Array.isArray(save.drops)) &&
-    (save.tileEntities === undefined || Array.isArray(save.tileEntities));
+    (save.tileEntities === undefined || Array.isArray(save.tileEntities)) &&
+    (save.explored === undefined || Array.isArray(save.explored));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 
-// --- IndexedDB storage (one slot). ---
+// --- World slots ---
 
-export async function readSave(): Promise<SaveStatus> {
+/** Where world `id`'s save is stored. World 1 keeps the key from before there were several worlds. */
+export function saveKeyFor(id: string): string {
+  return id === FIRST_WORLD_ID ? SAVE_KEY : storageKey(`save:${id}`);
+}
+
+/** Where world `id`'s world-list entry is stored. */
+export function metaKeyFor(id: string): string {
+  return storageKey(`world:${id}`);
+}
+
+/** An unused world id: one more than the highest so far ('1' for the first world). */
+export function nextWorldId(ids: readonly string[]): string {
+  const highest = ids.reduce((max, id) => Math.max(max, Number.parseInt(id, 10) || 0), 0);
+  return String(highest + 1);
+}
+
+/** The world-list entry for a save (or for whatever was stored where a save should be). */
+export function metaFromSave(id: string, save: Partial<SaveData> | undefined): WorldMeta {
+  const name = typeof save?.name === 'string' && save.name.trim() ? save.name.trim() : `World ${id}`;
+  return {
+    id,
+    name,
+    seed: typeof save?.seed === 'number' ? save.seed : 0,
+    savedAt: typeof save?.savedAt === 'number' ? save.savedAt : 0,
+    version: typeof save?.version === 'number' ? save.version : -1,
+  };
+}
+
+function isWorldMeta(raw: unknown): raw is WorldMeta {
+  const m = raw as Partial<WorldMeta> | undefined;
+  return (
+    !!m &&
+    typeof m.id === 'string' &&
+    typeof m.name === 'string' &&
+    typeof m.seed === 'number' &&
+    typeof m.savedAt === 'number' &&
+    typeof m.version === 'number'
+  );
+}
+
+// --- IndexedDB storage ---
+
+/**
+ * Every world, most recently saved first. A save from before world slots (world 1, with no
+ * world-list entry yet) gets its entry here.
+ */
+export async function listWorlds(): Promise<WorldMeta[]> {
   try {
-    return checkSave(await get(SAVE_KEY));
+    const all = await keys();
+    const prefix = metaKeyFor('');
+    const metaKeys = all.filter((k): k is string => typeof k === 'string' && k.startsWith(prefix));
+    const worlds = (await getMany(metaKeys)).filter(isWorldMeta);
+    if (all.includes(SAVE_KEY) && !worlds.some((w) => w.id === FIRST_WORLD_ID)) {
+      const meta = metaFromSave(FIRST_WORLD_ID, await get(SAVE_KEY));
+      await set(metaKeyFor(FIRST_WORLD_ID), meta);
+      worlds.push(meta);
+    }
+    return worlds.sort((a, b) => b.savedAt - a.savedAt);
+  } catch {
+    return [];
+  }
+}
+
+export async function readWorld(id: string): Promise<SaveStatus> {
+  try {
+    return checkSave(await get(saveKeyFor(id)));
   } catch {
     return { kind: 'broken' };
   }
 }
 
-export async function writeSave(save: SaveData): Promise<void> {
-  await set(SAVE_KEY, save);
+/** Write world `id`'s save and its world-list entry together. */
+export async function writeWorld(id: string, save: SaveData): Promise<void> {
+  await setMany([
+    [saveKeyFor(id), save],
+    [metaKeyFor(id), metaFromSave(id, save)],
+  ]);
 }
 
-export async function deleteSave(): Promise<void> {
-  await del(SAVE_KEY);
+export async function deleteWorld(id: string): Promise<void> {
+  await delMany([saveKeyFor(id), metaKeyFor(id)]);
 }
 
-/** Debug helper: rewrite the stored save with a different version number. */
-export async function markSaveOutdated(): Promise<void> {
-  const raw = await get(SAVE_KEY);
-  if (raw && typeof raw === 'object') await set(SAVE_KEY, { ...raw, version: SAVE_VERSION - 1 });
+/** Debug helper: rewrite a stored world with an older version number. */
+export async function markWorldOutdated(id: string): Promise<void> {
+  const raw = await get(saveKeyFor(id));
+  if (raw && typeof raw === 'object') await writeWorld(id, { ...raw, version: SAVE_VERSION - 1 });
 }

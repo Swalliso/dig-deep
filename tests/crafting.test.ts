@@ -51,13 +51,16 @@ describe('recipes', () => {
       ['1 gold_bar', '3 gold_ore + 1 coal', 'furnace'],
       ['1 gold_pickaxe', '10 gold_bar + 5 wood', 'workbench'],
       ['1 chest', '8 planks', 'workbench'],
+      ['4 ladder', '3 planks', 'workbench'],
+      ['2 platform', '1 planks', 'workbench'],
+      ['1 door', '6 planks', 'workbench'],
     ]);
   });
 
   it('sorts every recipe into a group', () => {
     const byGroup = Object.fromEntries(RECIPE_GROUPS.map((g) => [g, RECIPES.filter((r) => r.group === g).map((r) => r.output)]));
     expect(byGroup).toEqual({
-      blocks: ['planks', 'torch'],
+      blocks: ['planks', 'torch', 'ladder', 'platform', 'door'],
       tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe'],
       materials: ['copper_bar', 'iron_bar', 'gold_bar'],
       stations: ['workbench', 'furnace', 'chest'],

@@ -15,6 +15,8 @@ export interface Settings {
   pixelScale: PixelScale;
   /** Small FPS counter in the corner (F3 shows it too). */
   showFps: boolean;
+  /** Minimap in the top-right corner (N toggles it while playing). */
+  showMinimap: boolean;
 }
 
 export const SETTINGS_KEY = storageKey('settings');
@@ -26,6 +28,7 @@ export function defaultSettings(): Settings {
     screenShake: true,
     pixelScale: 'auto',
     showFps: false,
+    showMinimap: true,
   };
 }
 
@@ -47,6 +50,7 @@ export function parseSettings(json: string | null): Settings {
   if (typeof s.screenShake === 'boolean') settings.screenShake = s.screenShake;
   if (s.pixelScale === 'auto' || s.pixelScale === 2 || s.pixelScale === 3) settings.pixelScale = s.pixelScale;
   if (typeof s.showFps === 'boolean') settings.showFps = s.showFps;
+  if (typeof s.showMinimap === 'boolean') settings.showMinimap = s.showMinimap;
   return settings;
 }
 
