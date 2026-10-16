@@ -1,6 +1,8 @@
 import { HOTBAR_SIZE, MAX_TOASTS, TILE_SIZE, TOAST_DURATION, TOAST_FADE } from '../config';
+import { HOTBAR_ACTIONS } from '../input';
 import type { Inventory, ItemStack } from '../systems/inventory';
 import { itemDef, itemIndex, type ItemId } from '../systems/items';
+import { mainKey } from './controls';
 
 /** Small text panel in the top-left corner, drawn in screen pixels. */
 export function drawDebugInfo(ctx: CanvasRenderingContext2D, lines: string[]): void {
@@ -89,7 +91,7 @@ export function drawHotbar(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasE
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillText(String((i + 1) % 10), x + u, y0 + u);
+    ctx.fillText(mainKey(HOTBAR_ACTIONS[i]), x + u, y0 + u);
   }
 
   // Name of the selected item above the bar.

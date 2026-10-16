@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import readme from '../README.md?raw';
+import readmeRaw from '../README.md?raw';
 import { primaryAction } from '../src/systems/building';
 import { CONTROLS, CONTROLS_ROW_MAX_CHARS } from '../src/ui/controls';
 import { Tile } from '../src/world/tiles';
@@ -23,6 +23,9 @@ describe('left-click', () => {
     expect(primaryAction('coal', Tile.Air)).toBe('dig');
   });
 });
+
+// A Windows checkout may have CRLF line endings.
+const readme = readmeRaw.replace(/\r\n/g, '\n');
 
 describe('controls list', () => {
   it('keeps every row short enough for one line of the Controls screen', () => {

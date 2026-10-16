@@ -1,27 +1,101 @@
-// The controls list: shown on the Controls screen and mirrored in README.md's controls table
-// (a test keeps the two in step and checks every row fits the screen).
+import { ACTIONS, HOTBAR_ACTIONS, keyName, type Action, type ActionTable } from '../input';
+
+// Every on-screen key hint, built from the action table in input.ts: the Controls screen
+// (mirrored in README.md's controls table; a test keeps the two in step and checks every row
+// fits the screen), the F3 help, the map's help line, tooltips and toasts. Each builder takes
+// the table to read, so a test (or a remapping screen later) can hand it different keys.
 
 /** Longest row (action + input, in characters) that fits one line of the Controls screen. */
 export const CONTROLS_ROW_MAX_CHARS = 52;
 
-/** [action, input] pairs, in the order they're listed. */
-export const CONTROLS: ReadonlyArray<readonly [string, string]> = [
-  ['Move', 'A / D or ← / →'],
-  ['Jump', 'Space, W or ↑'],
-  ['Dig', 'Hold left mouse on a tile'],
-  ['Place the held block', 'Left mouse on empty space'],
-  ['Build a row', 'Hold left mouse and sweep'],
-  ['Pick block onto hotbar', 'Middle mouse'],
-  ['Open chest, open or close door', 'Right-click it'],
-  ['Climb a ladder', 'W / S or ↑ / ↓ on it'],
-  ['Drop through a platform', 'S + Space'],
-  ['Map / minimap', 'M / N'],
-  ['Select hotbar slot', '1–0 or mouse wheel'],
-  ['Drop selected stack', 'Q'],
-  ['Quick stack to nearby chests', 'C'],
-  ['Inventory, crafting, nearest chest', 'E or Tab'],
-  ['Move stack (hotbar ↔ bag ↔ chest)', 'Shift-click'],
-  ['Craft 10', 'Shift-click a recipe'],
-  ['Pause', 'Esc'],
-  ['Debug overlay (FPS)', 'F3'],
-];
+const CLICKS: Record<string, string> = { MouseLeft: 'Left-click', MouseRight: 'Right-click', MouseMiddle: 'Middle-click' };
+
+/** Names of an action's keys, without repeats: ['A', '←']. */
+export function keyNames(action: Action, table: ActionTable = ACTIONS): string[] {
+  return [...new Set(table[action].keys.map(keyName))];
+}
+
+/** The action's main key: 'E'. */
+export function mainKey(action: Action, table: ActionTable = ACTIONS): string {
+  return keyNames(action, table)[0] ?? '?';
+}
+
+/** Every key for an action: 'Space, W or ↑'. */
+export function keyList(action: Action, table: ActionTable = ACTIONS): string {
+  const names = keyNames(action, table);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : (names[0] ?? '?');
+}
+
+/** Two opposite actions key by key: 'A / D or ← / →' (or 'A/D or ←/→' with sep '/'). */
+export function keyPairs(a: Action, b: Action, table: ActionTable = ACTIONS, sep = ' / '): string {
+  const first = keyNames(a, table);
+  const second = keyNames(b, table);
+  const pairs = first.slice(0, second.length).map((name, i) => `${name}${sep}${second[i]}`);
+  return pairs.join(' or ');
+}
+
+/** A key name inside a sentence: mouse buttons are lower case ('hold left mouse'). */
+function inSentence(name: string): string {
+  return name.endsWith(' mouse') ? name.toLowerCase() : name;
+}
+
+/** 'Right-click' for a mouse button, or the key's name. */
+function clickName(action: Action, table: ActionTable): string {
+  return CLICKS[table[action].keys[0]] ?? mainKey(action, table);
+}
+
+/** '1–0': the first and last hotbar keys. */
+function hotbarRange(table: ActionTable): string {
+  return `${mainKey(HOTBAR_ACTIONS[0], table)}–${mainKey(HOTBAR_ACTIONS[HOTBAR_ACTIONS.length - 1], table)}`;
+}
+
+/** The controls list, as [action, input] pairs in the order they're listed. */
+export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
+  const key = (action: Action): string => mainKey(action, table);
+  const list = (action: Action): string => keyList(action, table);
+  const use = inSentence(key('use'));
+  return [
+    ['Move', keyPairs('moveLeft', 'moveRight', table)],
+    ['Jump', list('jump')],
+    ['Dig', `Hold ${use} on a tile`],
+    ['Place the held block', `${key('use')} on empty space`],
+    ['Build a row', `Hold ${use} and sweep`],
+    ['Pick block onto hotbar', key('pickBlock')],
+    ['Open chest, open or close door', `${clickName('interact', table)} it`],
+    ['Climb a ladder', `${keyPairs('climbUp', 'climbDown', table)} on it`],
+    ['Drop through a platform', `${key('climbDown')} + ${key('jump')}`],
+    ['Map / minimap', `${key('map')} / ${key('minimap')}`],
+    ['Select hotbar slot', `${hotbarRange(table)} or mouse wheel`],
+    ['Drop selected stack', list('dropStack')],
+    ['Quick stack to nearby chests', list('quickStack')],
+    ['Inventory, crafting, nearest chest', list('inventory')],
+    ['Move stack (hotbar ↔ bag ↔ chest)', `${key('modifier')}-click`],
+    ['Craft 10', `${key('modifier')}-click a recipe`],
+    ['Pause', list('pause')],
+    ['Debug overlay (FPS)', list('overlay')],
+  ];
+}
+
+/** The Controls screen's rows (and README.md's controls table). */
+export const CONTROLS: ReadonlyArray<readonly [string, string]> = controlsList();
+
+/** The controls part of the F3 overlay. */
+export function overlayHelpLines(table: ActionTable = ACTIONS): string[] {
+  const key = (action: Action): string => mainKey(action, table);
+  const list = (action: Action): string => keyList(action, table);
+  return [
+    `${keyPairs('moveLeft', 'moveRight', table, '/')}: move   ${list('jump')}: jump   ${keyPairs('climbUp', 'climbDown', table, '/')} on a ladder: climb   ${key('climbDown')} + ${key('jump')}: drop through`,
+    `${key('use')}: dig, or place the held block on an empty spot (hold to sweep)`,
+    `${key('interact')}: open chest or door   ${key('pickBlock')}: pick block`,
+    `${hotbarRange(table)} or wheel: select   ${list('dropStack')}: drop stack   ${list('quickStack')}: quick stack to nearby chests`,
+    `${list('inventory')}: inventory + crafting, with the nearest chest (${key('modifier').toLowerCase()}-click: move stack, craft 10)`,
+    `${list('map')}: map   ${list('minimap')}: minimap   ${list('pause')}: pause   ${list('overlay')}: hide this overlay`,
+  ];
+}
+
+/** The help line along the top of the full map. */
+export function mapHelpText(table: ActionTable = ACTIONS): string {
+  const pan = (['climbUp', 'moveLeft', 'climbDown', 'moveRight'] as const).map((action) => mainKey(action, table));
+  const panKeys = pan.every((name) => name.length === 1) ? pan.join('') : pan.join('/');
+  return `Drag or ${panKeys} to pan · Wheel to zoom · ${mainKey('map', table)} or ${mainKey('pause', table)} to close`;
+}

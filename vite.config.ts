@@ -1,4 +1,6 @@
+/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
+import { configDefaults } from 'vitest/config';
 
 /** Dev-site builds (`--mode develop`) get their own page title and stay out of search results. */
 function devSiteHtml(): Plugin {
@@ -17,4 +19,6 @@ export default defineConfig(({ mode }) => ({
   // (GitHub Pages project sites live under /<repo>/, itch.io serves from its own path).
   base: './',
   plugins: mode === 'develop' ? [devSiteHtml()] : [],
+  // Claude Code keeps other checkouts of the repo in .claude/worktrees; test only this one.
+  test: { exclude: [...configDefaults.exclude, '**/.claude/worktrees/**'] },
 }));

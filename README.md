@@ -56,9 +56,16 @@ or start a **New world** (give it a name and a seed, or leave the seed blank for
   toggles the minimap in the corner (it's in Settings too).
 - In the inventory, hover anything for a tooltip. The trash slot (top right) destroys a stack;
   you can take the last one back. **Craftable only** hides recipes you can't make yet.
+- The world stands still while the inventory, the map or the pause menu is open. Switching to
+  another window or tab pauses the game too; press **Resume** (or Esc) to carry on.
 - The game saves to your browser (IndexedDB) automatically: within a couple of seconds of any
   change, every 60 seconds, and when you pause. Each world has its own save; delete one from
-  the Worlds screen (it asks you to click twice).
+  the Worlds screen (it asks you to click twice). **Save & quit** only leaves once the save is
+  written: if it fails, the game stays open so you can try again or export a backup.
+- **Backups**: **Export** on the Worlds screen (or **Export backup** on the pause menu)
+  downloads a world as a `.json` file. **Import backup** on the Worlds screen checks the file,
+  then adds it as a new world, or replaces the world with the same seed if you click Replace
+  twice. Backups only import into the version of the game that saved them.
 - **Settings** (on the title screen and the pause menu) has the master and sound-effect
   volumes, screen shake, pixel scale (auto, 2x or 3x), an FPS counter and the minimap. They're kept per
   browser. Sound starts after your first click or key press, as browsers require.
@@ -80,7 +87,11 @@ Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
 3x3), **L** toggles lighting, **O** puts a patch of every ore at the cursor, **K** digs a
 100 m ladder shaft down from the cursor, and **V** reveals the whole map. The title screen also
-gets a button that marks your most recent world as an older version.
+gets a button that marks your most recent world as an older version, and the pause menu a
+**Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't
+pause when its window loses focus, and the running game is on `window.digDeep` in the browser
+console (`screen`, `game`, `pausedBy`, `save()`, `backupText()`, `importBackup(text)`) for
+scripted checks.
 
 `SPEC.md` is the original design spec, `ROADMAP.md` plans what comes next, and `CLAUDE.md`
 describes the code layout and conventions. All tunable numbers (physics, mining, lighting,
