@@ -195,7 +195,12 @@ they drop.
   (`explored`, per chunk, RLE). Particles, half-mined tile damage and the trash slot aren't
   saved. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
   `dig-deep:save` key so older saves carry over) plus a small `WorldMeta` entry written with it
-  in one transaction, so the title screen lists worlds without loading every save.
-- **Performance**: hold 60 FPS. Never do per-frame work over the whole world. World
-  generation must take under 2 s.
+  in one transaction, so the title screen lists worlds without loading every save. Keeping
+  old worlds working is nice but never a constraint (testers know breaking changes may come):
+  when it would hold a feature back, bump `SAVE_VERSION` instead. See ROADMAP.md's "World
+  compatibility" row.
+- **Performance**: build things efficiently: never do per-frame work over the whole world,
+  give anything that can pile up a per-step budget, and keep world generation around 2 s. Frame
+  rate isn't a gate for a phase, though; dedicated performance passes come later, measured on
+  the reference device in README.md.
 - Keep modules small and focused. Prefer plain functions and data over class hierarchies.
