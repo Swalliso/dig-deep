@@ -183,13 +183,12 @@ src/
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
     vitals.ts        hearts, the protection bar, the way to a satchel, the death screen
-    controls.ts      every on-screen key hint (Controls screen, F3 help, map help, tooltips),
-                     built from the action table
+    controls.ts      the controls list for the Controls screen and every on-screen key hint
+                     (F3 help, map help, tooltips), built from the action table; a test keeps
+                     README.md's table matching it and every row short enough to fit
     menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
                      new world, controls, settings, pause (HTML in #ui)
     map.ts           full-screen map (M: pan, zoom, markers) and the corner minimap (N)
-    controls.ts      the controls list for the Controls screen (a test keeps README.md's table
-                     matching it and every row short enough to fit)
 tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 
