@@ -12,8 +12,6 @@ export type PauseReason = 'menu' | 'focus' | 'panel' | 'map';
 /** Seconds of simulated play in this world (saved with it). */
 export class SessionClock {
   time: number;
-  /** Simulation steps run this session. */
-  steps = 0;
 
   constructor(time = 0) {
     this.time = time;
@@ -22,6 +20,5 @@ export class SessionClock {
   /** One simulation step of `dt` seconds has run. */
   advance(dt: number): void {
     this.time += dt;
-    this.steps++;
   }
 }
