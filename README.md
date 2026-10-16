@@ -81,6 +81,11 @@ gets a button that marks your most recent world as an older version.
 describes the code layout and conventions. All tunable numbers (physics, mining, lighting,
 world generation) live in `src/config.ts`.
 
+**Performance reference.** The 60 FPS target (ROADMAP.md, "Playability checks") is measured on
+the developer's Windows 11 PC in Chrome (155): Intel Core i9-13900K, NVIDIA GeForce RTX 4090,
+128 GB RAM, a 3840×2160 display at 240 Hz with 125% scaling. Check it with the F3 overlay's FPS
+and frame time in a busy underground scene: torches, a lit cave, digging and falling items.
+
 ## Branches and deploys
 
 | Branch      | Role                                                   | Published at                                |
