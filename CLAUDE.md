@@ -149,8 +149,10 @@ src/
   render/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
-    renderer.ts      sky, underground backdrop, cached chunk canvases, light overlay, entities,
-                     ore glints, break flashes
+    renderer.ts      sky, parallax background, underground backdrop, cached chunk canvases,
+                     light overlay, entities, ore glints, break flashes
+    parallax.ts      background layers (clouds, mountains, hills) built per world from its seed
+                     as repeating strips; scroll math (layer sets in config.ts)
     particles.ts     cosmetic break particles and landing dust (Math.random is fine here)
     juice.ts         screen shake, break flash strength, where and when ores glint
     mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
@@ -159,6 +161,8 @@ src/
     menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
                      new world, controls, settings, pause (HTML in #ui)
     map.ts           full-screen map (M: pan, zoom, markers) and the corner minimap (N)
+    controls.ts      the controls list for the Controls screen (a test keeps README.md's table
+                     matching it and every row short enough to fit)
 tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 

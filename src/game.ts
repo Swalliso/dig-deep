@@ -337,7 +337,7 @@ export class Game {
     const glowX = px + PLAYER_WIDTH / 2;
     const glowY = py + PLAYER_HEIGHT / 2;
 
-    renderer.drawWorld(this.world, camX, camY);
+    renderer.drawWorld(this.world, camX, camY, this.time);
     for (const crack of this.mining.cracks(this.world)) renderer.drawCracks(crack.tx, crack.ty, crack.stage, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
     renderer.drawPlayer(player, px, py, camX, camY);

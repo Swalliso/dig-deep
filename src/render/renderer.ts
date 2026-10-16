@@ -10,6 +10,7 @@ import {
   SKY_TOP_COLOR,
   SPARKLE_ALPHA,
   SPARKLE_MIN_LIGHT,
+  SURFACE_BACKGROUND,
   TILE_SIZE,
 } from '../config';
 import type { ItemDrop } from '../entities/itemDrop';
@@ -22,6 +23,7 @@ import { playerGlow, type LightMap } from '../world/lighting';
 import { ORE_TILES, Tile, TILE_COUNT } from '../world/tiles';
 import type { World } from '../world/world';
 import { oreSparkle, type BreakFlash } from './juice';
+import { buildBackground, parallaxX, parallaxY, type BackgroundLayer } from './parallax';
 import type { Particles } from './particles';
 import { buildBackdropTile, buildCrackAtlas, buildItemAtlas, buildTileAtlas } from './textures';
 
@@ -50,6 +52,8 @@ export class Renderer {
   private readonly cracks: HTMLCanvasElement;
   private readonly chunkCache = new Map<number, CachedChunk>();
   private cacheWorld: World | null = null;
+  /** Parallax layers behind the world, built for `cacheWorld` from its seed. */
+  private background: BackgroundLayer[] = [];
   private frame = 0;
   private sky: CanvasGradient | null = null;
   private readonly backdrop: CanvasPattern | null;
@@ -99,14 +103,15 @@ export class Renderer {
   }
 
   /**
-   * Draw the sky, the underground backdrop and the tiles. (camX, camY) is the view's top-left
-   * in whole world pixels.
+   * Draw the sky, the parallax background, the underground backdrop and the tiles. (camX, camY)
+   * is the view's top-left in whole world pixels; `time` (s) drifts the clouds.
    */
-  drawWorld(world: World, camX: number, camY: number): void {
+  drawWorld(world: World, camX: number, camY: number, time = 0): void {
     const { ctx } = this;
     if (this.cacheWorld !== world) {
       this.chunkCache.clear();
       this.cacheWorld = world;
+      this.background = buildBackground(world.seed, SURFACE_BACKGROUND);
     }
     this.frame++;
 
@@ -116,6 +121,7 @@ export class Renderer {
 
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.imageSmoothingEnabled = false;
+    this.drawBackground(camX, camY, time);
     this.drawBackdrop(world, camX, camY);
 
     // Chunks overlapping the view plus a 1-tile margin.
@@ -130,6 +136,31 @@ export class Renderer {
       }
     }
     this.evictChunks();
+  }
+
+  /**
+   * Parallax layers, back to front. Each strip repeats sideways across the view; skylines are
+   * filled with their colour down to the bottom of the view, so nothing shows through below
+   * them (the underground backdrop and the tiles cover that anyway).
+   */
+  private drawBackground(camX: number, camY: number, time: number): void {
+    const { ctx } = this;
+    const viewW = this.viewWidth;
+    const viewH = this.viewHeight;
+    for (const { spec, canvas, horizonRow, fill } of this.background) {
+      const top = Math.round(parallaxY(camY, spec.factor, spec.lift, viewH)) - horizonRow;
+      if (top >= viewH) continue;
+      if (top + canvas.height > 0) {
+        const x0 = Math.round(parallaxX(camX, spec.factor, canvas.width, time * (spec.drift ?? 0)));
+        for (let x = x0; x < viewW; x += canvas.width) ctx.drawImage(canvas, x, top);
+      }
+      if (!fill) continue;
+      const fillTop = Math.max(0, top + canvas.height);
+      if (fillTop < viewH) {
+        ctx.fillStyle = fill;
+        ctx.fillRect(0, fillTop, Math.ceil(viewW), Math.ceil(viewH - fillTop));
+      }
+    }
   }
 
   /**
