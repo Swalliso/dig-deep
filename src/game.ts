@@ -1,16 +1,25 @@
 import * as sfx from './audio/sfx';
 import {
   CLIMB_STEP_DISTANCE,
+  DAMAGE_NUMBER_TIME,
+  DEATH_SCREEN_DELAY,
   DIG_TICK_INTERVAL,
   DROP_THROW_SPEED,
   EXPLORE_INTERVAL,
   FOOTSTEP_DISTANCE,
+  HEART_SHAKE_TIME,
+  HURT_FLASH_ALPHA,
+  HURT_FLASH_TIME,
+  HURT_PROTECTION,
   LAND_FULL_SPEED,
   LAND_MIN_SPEED,
   PICKAXES,
   PLAYER_HEIGHT,
   PLAYER_WIDTH,
-  REACH,
+  PROTECTION_ALPHA,
+  PROTECTION_BLINK,
+  RESPAWN_PROTECTION,
+  SATCHEL_SIZE,
   SURFACE_LEVEL,
   TILE_SIZE,
 } from './config';
@@ -36,14 +45,27 @@ import { canPlace, itemForTile, overlapsPlayer, primaryAction, tilesOnLine, tryP
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
 import { SessionClock, type PauseReason } from './systems/clock';
 import { nearbyStations } from './systems/crafting';
+import {
+  collectSatchel,
+  dropSatchel,
+  findRespawn,
+  satchelItemCount,
+  takeBag,
+  touchesSatchel,
+  type BedSpot,
+  type Satchel,
+} from './systems/death';
+import { deathCauseText, difficultyName, fallDamage, Health, type DamageCause, type Difficulty } from './systems/health';
 import { Inventory } from './systems/inventory';
 import { itemDef, type ItemId } from './systems/items';
 import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { saveSettings, type Settings } from './systems/settings';
-import { mainKey, overlayHelpLines } from './ui/controls';
+import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
 import { drawMinimap, FullMap, type MapInput, type MapMarkers } from './ui/map';
 import { InventoryPanel, type PanelState } from './ui/menus';
+import { directionText, drawDeathScreen, drawHearts, drawHudLine, offsetText } from './ui/vitals';
+import { bedLeft, bedPartner, isBed, isWholeBed } from './world/beds';
 import { ExploredMap } from './world/explored';
 import { doorBottom, doorPartner, isDoorOpen, toggleDoor } from './world/doors';
 import { LightMap } from './world/lighting';
@@ -66,6 +88,42 @@ export interface GameStart {
   explored?: ExploredMap;
   /** Seconds already played in this world (where the session clock starts); defaults to 0. */
   playTime?: number;
+  /** Defaults to Normal (a new world); saves from before Phase 11b pass Cozy. */
+  difficulty?: Difficulty;
+  /** Defaults to full health. */
+  health?: Health;
+  /** The respawn bed; defaults to none. */
+  bed?: BedSpot | null;
+  /** Satchels left where the player died; defaults to none. */
+  satchels?: Satchel[];
+  /** The top of the fall the player was in when saved (see Player.fallTop); defaults to none. */
+  fallTop?: number | null;
+}
+
+/** What the death screen says, shown until the player respawns. */
+interface DeathScreen {
+  lines: string[];
+  /** performance.now() when the player died; the respawn key works after DEATH_SCREEN_DELAY. */
+  shownAt: number;
+}
+
+/** Text floating up from a point in the world for a moment (the damage number, "Respawn point set"). */
+interface Floater {
+  text: string;
+  color: string;
+  /** World px. */
+  x: number;
+  y: number;
+  /** Session clock time it appeared. */
+  at: number;
+  duration: number;
+}
+
+/** The latest hit, for its cues (red flash, shaking hearts). */
+interface Hit {
+  /** Session clock time. */
+  at: number;
+  hpBefore: number;
 }
 
 /** Numbers from the main loop shown on the F3 overlay. */
@@ -94,6 +152,15 @@ export class Game {
    * timed in the world runs on it: physics, drops, mining damage and healing, ore glints.
    */
   readonly clock: SessionClock;
+  readonly health: Health;
+  /** Cozy (no damage) or Normal. The pause menu can change it. */
+  difficulty: Difficulty;
+  /** The bed the player respawns at (its left tile), or null. */
+  bed: BedSpot | null;
+  /** Bags left where the player died, oldest first. */
+  satchels: Satchel[];
+  /** Showing after a death until the player presses the respawn key (the world is paused). */
+  deathScreen: DeathScreen | null = null;
   private readonly renderer: Renderer;
   /** Shared with the Settings screen, which changes it while the game is paused. */
   private readonly settings: Settings;
@@ -129,6 +196,12 @@ export class Game {
   private lastBuildTile: [number, number] = [0, 0];
   /** Tiles placed during this hold (keys ty * width + tx), so a tile mined meanwhile isn't refilled. */
   private readonly builtThisHold = new Set<number>();
+  private floaters: Floater[] = [];
+  private lastHit: Hit | null = null;
+  /** The "hold W or S to grab" hint shows the first time the player falls past a ladder. */
+  private ladderHintShown = false;
+  /** Satchels the player was touching last step, so "inventory full" is said once per touch. */
+  private touchingSatchels = new Set<Satchel>();
 
   constructor(world: World, renderer: Renderer, settings: Settings, start: GameStart = {}) {
     this.world = world;
@@ -137,6 +210,11 @@ export class Game {
     this.player = new Player(world.spawnTx, world.spawnTy);
     this.clock = new SessionClock(start.playTime ?? 0);
     if (start.player) this.player.placeAt(start.player.x, start.player.y);
+    this.player.fallTop = start.fallTop ?? null;
+    this.health = start.health ?? new Health(this.player.stats.maxHealth);
+    this.difficulty = start.difficulty ?? 'normal';
+    this.bed = start.bed ?? null;
+    this.satchels = start.satchels ?? [];
     this.inventory = start.inventory ?? Inventory.withStartingItems();
     this.dropList = start.drops ?? [];
     this.tileEntities = start.tileEntities ?? new TileEntities(world);
@@ -164,6 +242,7 @@ export class Game {
 
   /** What pauses the world from inside the game (the inventory panel or the full map), or null. */
   get pausedBy(): PauseReason | null {
+    if (this.deathScreen) return 'dead';
     if (this.inventoryPanel.open) return 'panel';
     if (this.fullMap.open) return 'map';
     return null;
@@ -183,14 +262,14 @@ export class Game {
   update(dt: number): void {
     // A break flash lasts one drawn frame, paused or not.
     this.flashes = this.flashes.filter((f) => !f.drawn);
-    this.handleKeys();
-    if (this.fullMap.open) {
-      const { canvas, scale } = this.renderer;
-      this.fullMap.update(dt, this.mapInput(), canvas.width, canvas.height, scale, this.world.width, this.world.height);
+    // The step that leaves the death screen doesn't simulate, so the respawn key (Space) doesn't jump too.
+    const dead = this.deathScreen !== null;
+    if (dead) {
+      this.updateDeathScreen();
     } else {
-      this.handlePanelInput();
+      this.handleInput(dt);
     }
-    if (this.pausedBy) {
+    if (this.pausedBy || dead) {
       this.leftAction = null;
       this.digTickIn = 0;
     } else {
@@ -198,6 +277,17 @@ export class Game {
     }
     this.lightMap.update(); // relight around any tiles that changed this step
     this.toasts.update(dt);
+  }
+
+  /** Keys, the map and the panel: everything that takes input while the player is alive. */
+  private handleInput(dt: number): void {
+    this.handleKeys();
+    if (this.fullMap.open) {
+      const { canvas, scale } = this.renderer;
+      this.fullMap.update(dt, this.mapInput(), canvas.width, canvas.height, scale, this.world.width, this.world.height);
+    } else {
+      this.handlePanelInput();
+    }
   }
 
   /** Keys that work whether or not the world is paused: the overlay, map, hotbar, panel and cheats. */
@@ -247,8 +337,17 @@ export class Game {
       this.explored.revealAll();
       toasts.show('Debug: whole map revealed');
     }
-    // These two change tiles at the cursor, so they need the world in view.
+    if (actionPressed('debugGodMode')) {
+      this.health.god = !this.health.god;
+      this.health.refill(player.stats.maxHealth, this.clock.time, 0);
+      toasts.show(`Debug: god mode ${this.health.god ? 'on' : 'off'}, healed`);
+    }
+    // These change tiles at the cursor or hurt the player, so they need the world in view.
     if (this.pausedBy) return;
+    if (actionPressed('debugHurt')) {
+      if (this.difficulty === 'cozy') toasts.show('Debug: Cozy worlds take no damage');
+      this.hurt(2, { kind: 'debug' });
+    }
     if (actionPressed('debugOres')) {
       const [ox, oy] = this.cursorTile();
       placeOreSampler(world, ox, oy);
@@ -275,7 +374,7 @@ export class Game {
         this.openChest = { tx, ty };
         inventoryPanel.open = true;
         sfx.uiClick();
-      } else if (!inventoryPanel.open) {
+      } else if (!inventoryPanel.open && !this.useBed(tx, ty)) {
         this.useDoor(tx, ty);
       }
     }
@@ -303,12 +402,17 @@ export class Game {
       fast: actionDown('modifier'),
     });
     this.playerFeedback();
+    this.checkFall();
+    this.health.update(this.clock.time, player.stats.maxHealth);
+    if (this.deathScreen) return; // the fall was fatal: the rest waits for the respawn
     this.useHeldItem(dt);
+    this.updateSatchels();
 
     this.dropList = updateDrops(this.dropList, dt, world, player, this.inventory, (item, count) => {
       this.toasts.gained(item, count);
       sfx.pickup();
     });
+    this.floaters = this.floaters.filter((f) => this.clock.time - f.at < f.duration);
     this.exploreIn -= dt;
     if (this.exploreIn <= 0) {
       this.exploreIn = EXPLORE_INTERVAL;
@@ -365,16 +469,32 @@ export class Game {
     const glowX = px + PLAYER_WIDTH / 2;
     const glowY = py + PLAYER_HEIGHT / 2;
 
+    const reduced = this.settings.reducedFlashes;
     renderer.drawWorld(this.world, camX, camY, this.clock.time);
     for (const crack of this.mining.cracks(this.world)) renderer.drawCracks(crack.tx, crack.ty, crack.stage, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
-    renderer.drawPlayer(player, px, py, camX, camY);
+    renderer.drawSatchels(this.satchels, this.clock.time, camX, camY);
+    // Dead: the player isn't drawn (they're already back at the bed, off screen).
+    if (!this.deathScreen) renderer.drawPlayer(player, px, py, camX, camY, this.playerAlpha());
     renderer.drawParticles(this.particles, camX, camY);
     if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
-    renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.clock.time, camX, camY, glowX, glowY);
+    if (!reduced) renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.clock.time, camX, camY, glowX, glowY);
     renderer.drawFlashes(this.flashes, camX, camY);
-    if (!this.inventoryPanel.open) this.drawCursor(camX, camY);
+    for (const f of this.floaters) {
+      const t = (this.clock.time - f.at) / f.duration;
+      renderer.drawFloatingText(f.text, f.x, f.y - t * 12, f.color, Math.min(1, 3 * (1 - t)), camX, camY);
+    }
+    if (!this.inventoryPanel.open && !this.deathScreen) this.drawCursor(camX, camY);
     if (this.mining.hint) renderer.drawHint(this.mining.hint, camX, camY);
+    // A red flash over the screen when hurt (not with Reduced flashes; the number and hearts still show it).
+    const sinceHit = this.lastHit ? this.clock.time - this.lastHit.at : Infinity;
+    if (!reduced && sinceHit < HURT_FLASH_TIME) {
+      renderer.ctx.save();
+      renderer.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      renderer.ctx.fillStyle = `rgba(200, 20, 20, ${HURT_FLASH_ALPHA * (1 - sinceHit / HURT_FLASH_TIME)})`;
+      renderer.ctx.fillRect(0, 0, renderer.canvas.width, renderer.canvas.height);
+      renderer.ctx.restore();
+    }
     if (this.inventoryPanel.open) {
       this.inventoryPanel.draw(renderer.ctx, renderer.itemAtlas, renderer.scale, mouse.x, mouse.y, this.panelState());
     } else {
@@ -382,11 +502,60 @@ export class Game {
       if (this.settings.showMinimap && !this.fullMap.open) drawMinimap(renderer.ctx, this.mapImage, this.mapMarkers(glowX, glowY), renderer.scale);
     }
     drawToasts(renderer.ctx, this.toasts, renderer.scale);
+    const hudBottom = this.fullMap.open ? 6 * renderer.scale : this.drawVitals(sinceHit);
     // Depth is measured at the player's feet: standing on the surface level reads 0 m.
     drawDepthMeter(renderer.ctx, Math.floor((player.y + PLAYER_HEIGHT) / TILE_SIZE) - SURFACE_LEVEL, renderer.scale);
     if (this.fullMap.open) this.fullMap.draw(renderer.ctx, this.mapImage, this.mapMarkers(glowX, glowY), renderer.scale);
+    if (this.deathScreen) {
+      const ready = performance.now() - this.deathScreen.shownAt >= DEATH_SCREEN_DELAY * 1000;
+      drawDeathScreen(renderer.ctx, this.deathScreen.lines, ready ? respawnPrompt() : null, renderer.scale);
+    }
     if (this.showOverlay) this.drawOverlay(stats);
-    else if (this.settings.showFps) drawFpsCounter(renderer.ctx, stats.fps, renderer.scale);
+    else if (this.settings.showFps) drawFpsCounter(renderer.ctx, stats.fps, renderer.scale, hudBottom);
+  }
+
+  /**
+   * Hearts (or "Cozy world") and the way to the nearest satchel, top left. Returns the y (screen
+   * px) below them. `sinceHit` is seconds since the latest hit.
+   */
+  private drawVitals(sinceHit: number): number {
+    const { renderer, player, health } = this;
+    const u = renderer.scale;
+    let y: number;
+    if (this.difficulty === 'cozy') {
+      y = drawHudLine(renderer.ctx, 'Cozy world', 6 * u, u, '#cfe8c8');
+    } else {
+      const left = health.protectedUntil - this.clock.time;
+      y = drawHearts(
+        renderer.ctx,
+        {
+          hp: health.hp,
+          maxHp: player.stats.maxHealth,
+          // Measured against the longer of the two protections, so the bar never overflows.
+          protection: left > 0 ? left / Math.max(HURT_PROTECTION, RESPAWN_PROTECTION) : 0,
+          shakeFrom: this.lastHit?.hpBefore ?? 0,
+          shake: Math.max(0, 1 - sinceHit / HEART_SHAKE_TIME),
+        },
+        u,
+      );
+      if (health.god) y = drawHudLine(renderer.ctx, 'God mode', y, u, '#ffe066');
+    }
+    const satchel = this.nearestSatchel();
+    if (satchel) {
+      const dx = (satchel.x + SATCHEL_SIZE / 2 - player.centerX) / TILE_SIZE;
+      const dy = (satchel.y + SATCHEL_SIZE / 2 - player.centerY) / TILE_SIZE;
+      const more = this.satchels.length > 1 ? ` (${this.satchels.length} satchels)` : '';
+      y = drawHudLine(renderer.ctx, directionText('Satchel', dx, dy) + more, y, u, '#d9bfff');
+    }
+    return y;
+  }
+
+  /** How opaque to draw the player: protection blinks it, or (Reduced flashes) shows it see-through. */
+  private playerAlpha(): number {
+    const left = this.health.protectedUntil - this.clock.time;
+    if (left <= 0 || this.difficulty === 'cozy') return 1;
+    if (this.settings.reducedFlashes) return PROTECTION_ALPHA;
+    return Math.floor(left / PROTECTION_BLINK) % 2 === 0 ? 1 : 0.25;
   }
 
   /** Open the full map (closing the inventory panel), or close it. */
@@ -434,6 +603,8 @@ export class Game {
       playerY: y,
       spawn: { tx: this.world.spawnTx, ty: this.world.spawnTy },
       chests: this.tileEntities.entries().map(({ tx, ty }) => ({ tx, ty })),
+      bed: this.activeBed(),
+      satchels: this.satchels.map((s) => ({ tx: (s.x + SATCHEL_SIZE / 2) / TILE_SIZE, ty: (s.y + SATCHEL_SIZE / 2) / TILE_SIZE })),
     };
   }
 
@@ -453,10 +624,14 @@ export class Game {
     this.digTickIn = DIG_TICK_INTERVAL; // leave room for the break sound before the next tick
     this.shatter(tx, ty, tile);
     // Breaking either half of a door removes the other half (one door drops, from this half).
-    const partner = doorPartner(this.world, tx, ty, tile);
+    const partner = doorPartner(this.world, tx, ty, tile) ?? bedPartner(this.world, tx, ty, tile);
     if (partner) {
       this.world.setTile(partner[0], partner[1], Tile.Air);
       this.particles.breakBurst(partner[0], partner[1], tileDef(tile).color);
+    }
+    if (isBed(tile) && this.bed && this.bed.ty === ty && this.bed.tx === (tile === Tile.BedLeft ? tx : tx - 1)) {
+      this.bed = null;
+      this.toasts.show('Your bed is gone. Without one you respawn near the world spawn.', 4);
     }
     // Cutting a trunk brings down the rest of the tree above the cut.
     if (tile === Tile.Wood) {
@@ -476,9 +651,16 @@ export class Game {
   private panelState(): PanelState {
     const { world, player } = this;
     const chest = this.openChest ? this.chestAt(this.openChest.tx, this.openChest.ty) : null;
-    const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY);
+    const range = player.stats.stationRange;
+    const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY, range);
     if (chest && !chests.includes(chest)) chests.push(chest);
-    return { inventory: this.inventory, stations: nearbyStations(world, player.centerX, player.centerY), chests, chest };
+    return {
+      inventory: this.inventory,
+      stations: nearbyStations(world, player.centerX, player.centerY, range),
+      chests,
+      chest,
+      stationRange: range,
+    };
   }
 
   private closePanel(): void {
@@ -495,8 +677,9 @@ export class Game {
     const pty = Math.floor(player.centerY / TILE_SIZE);
     let best: { tx: number; ty: number } | null = null;
     let bestDistance = Infinity;
-    for (let ty = pty - REACH - 1; ty <= pty + REACH + 1; ty++) {
-      for (let tx = ptx - REACH - 1; tx <= ptx + REACH + 1; tx++) {
+    const reach = Math.ceil(player.stats.reach);
+    for (let ty = pty - reach - 1; ty <= pty + reach + 1; ty++) {
+      for (let tx = ptx - reach - 1; tx <= ptx + reach + 1; tx++) {
         if (!this.chestAt(tx, ty) || !inReach(player, tx, ty)) continue;
         const distance = Math.hypot((tx + 0.5) * TILE_SIZE - player.centerX, (ty + 0.5) * TILE_SIZE - player.centerY);
         if (distance < bestDistance) {
@@ -514,6 +697,161 @@ export class Game {
     if (this.builtThisHold.has(key) || !tryPlace(this.world, this.player, this.inventory, tx, ty)) return;
     this.builtThisHold.add(key);
     sfx.place(tileDef(this.world.getTile(tx, ty)).material, this.pan(tx));
+    if (isBed(this.world.getTile(tx, ty))) this.toasts.show(`${mainKey('interact')} the bed to respawn there`, 4);
+  }
+
+  /** Right-click on a bed in reach: it becomes the respawn point. Returns false if (tx, ty) isn't a bed in reach. */
+  private useBed(tx: number, ty: number): boolean {
+    const left = bedLeft(this.world, tx, ty);
+    if (!left || !inReach(this.player, tx, ty)) return false;
+    const [lx, ly] = left;
+    const already = this.bed?.tx === lx && this.bed.ty === ly;
+    this.bed = { tx: lx, ty: ly };
+    sfx.bedSet();
+    this.floaters.push({
+      text: already ? 'Already your bed' : 'Respawn point set',
+      color: '#ffd0e6',
+      x: (lx + 1) * TILE_SIZE,
+      y: ly * TILE_SIZE - 2,
+      at: this.clock.time,
+      duration: 1.6,
+    });
+    if (!already) this.toasts.show('Respawn point set: you will wake up in this bed', 3);
+    return true;
+  }
+
+  /** The bed the player respawns at, if it's still whole. */
+  private activeBed(): BedSpot | null {
+    return this.bed && isWholeBed(this.world, this.bed.tx, this.bed.ty) ? this.bed : null;
+  }
+
+  /** Change the world's difficulty (from the pause menu). */
+  setDifficulty(difficulty: Difficulty): void {
+    if (difficulty === this.difficulty) return;
+    this.difficulty = difficulty;
+    this.toasts.show(difficulty === 'cozy' ? 'Cozy: nothing can hurt you now' : 'Normal: falls hurt now', 3);
+  }
+
+  /** Take damage (ignored in Cozy worlds, in god mode and while protected). Dying shows the death screen. */
+  hurt(amount: number, cause: DamageCause): void {
+    const { health, player } = this;
+    const before = health.hp;
+    const result = health.hurt(amount, this.clock.time, this.difficulty);
+    if (result === 'ignored') return;
+    this.lastHit = { at: this.clock.time, hpBefore: before };
+    this.floaters.push({
+      text: `-${before - health.hp}`,
+      color: '#ff6b5e',
+      x: player.centerX,
+      y: player.y - 2,
+      at: this.clock.time,
+      duration: DAMAGE_NUMBER_TIME,
+    });
+    sfx.hurt();
+    this.shake.hit(2);
+    if (result === 'died') this.die(cause);
+  }
+
+  /**
+   * The player died: the bag (except pickaxes) goes into a satchel where they fell, and they
+   * wake up at the bed (or near the world spawn) with full health and RESPAWN_PROTECTION.
+   * All of that happens now, so a save made while the death screen shows is already the
+   * respawned game; the screen only waits for the player to read it.
+   */
+  private die(cause: DamageCause): void {
+    const { player, inventory, world } = this;
+    const leftover = inventory.returnCursor();
+    if (leftover) this.dropAtPlayer(leftover.item, leftover.count);
+    const satchel = dropSatchel(player, takeBag(inventory));
+    if (satchel) this.satchels.push(satchel);
+    const hadBed = this.activeBed() !== null;
+    const bedWasSet = this.bed !== null;
+    const spot = findRespawn(world, this.bed);
+    if (!hadBed) this.bed = null; // a destroyed bed is forgotten; a blocked one is kept for next time
+    const lines = [deathCauseText(cause)];
+    const kept = inventory.slots.some((s) => s && itemDef(s.item).pickaxeTier !== undefined);
+    lines.push(kept ? 'You kept your hotbar and every pickaxe.' : 'You kept your hotbar.');
+    if (satchel) {
+      const dx = (satchel.x + SATCHEL_SIZE / 2 - (spot.x + PLAYER_WIDTH / 2)) / TILE_SIZE;
+      const dy = (satchel.y + SATCHEL_SIZE / 2 - (spot.y + PLAYER_HEIGHT / 2)) / TILE_SIZE;
+      const n = satchelItemCount(satchel);
+      lines.push(`Your bag (${n} item${n === 1 ? '' : 's'}) is in a satchel ${offsetText(dx, dy)} from where you wake up.`);
+      lines.push('It is marked on the map, and waits there until you collect it.');
+    } else {
+      lines.push('Your bag was empty, so nothing was left behind.');
+    }
+    if (spot.atBed) lines.push('You wake up in your bed.');
+    else if (hadBed) lines.push('Your bed is blocked, so you wake up near the world spawn.');
+    else if (bedWasSet) lines.push('Your bed is gone, so you wake up near the world spawn.');
+    else lines.push('You have no bed, so you wake up near the world spawn. Craft one at a workbench.');
+    player.placeAt(spot.x, spot.y);
+    this.health.refill(player.stats.maxHealth, this.clock.time, RESPAWN_PROTECTION);
+    this.leftAction = null;
+    this.touchingSatchels.clear();
+    this.deathScreen = { lines, shownAt: performance.now() };
+    sfx.death();
+  }
+
+  /** On the death screen: the respawn key (after a moment) brings the view back to the player. */
+  private updateDeathScreen(): void {
+    if (!this.deathScreen || performance.now() - this.deathScreen.shownAt < DEATH_SCREEN_DELAY * 1000) return;
+    if (!actionPressed('respawn') && !actionPressed('click')) return;
+    this.deathScreen = null;
+    this.camera.centerOn(this.player.centerX, this.player.centerY);
+    this.clampCamera();
+    this.camera.prevX = this.camera.x;
+    this.camera.prevY = this.camera.y;
+    sfx.uiClick();
+  }
+
+  /** Fall damage on landing, and the ladder hint the first time the player falls past a ladder. */
+  private checkFall(): void {
+    const { player } = this;
+    if (player.fallLanded > 0) {
+      const damage = fallDamage(player.fallLanded, player.stats.safeFallTiles);
+      if (damage > 0) this.hurt(damage, { kind: 'fall', tiles: player.fallLanded });
+    }
+    const falling = player.fallTop !== null && player.vy > 0 && player.y - player.fallTop > 2 * TILE_SIZE;
+    if (!this.ladderHintShown && falling && player.onLadder(this.world)) {
+      this.ladderHintShown = true;
+      this.toasts.show(ladderGrabHint(), 4);
+    }
+    if (player.caughtByLadder) sfx.step('wood');
+  }
+
+  /** Touching a satchel empties it into the inventory, as far as there's room. */
+  private updateSatchels(): void {
+    const { player, inventory, toasts } = this;
+    const touching = new Set<Satchel>();
+    for (const satchel of this.satchels) {
+      if (!touchesSatchel(player, satchel)) continue;
+      touching.add(satchel);
+      const firstTouch = !this.touchingSatchels.has(satchel);
+      const moved = collectSatchel(satchel, inventory);
+      if (moved > 0) {
+        sfx.pickup();
+        toasts.show(`Recovered ${moved} item${moved === 1 ? '' : 's'} from the satchel`);
+      }
+      if (satchel.stacks.length > 0 && (firstTouch || moved > 0)) {
+        toasts.show(`Inventory full: ${satchelItemCount(satchel)} items stay in the satchel`, 3);
+      }
+    }
+    this.touchingSatchels = touching;
+    this.satchels = this.satchels.filter((s) => s.stacks.length > 0);
+  }
+
+  /** The satchel nearest the player, or null. */
+  private nearestSatchel(): Satchel | null {
+    let best: Satchel | null = null;
+    let bestDistance = Infinity;
+    for (const satchel of this.satchels) {
+      const distance = Math.hypot(satchel.x - this.player.x, satchel.y - this.player.y);
+      if (distance < bestDistance) {
+        best = satchel;
+        bestDistance = distance;
+      }
+    }
+    return best;
   }
 
   /**
@@ -550,7 +888,7 @@ export class Game {
   /** C: quick stack into every chest in station range. */
   private quickStackNearby(): void {
     const { world, player, toasts } = this;
-    const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY);
+    const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY, player.stats.stationRange);
     if (chests.length === 0) {
       toasts.show('No chests nearby');
       return;
@@ -575,7 +913,7 @@ export class Game {
   private shatter(tx: number, ty: number, tile: TileId): void {
     const def = tileDef(tile);
     sfx.breakTile(def.material, def.hardness, this.pan(tx));
-    this.flashes.push({ tx, ty, alpha: breakFlashAlpha(def.hardness), drawn: false });
+    if (!this.settings.reducedFlashes) this.flashes.push({ tx, ty, alpha: breakFlashAlpha(def.hardness), drawn: false });
     this.particles.breakBurst(tx, ty, def.color);
     if (def.drop) this.dropList.push(new ItemDrop(def.drop, 1, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
   }
@@ -623,7 +961,7 @@ export class Game {
 
   /** Stereo position (-1 left .. 1 right) of a sound from tile column tx, relative to the player. */
   private pan(tx: number): number {
-    return ((tx + 0.5) * TILE_SIZE - this.player.centerX) / (REACH * TILE_SIZE);
+    return ((tx + 0.5) * TILE_SIZE - this.player.centerX) / (this.player.stats.reach * TILE_SIZE);
   }
 
   /** Throw items forward from the player. They stay there until the player walks away and comes back. */
@@ -657,7 +995,9 @@ export class Game {
     const ty = Math.floor(player.centerY / TILE_SIZE);
     const tier = this.inventory.bestPickaxeTier();
     const saved = stats.lastSavedAt ? `${Math.round((Date.now() - stats.lastSavedAt) / 1000)} s ago` : 'not yet';
-    const debugLines = DEBUG ? debugHelpLines(player.flying, this.instantMine, this.fullbright) : [];
+    const debugLines = DEBUG ? debugHelpLines(player.flying, this.instantMine, this.fullbright, this.health.god) : [];
+    const fall = player.fallTop === null ? 'none' : `${((player.y - player.fallTop) / TILE_SIZE).toFixed(1)} tiles`;
+    const protectedFor = Math.max(0, this.health.protectedUntil - this.clock.time);
     const percent = (volume: number): string => `${Math.round(volume * 100)}%`;
     drawDebugInfo(this.renderer.ctx, [
       `FPS ${stats.fps}   frame ${stats.frameMs.toFixed(1)} ms   saved ${saved}`,
@@ -666,6 +1006,7 @@ export class Game {
       `Play time ${this.clock.time.toFixed(1)} s   World ${this.pausedBy ? `paused (${this.pausedBy})` : 'running'}`,
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)}`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
+      `${difficultyName(this.difficulty)}   HP ${this.health.hp}/${player.stats.maxHealth}   protected ${protectedFor.toFixed(1)} s   fall ${fall}   bed ${this.activeBed() ? `(${this.bed!.tx}, ${this.bed!.ty})` : 'none'}   satchels ${this.satchels.length}`,
       ...overlayHelpLines(),
       ...debugLines,
     ]);

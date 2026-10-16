@@ -28,6 +28,9 @@ export const Tile = {
   DoorClosedBottom: 20,
   DoorOpenTop: 21,
   DoorOpenBottom: 22,
+  // A bed is two tiles side by side: the head (pillow) on the left, the foot on the right.
+  BedLeft: 23,
+  BedRight: 24,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -81,6 +84,9 @@ const defs: TileDef[] = [
   { id: Tile.DoorClosedBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: true, material: 'wood' },
   { id: Tile.DoorOpenTop, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
   { id: Tile.DoorOpenBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
+  // Either half of a bed drops the bed; breaking one half removes the other (see beds.ts).
+  { id: Tile.BedLeft, name: 'Bed', hardness: 0.5, minTier: 0, color: '#b84a4a', drop: 'bed', solid: false, material: 'wood' },
+  { id: Tile.BedRight, name: 'Bed', hardness: 0.5, minTier: 0, color: '#b84a4a', drop: 'bed', solid: false, material: 'wood' },
 ];
 
 /** Indexed by tile id. */

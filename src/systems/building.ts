@@ -9,10 +9,11 @@ import { inReach } from './mining';
 /**
  * Can `tile` be placed at (tx, ty)? The spot must be empty air within reach, next to a tile
  * that holds blocks up (no floating blocks), and a solid block can't overlap the player.
- * Doors have their own rule; see doorSpot.
+ * Doors and beds have their own rules; see doorSpot and bedSpot.
  */
 export function canPlace(world: World, player: Player, tx: number, ty: number, tile: TileId): boolean {
   if (tile === Tile.DoorClosedBottom) return doorSpot(world, player, tx, ty) !== null;
+  if (tile === Tile.BedLeft) return bedSpot(world, player, tx, ty) !== null;
   if (!world.inBounds(tx, ty) || world.getTile(tx, ty) !== Tile.Air) return false;
   if (!inReach(player, tx, ty)) return false;
   const supported =
@@ -51,6 +52,23 @@ export function doorSpot(world: World, player: Player, tx: number, ty: number): 
   return null;
 }
 
+/**
+ * Where a bed placed at the cursor tile (tx, ty) goes: the cursor can be on its left or its
+ * right tile. Returns the left tile, or null if it doesn't fit: both tiles must be empty, with
+ * solid ground under both, and the cursor tile in reach. (Beds don't block movement, so they
+ * may overlap the player.)
+ */
+export function bedSpot(world: World, player: Player, tx: number, ty: number): [number, number] | null {
+  if (!inReach(player, tx, ty)) return null;
+  for (const lx of [tx, tx - 1]) {
+    const fits = [lx, lx + 1].every(
+      (x) => world.inBounds(x, ty) && world.getTile(x, ty) === Tile.Air && isSolid(world.getTile(x, ty + 1)),
+    );
+    if (fits) return [lx, ty];
+  }
+  return null;
+}
+
 /** Place one of the selected hotbar item at (tx, ty). Returns true if a tile was placed. */
 export function tryPlace(world: World, player: Player, inventory: Inventory, tx: number, ty: number): boolean {
   const stack = inventory.selectedStack;
@@ -61,6 +79,10 @@ export function tryPlace(world: World, player: Player, inventory: Inventory, tx:
     const [bx, by] = doorSpot(world, player, tx, ty)!;
     world.setTile(bx, by - 1, Tile.DoorClosedTop);
     world.setTile(bx, by, Tile.DoorClosedBottom);
+  } else if (tile === Tile.BedLeft) {
+    const [lx, ly] = bedSpot(world, player, tx, ty)!;
+    world.setTile(lx, ly, Tile.BedLeft);
+    world.setTile(lx + 1, ly, Tile.BedRight);
   } else {
     world.setTile(tx, ty, tile);
   }

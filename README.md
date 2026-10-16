@@ -9,7 +9,8 @@ Built with TypeScript, Vite and plain HTML5 Canvas: no game engine, no external 
 ## How to play
 
 **Continue** your most recent world from the title screen, pick another one under **Worlds**,
-or start a **New world** (give it a name and a seed, or leave the seed blank for a random one).
+or start a **New world** (give it a name and a seed, or leave the seed blank for a random one,
+and pick **Normal** or **Cozy**).
 
 | Action                             | Input                     |
 | ---------------------------------- | ------------------------- |
@@ -19,7 +20,7 @@ or start a **New world** (give it a name and a seed, or leave the seed blank for
 | Place the held block               | Left mouse on empty space |
 | Build a row                        | Hold left mouse and sweep |
 | Pick block onto hotbar             | Middle mouse              |
-| Open chest, open or close door     | Right-click it            |
+| Open chest, use door or bed        | Right-click it            |
 | Climb a ladder                     | W / S or ↑ / ↓ on it      |
 | Drop through a platform            | S + Space                 |
 | Map / minimap                      | M / N                     |
@@ -51,6 +52,18 @@ or start a **New world** (give it a name and a seed, or leave the seed blank for
   You can stand on top of a ladder, so a shaft with a ladder in it can be walked over. Jump up
   through platforms, and press S + Space to drop down through one. Doors are two tiles tall
   and need ground under them; right-click to open or close one.
+- **Health** (Normal worlds): 10 HP, shown as 5 hearts in the top left. Falls of more than 12
+  tiles hurt; grab a ladder on the way down (hold W or S) and the fall ends safely, and walking
+  off a ledge into a ladder shaft catches you on the ladder. Health comes back slowly after 5 s
+  without damage. Right after a hit you can't be hurt again for a moment (the hearts get a light
+  outline and a bar under them).
+- **Beds** (10 planks and 4 wood at a workbench) are two tiles wide. Right-click one to respawn
+  there; it's marked on the map. When you die your bag goes into a **satchel** where you died
+  (your hotbar and every pickaxe stay with you). Satchels stay until you collect them, show on
+  the map and in the top-left corner, and keep whatever doesn't fit in your inventory. With no
+  bed, or a blocked one, you wake up near the world spawn.
+- **Cozy** worlds have no damage at all. Worlds from before health existed are Cozy. Change it
+  any time from the pause menu.
 - **M** opens the map: drag or use WASD to pan, scroll to zoom. It only shows what you've
   seen: places you've had on screen in the light, and anything close to you in the dark. **N**
   toggles the minimap in the corner (it's in Settings too).
@@ -67,7 +80,8 @@ or start a **New world** (give it a name and a seed, or leave the seed blank for
   then adds it as a new world, or replaces the world with the same seed if you click Replace
   twice. Backups only import into the version of the game that saved them.
 - **Settings** (on the title screen and the pause menu) has the master and sound-effect
-  volumes, screen shake, pixel scale (auto, 2x or 3x), an FPS counter and the minimap. They're kept per
+  volumes, screen shake, reduced flashes (no break flash, ore glints or red hurt flash), pixel
+  scale (auto, 2x or 3x), an FPS counter and the minimap. They're kept per
   browser. Sound starts after your first click or key press, as browsers require.
 
 ## Development
@@ -86,7 +100,8 @@ npm run preview   # serve the built dist/ locally
 Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing shortcuts:
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
 3x3), **L** toggles lighting, **O** puts a patch of every ore at the cursor, **K** digs a
-100 m ladder shaft down from the cursor, and **V** reveals the whole map. The title screen also
+100 m ladder shaft down from the cursor, **V** reveals the whole map, **H** toggles god mode
+(and heals) and **J** deals 2 damage. The title screen also
 gets a button that marks your most recent world as an older version, and the pause menu a
 **Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't
 pause when its window loses focus, and the running game is on `window.digDeep` in the browser

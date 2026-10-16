@@ -368,6 +368,32 @@ export function door(open: boolean, pan = 0): void {
   });
 }
 
+/** The player took damage: a dull thump with a short falling grunt. */
+export function hurt(): void {
+  play({ volume: SFX_VOLUMES.hurt, key: 'hurt' }, (v) => {
+    const p = jitter();
+    tone(v, { type: 'sine', freq: 140 * p, to: 50 * p, attack: 0.002, decay: 0.18, gain: 0.9 });
+    tone(v, { type: 'square', freq: 330 * p, to: 180 * p, attack: 0.01, decay: 0.12, gain: 0.12 });
+    noiseBurst(v, { filter: 'lowpass', freq: 900, to: 200, decay: 0.12, gain: 0.5 });
+  });
+}
+
+/** The player died: three falling notes. */
+export function death(): void {
+  play({ volume: SFX_VOLUMES.death, key: 'death' }, (v) => {
+    [392, 330, 247].forEach((f, i) => tone(v, { type: 'triangle', freq: f, delay: i * 0.18, attack: 0.01, decay: 0.3, gain: 0.6 }));
+    tone(v, { type: 'sine', freq: 98, delay: 0.36, attack: 0.02, decay: 0.6, gain: 0.5 });
+  });
+}
+
+/** The bed became the respawn point: a soft rising chime. */
+export function bedSet(): void {
+  play({ volume: SFX_VOLUMES.bed, key: 'bed' }, (v) => {
+    tone(v, { type: 'sine', freq: 523, attack: 0.02, decay: 0.3, gain: 0.5 });
+    tone(v, { type: 'sine', freq: 784, delay: 0.12, attack: 0.02, decay: 0.4, gain: 0.5 });
+  });
+}
+
 /** A menu button or an inventory slot was clicked. */
 export function uiClick(): void {
   play({ volume: SFX_VOLUMES.ui, key: 'ui' }, (v) => {

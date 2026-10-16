@@ -41,7 +41,7 @@ export function brushNeighbours(mode: InstantMine): [number, number][] {
 
 /**
  * Enough of every material to craft every recipe, plus both stations, some chests and a stack
- * of ladders, platforms and doors ready to place.
+ * of ladders, platforms, doors and beds ready to place.
  */
 const KIT: ReadonlyArray<[ItemId, number]> = [
   ['wood', 99],
@@ -58,6 +58,7 @@ const KIT: ReadonlyArray<[ItemId, number]> = [
   ['ladder', 200],
   ['platform', 100],
   ['door', 3],
+  ['bed', 2],
 ];
 
 /** Add the materials kit. Anything that doesn't fit is skipped. */
@@ -91,10 +92,11 @@ export function placeLadderShaft(world: World, tx: number, ty: number): number {
   return length;
 }
 
-export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean): string[] {
+export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean, god: boolean): string[] {
   return [
     `DEBUG  ${mainKey('debugGive')}: give materials   ${mainKey('debugLighting')}: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
     `       ${mainKey('debugFly')}: fly ${flying ? 'ON' : 'off'} (${keyPairs('climbUp', 'climbDown', undefined, '/')}, ${mainKey('modifier')} fast)   ${mainKey('debugInstantMine')}: instant mine ${instantMine}`,
     `       ${mainKey('debugOres')}: ore patch at the cursor   ${mainKey('debugLadderShaft')}: ${LADDER_SHAFT_LENGTH} m ladder shaft down from the cursor   ${mainKey('debugRevealMap')}: reveal the map`,
+    `       ${mainKey('debugGodMode')}: god mode ${god ? 'ON' : 'off'} (and heal)   ${mainKey('debugHurt')}: take 2 damage (fly up and turn fly off to test falls)`,
   ];
 }

@@ -159,14 +159,14 @@ export function drawToasts(ctx: CanvasRenderingContext2D, toasts: Toasts, u: num
   ctx.restore();
 }
 
-/** "60 FPS" in the top-left corner, when the Settings screen turns it on. */
-export function drawFpsCounter(ctx: CanvasRenderingContext2D, fps: number, u: number): void {
+/** "60 FPS" in the top-left corner (under the hearts, at y screen px), when the Settings screen turns it on. */
+export function drawFpsCounter(ctx: CanvasRenderingContext2D, fps: number, u: number, y = 6 * u): void {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.font = `${7 * u}px monospace`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  shadowText(ctx, `${fps} FPS`, 6 * u, 6 * u, '#fff', u);
+  shadowText(ctx, `${fps} FPS`, 6 * u, y, '#fff', u);
   ctx.restore();
 }
 

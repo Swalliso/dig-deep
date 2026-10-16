@@ -3,7 +3,6 @@ import {
   DROP_POP_SPEED,
   DROP_PULL_ACCEL,
   DROP_PULL_MAX_SPEED,
-  DROP_PULL_RANGE,
   DROP_SIZE,
   GRAVITY,
   MAX_FALL_SPEED,
@@ -35,7 +34,7 @@ export class ItemDrop {
   pulled = false;
   /**
    * Set on stacks the player throws away: they aren't picked up again until the player has
-   * been more than DROP_PULL_RANGE away from them once, so they stay where they were thrown.
+   * been more than the player's drop pull range away from them once, so they stay where they were thrown.
    */
   waitForPlayerToLeave = false;
 
@@ -56,10 +55,11 @@ export class ItemDrop {
     const dx = player.centerX - (this.x + S / 2);
     const dy = player.centerY - (this.y + S / 2);
     const dist = Math.hypot(dx, dy);
-    if (dist > DROP_PULL_RANGE * TILE_SIZE) this.waitForPlayerToLeave = false;
+    const pullRange = player.stats.dropPullRange * TILE_SIZE;
+    if (dist > pullRange) this.waitForPlayerToLeave = false;
     const room = !this.waitForPlayerToLeave && inventory.canAdd(this.item);
     if (!room) this.pulled = false;
-    else if (dist < DROP_PULL_RANGE * TILE_SIZE) this.pulled = true;
+    else if (dist < pullRange) this.pulled = true;
 
     if (this.pulled && dist > 0) {
       const speed = Math.min(Math.hypot(this.vx, this.vy) + DROP_PULL_ACCEL * dt, DROP_PULL_MAX_SPEED);

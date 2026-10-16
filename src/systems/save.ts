@@ -7,6 +7,8 @@ import { ExploredMap } from '../world/explored';
 import { TileEntities } from '../world/tileEntities';
 import { Tile, TILE_COUNT } from '../world/tiles';
 import type { World } from '../world/world';
+import type { BedSpot, Satchel } from './death';
+import { Health, type Difficulty, type SavedHealth } from './health';
 import { Inventory, type ItemStack, type Slots } from './inventory';
 import { ITEMS, itemDef, type ItemId } from './items';
 
@@ -36,8 +38,11 @@ export interface SaveData {
   playTime?: number;
   /** Only chunks changed since generation (the rest regenerate from the seed), RLE-compressed. */
   chunks: { index: number; data: Uint8Array }[];
-  /** Player top-left in world px. */
-  player: { x: number; y: number };
+  /**
+   * Player top-left in world px, and the top of the fall in progress (see Player.fallTop) so a
+   * reload mid-fall still lands as hard. fallTop is missing in older saves.
+   */
+  player: { x: number; y: number; fallTop?: number | null };
   inventory: { slots: (ItemStack | null)[]; selected: number };
   /**
    * Items lying on the ground (top-left in world px). A stack held on the mouse that didn't fit
@@ -48,6 +53,14 @@ export interface SaveData {
   tileEntities?: SavedTileEntity[];
   /** Tiles seen so far (the map), per chunk: 1 byte per tile, RLE-compressed. Missing in older saves. */
   explored?: { index: number; data: Uint8Array }[];
+  /** Missing in saves from before Phase 11b, which load as Cozy. */
+  difficulty?: Difficulty;
+  /** HP and the hurt-protection and regeneration times (on the session clock). Missing means full. */
+  health?: SavedHealth;
+  /** Where the player respawns, by the bed's left tile, or null for no bed. */
+  bed?: BedSpot | null;
+  /** Bags left where the player died. */
+  satchels?: Satchel[];
 }
 
 /**
@@ -62,6 +75,8 @@ export interface WorldMeta {
   savedAt: number;
   /** The save's SAVE_VERSION; a world from another version can't be loaded. */
   version: number;
+  /** Missing for worlds saved before Phase 11b (they're Cozy). */
+  difficulty?: Difficulty;
 }
 
 /** A tile entity and where it is. Only chests so far. */
@@ -115,13 +130,21 @@ export function decodeRle(rle: Uint8Array, length: number): Uint8Array {
 
 // --- Building and applying saves (pure, so they can be unit-tested). ---
 
+/** Player state beyond the player and the inventory (Phase 11b): health, difficulty, bed, satchels. */
+export interface SurvivalState {
+  health: Health;
+  difficulty: Difficulty;
+  bed: BedSpot | null;
+  satchels: readonly Satchel[];
+}
+
 export function createSave(
   world: World,
   player: Player,
   inventory: Inventory,
   drops: readonly ItemDrop[],
   entities?: TileEntities,
-  extra: { explored?: ExploredMap; name?: string; playTime?: number } = {},
+  extra: { explored?: ExploredMap; name?: string; playTime?: number; survival?: SurvivalState } = {},
 ): SaveData {
   return {
     version: SAVE_VERSION,
@@ -132,7 +155,7 @@ export function createSave(
     chunks: [...world.changedChunks]
       .sort((a, b) => a - b)
       .map((index) => ({ index, data: encodeRle(world.chunks[index]) })),
-    ...savedState(player, inventory, drops, entities),
+    ...savedState(player, inventory, drops, entities, extra.survival),
     explored: extra.explored
       ? [...extra.explored.chunks.entries()].sort(([a], [b]) => a - b).map(([index, data]) => ({ index, data: encodeRle(data) }))
       : [],
@@ -145,19 +168,31 @@ export function createSave(
  * tell whether there's anything new to save. Saved state belongs here, so its changes are
  * always noticed; a test checks createSave adds nothing else.
  */
-export type SavedState = Pick<SaveData, 'player' | 'inventory' | 'drops' | 'tileEntities'>;
+export type SavedState = Pick<SaveData, 'player' | 'inventory' | 'drops' | 'tileEntities' | 'difficulty' | 'health' | 'bed' | 'satchels'>;
 
-export function savedState(player: Player, inventory: Inventory, drops: readonly ItemDrop[], entities?: TileEntities): SavedState {
+export function savedState(
+  player: Player,
+  inventory: Inventory,
+  drops: readonly ItemDrop[],
+  entities?: TileEntities,
+  survival?: SurvivalState,
+): SavedState {
   const { slots, overflow } = savedSlots(inventory);
   const saved: SavedDrop[] = drops.map((d) => ({ item: d.item, count: d.count, x: d.x, y: d.y }));
   // The rest of a stack held on the mouse that didn't fit in the inventory: saved lying at the
   // player, so saving never loses it.
   if (overflow) saved.push({ ...overflow, x: player.centerX - DROP_SIZE / 2, y: player.centerY - DROP_SIZE / 2 });
   return {
-    player: { x: player.x, y: player.y },
+    player: { x: player.x, y: player.y, fallTop: player.fallTop },
     inventory: { slots, selected: inventory.selected },
     drops: saved,
     tileEntities: entities ? savedTileEntities(entities) : [],
+    ...(survival && {
+      difficulty: survival.difficulty,
+      health: survival.health.saved(),
+      bed: survival.bed && { ...survival.bed },
+      satchels: survival.satchels.map((s) => ({ x: s.x, y: s.y, stacks: s.stacks.map((st) => ({ ...st })) })),
+    }),
   };
 }
 
@@ -204,6 +239,22 @@ function restoreSlots(saved: readonly unknown[], slots: Slots): void {
 export function restorePlayTime(save: SaveData): number {
   const time = save.playTime;
   return typeof time === 'number' && Number.isFinite(time) && time > 0 ? time : 0;
+}
+
+/** The world's difficulty. Worlds saved before Phase 11b had none, and become Cozy. */
+export function restoreDifficulty(save: SaveData): Difficulty {
+  return save.difficulty === 'normal' ? 'normal' : 'cozy';
+}
+
+/** Health from a save (full health if it has none). */
+export function restoreHealth(save: SaveData, maxHp: number): Health {
+  return Health.fromSave(save.health, maxHp);
+}
+
+/** The top of the fall the player was in when saved, or null. */
+export function restoreFallTop(save: SaveData): number | null {
+  const top = save.player.fallTop;
+  return typeof top === 'number' && Number.isFinite(top) ? top : null;
 }
 
 /** Rebuild the inventory, skipping anything that no longer exists. */
@@ -287,7 +338,8 @@ export function checkSave(raw: unknown): SaveStatus {
     Array.isArray(save.inventory?.slots) &&
     (save.drops === undefined || Array.isArray(save.drops)) &&
     (save.tileEntities === undefined || Array.isArray(save.tileEntities)) &&
-    (save.explored === undefined || Array.isArray(save.explored));
+    (save.explored === undefined || Array.isArray(save.explored)) &&
+    (save.satchels === undefined || Array.isArray(save.satchels));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 
@@ -352,6 +404,7 @@ export function metaFromSave(id: string, save: Partial<SaveData> | undefined): W
     seed: typeof save?.seed === 'number' ? save.seed : 0,
     savedAt: typeof save?.savedAt === 'number' ? save.savedAt : 0,
     version: typeof save?.version === 'number' ? save.version : -1,
+    ...(save?.difficulty === 'normal' || save?.difficulty === 'cozy' ? { difficulty: save.difficulty } : {}),
   };
 }
 
