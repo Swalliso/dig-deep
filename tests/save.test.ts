@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { storageKey } from '../src/channel';
-import { CHUNK_SIZE, MAX_STACK, TILE_SIZE } from '../src/config';
+import { CHEST_SLOTS, CHUNK_SIZE, MAX_STACK, TILE_SIZE } from '../src/config';
 import { ItemDrop } from '../src/entities/itemDrop';
 import { Player } from '../src/entities/player';
+import { chestAt } from '../src/systems/chests';
 import { Inventory } from '../src/systems/inventory';
 import {
   applySavedChunks,
@@ -12,12 +13,14 @@ import {
   encodeRle,
   restoreDrops,
   restoreInventory,
+  restoreTileEntities,
   SAVE_KEY,
   SAVE_VERSION,
   type SaveData,
 } from '../src/systems/save';
 import { createRng, randInt } from '../src/util/rng';
 import { generateWorld } from '../src/world/generate';
+import { TileEntities } from '../src/world/tileEntities';
 import { Tile } from '../src/world/tiles';
 
 const CHUNK_BYTES = CHUNK_SIZE * CHUNK_SIZE;
@@ -156,6 +159,72 @@ describe('items on the ground', () => {
     delete save.drops;
     expect(checkSave(save).kind).toBe('ok');
     expect(restoreDrops(save, world)).toEqual([]);
+  });
+});
+
+describe('chests', () => {
+  /** A world with two placed chests, one of them holding a few stacks. */
+  function chestWorld() {
+    const world = generateWorld(42);
+    const entities = new TileEntities(world);
+    const tx = world.spawnTx + 2;
+    const ty = world.spawnTy;
+    world.setTile(tx, ty, Tile.Chest);
+    world.setTile(tx + 1, ty, Tile.Chest);
+    const chest = chestAt(world, entities, tx, ty)!;
+    chest.slots[0] = { item: 'iron_bar', count: 12 };
+    chest.slots[7] = { item: 'torch', count: 40 };
+    chest.slots[CHEST_SLOTS - 1] = { item: 'gold_pickaxe', count: 1 };
+    chestAt(world, entities, tx + 1, ty);
+    return { world, entities, tx, ty };
+  }
+
+  it('keep their contents through a save and reload', () => {
+    const { world, entities, tx, ty } = chestWorld();
+    const stored = structuredClone(createSave(world, new Player(0, 0), new Inventory(), [], entities)) as SaveData;
+    expect(checkSave(stored).kind).toBe('ok');
+
+    const reloaded = generateWorld(stored.seed);
+    applySavedChunks(reloaded, stored);
+    const restored = restoreTileEntities(stored, reloaded);
+    expect(restored.size).toBe(2);
+    expect(chestAt(reloaded, restored, tx, ty)!.slots).toEqual(chestAt(world, entities, tx, ty)!.slots);
+    expect(chestAt(reloaded, restored, tx + 1, ty)!.slots.every((s) => s === null)).toBe(true);
+  });
+
+  it('are copied into the save, so later changes are not', () => {
+    const { world, entities, tx, ty } = chestWorld();
+    const save = createSave(world, new Player(0, 0), new Inventory(), [], entities);
+    chestAt(world, entities, tx, ty)!.slots[0]!.count = 1;
+    expect(save.tileEntities![0].slots[0]).toEqual({ item: 'iron_bar', count: 12 });
+  });
+
+  it('skip entries that are unrecognisable or no longer on a chest', () => {
+    const { world, entities, tx, ty } = chestWorld();
+    const save = createSave(world, new Player(0, 0), new Inventory(), [], entities);
+    save.tileEntities!.push(
+      { tx: tx + 5, ty, kind: 'chest', slots: [{ item: 'coal', count: 3 }] }, // no chest there
+      { tx: -1, ty: 2, kind: 'chest', slots: [] },
+      { tx: 1.5, ty, kind: 'chest', slots: [] },
+      { tx, ty, kind: 'lift' as never, slots: [] },
+      null as never,
+    );
+    save.tileEntities![0].slots[1] = { item: 'unobtainium' as never, count: 4 };
+    save.tileEntities![0].slots[2] = { item: 'dirt', count: 5000 };
+    const restored = restoreTileEntities(save, world);
+    expect(restored.size).toBe(2);
+    const chest = restored.get(tx, ty)!;
+    expect(chest.slots).toHaveLength(CHEST_SLOTS);
+    expect(chest.slots[1]).toBeNull();
+    expect(chest.slots[2]).toEqual({ item: 'dirt', count: MAX_STACK });
+  });
+
+  it('load from a save made before chests, as empty chests', () => {
+    const world = generateWorld(1);
+    const save = createSave(world, new Player(0, 0), new Inventory(), []);
+    delete save.tileEntities;
+    expect(checkSave(save).kind).toBe('ok');
+    expect(restoreTileEntities(save, world).size).toBe(0);
   });
 });
 

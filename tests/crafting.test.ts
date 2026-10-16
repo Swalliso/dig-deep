@@ -1,16 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_STACK, PICKAXES, STATION_RANGE, TILE_SIZE } from '../src/config';
+import { CRAFT_MANY, MAX_STACK, PICKAXES, STATION_RANGE, TILE_SIZE } from '../src/config';
 import { Player } from '../src/entities/player';
-import { canCraft, craft, missingIngredients, nearbyStations, RECIPES, type Station } from '../src/systems/crafting';
+import { chestAt, createChest, nearbyChests } from '../src/systems/chests';
+import {
+  availableCount,
+  canCraft,
+  craft,
+  craftTimes,
+  missingIngredients,
+  nearbyStations,
+  RECIPE_GROUPS,
+  RECIPES,
+  type Station,
+} from '../src/systems/crafting';
 import { Inventory } from '../src/systems/inventory';
 import type { ItemId } from '../src/systems/items';
 import { checkMine } from '../src/systems/mining';
+import { TileEntities } from '../src/world/tileEntities';
 import { Tile } from '../src/world/tiles';
 import { World } from '../src/world/world';
 
 const NONE = new Set<Station>();
 const ALL = new Set<Station>(['workbench', 'furnace']);
 const recipeFor = (item: ItemId) => RECIPES.find((r) => r.output === item)!;
+const centre = (t: number) => (t + 0.5) * TILE_SIZE;
 
 function invWith(items: Partial<Record<ItemId, number>>): Inventory {
   const inv = new Inventory();
@@ -37,7 +50,29 @@ describe('recipes', () => {
       ['1 iron_pickaxe', '10 iron_bar + 5 wood', 'workbench'],
       ['1 gold_bar', '3 gold_ore + 1 coal', 'furnace'],
       ['1 gold_pickaxe', '10 gold_bar + 5 wood', 'workbench'],
+      ['1 chest', '8 planks', 'workbench'],
     ]);
+  });
+
+  it('sorts every recipe into a group', () => {
+    const byGroup = Object.fromEntries(RECIPE_GROUPS.map((g) => [g, RECIPES.filter((r) => r.group === g).map((r) => r.output)]));
+    expect(byGroup).toEqual({
+      blocks: ['planks', 'torch'],
+      tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe'],
+      materials: ['copper_bar', 'iron_bar', 'gold_bar'],
+      stations: ['workbench', 'furnace', 'chest'],
+    });
+  });
+
+  it(`shift-click crafts ${CRAFT_MANY} batches, or as many as there are ingredients for`, () => {
+    const inv = invWith({ wood: 25 });
+    expect(craftTimes(inv, recipeFor('planks'), NONE, [], CRAFT_MANY)).toBe(CRAFT_MANY);
+    expect(inv.count('planks')).toBe(4 * CRAFT_MANY);
+    expect(inv.count('wood')).toBe(25 - CRAFT_MANY);
+    expect(craftTimes(inv, recipeFor('planks'), NONE, [], CRAFT_MANY)).toBe(CRAFT_MANY);
+    expect(craftTimes(inv, recipeFor('planks'), NONE, [], CRAFT_MANY)).toBe(5);
+    expect(inv.count('wood')).toBe(0);
+    expect(craftTimes(inv, recipeFor('planks'), NONE, [], CRAFT_MANY)).toBe(0);
   });
 
   it('crafts planks, a workbench and torches with no station', () => {
@@ -89,8 +124,6 @@ describe('stations', () => {
     world.setTile(tx, ty, tile as typeof Tile.Workbench);
     return world;
   }
-  const centre = (t: number) => (t + 0.5) * TILE_SIZE;
-
   it(`finds a workbench or furnace within ${STATION_RANGE} tiles`, () => {
     expect(nearbyStations(worldWith(Tile.Workbench, 20 + STATION_RANGE, 20), centre(20), centre(20))).toEqual(new Set(['workbench']));
     expect(nearbyStations(worldWith(Tile.Furnace, 20, 20 - STATION_RANGE), centre(20), centre(20))).toEqual(new Set(['furnace']));
@@ -99,6 +132,54 @@ describe('stations', () => {
   it(`ignores stations farther than ${STATION_RANGE} tiles`, () => {
     expect(nearbyStations(worldWith(Tile.Workbench, 20 + STATION_RANGE + 1, 20), centre(20), centre(20)).size).toBe(0);
     expect(nearbyStations(worldWith(Tile.Workbench, 20 + 3, 20 + 3), centre(20), centre(20)).size).toBe(0);
+  });
+});
+
+describe('crafting from nearby chests', () => {
+  it('uses ingredients split between the inventory and a chest 3 tiles away', () => {
+    const world = new World(40, 40, 0);
+    world.setTile(23, 20, Tile.Chest);
+    world.setTile(19, 20, Tile.Workbench);
+    const entities = new TileEntities(world);
+    chestAt(world, entities, 23, 20)!.slots[4] = { item: 'stone', count: 12 };
+    const x = centre(20);
+    const y = centre(20);
+    const chests = nearbyChests(world, entities, x, y);
+    expect(chests).toHaveLength(1);
+
+    const inv = invWith({ stone: 5, wood: 5 });
+    const pickaxe = recipeFor('stone_pickaxe');
+    const stations = nearbyStations(world, x, y);
+    expect(canCraft(inv, pickaxe, stations)).toBe(false); // not enough stone carried
+    expect(availableCount(inv, 'stone', chests)).toBe(17);
+    expect(missingIngredients(inv, pickaxe, chests)).toEqual([]);
+    expect(craft(inv, pickaxe, stations, chests)).toBe(true);
+    // The carried stone went first, then 10 from the chest.
+    expect(inv.count('stone_pickaxe')).toBe(1);
+    expect(inv.count('stone')).toBe(0);
+    expect(inv.count('wood')).toBe(0);
+    expect(chests[0].slots[4]).toEqual({ item: 'stone', count: 2 });
+  });
+
+  it('ignores chests out of range', () => {
+    const world = new World(40, 40, 0);
+    world.setTile(20 + STATION_RANGE + 1, 20, Tile.Chest);
+    const entities = new TileEntities(world);
+    chestAt(world, entities, 20 + STATION_RANGE + 1, 20)!.slots[0] = { item: 'wood', count: 5 };
+    expect(nearbyChests(world, entities, centre(20), centre(20))).toEqual([]);
+  });
+
+  it('puts the chests back as they were when the output does not fit', () => {
+    const inv = new Inventory();
+    for (let i = 0; i < inv.slots.length; i++) inv.slots[i] = { item: 'dirt', count: MAX_STACK };
+    const chest = createChest();
+    chest.slots[0] = { item: 'wood', count: 1 };
+    chest.slots[1] = { item: 'coal', count: 1 };
+    expect(craft(inv, recipeFor('torch'), NONE, [chest])).toBe(false);
+    expect(chest.slots.slice(0, 2)).toEqual([
+      { item: 'wood', count: 1 },
+      { item: 'coal', count: 1 },
+    ]);
   });
 });
 

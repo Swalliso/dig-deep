@@ -40,6 +40,10 @@ export const MAX_MOVE_STEP = 8; // px; movement is split into steps this small s
 export const REACH = 5; // tiles, measured from the player's centre to the tile's centre
 export const CRACK_STAGES = 4;
 export const HINT_DURATION = 1.5; // s a "Need better pickaxe" style hint stays up
+// A part-mined tile keeps its damage (and cracks) for a while after you stop hitting it, so you
+// can come back and finish it, then heals back to full.
+export const DAMAGE_REPAIR_DELAY = 3; // s without a hit before the damage starts to heal
+export const DAMAGE_REPAIR_TIME = 0.5; // s to heal from fully cracked (less damage heals sooner)
 /** Pickaxe tiers; the index is the tier. Break time = tile hardness / speed. */
 export const PICKAXES = [
   { name: 'Wooden', speed: 1.0 },
@@ -63,11 +67,18 @@ export const DROP_FRICTION = 500; // px/s^2 while resting on the ground
 export const DROP_PULL_RANGE = 2; // tiles; closer than this and the drop flies to the player
 export const DROP_PULL_ACCEL = 1600; // px/s^2
 export const DROP_PULL_MAX_SPEED = 420; // px/s
+export const DROP_THROW_SPEED = 120; // px/s forward when the player throws a stack (Q)
 
 // --- Inventory ---
 export const HOTBAR_SIZE = 10;
 export const BAG_SIZE = 30;
 export const MAX_STACK = 999;
+export const CHEST_SLOTS = 20;
+// Which inventory slots the chest buttons take from. The hotbar is your loadout, so Deposit all
+// leaves it alone; Quick stack moves only items the chest already holds, so it takes from the
+// hotbar too (that's where pickups land first).
+export const DEPOSIT_ALL_HOTBAR = false;
+export const QUICK_STACK_HOTBAR = true;
 
 // --- Lighting ---
 export const LIGHT_MAX = 16; // full brightness: open sky
@@ -158,6 +169,8 @@ export const DEBUG_FLY_FAST = 4; // speed multiplier while Shift is held
 
 // --- Crafting ---
 export const STATION_RANGE = 4; // tiles; a workbench/furnace this close (centre to centre) counts
+// Chests within STATION_RANGE also lend their items to crafting, and take quick stacks (C).
+export const CRAFT_MANY = 10; // batches made by shift-clicking a recipe
 
 // --- World generation ---
 // Average surface row. Depth (in m) = ty - SURFACE_LEVEL, so the depth meter reads 0 here.

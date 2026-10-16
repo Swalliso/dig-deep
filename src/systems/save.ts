@@ -1,15 +1,18 @@
 import { del, get, set } from 'idb-keyval';
 import { storageKey } from '../channel';
-import { CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE } from '../config';
+import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE } from '../config';
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
+import { TileEntities } from '../world/tileEntities';
+import { Tile } from '../world/tiles';
 import type { World } from '../world/world';
-import { Inventory, type ItemStack } from './inventory';
+import { Inventory, type ItemStack, type Slots } from './inventory';
 import { ITEMS, itemDef, type ItemId } from './items';
 
 /**
  * Bump whenever the save format, the world size or world generation changes. (Adding an
- * optional field that old saves can do without, like `drops`, doesn't need a bump.)
+ * optional field that old saves can do without, like `drops` or `tileEntities`, doesn't need a
+ * bump, and nor does a new tile id that doesn't renumber the others.)
  */
 export const SAVE_VERSION = 1;
 /** 'dig-deep:save' on the live site; the dev site uses its own key (see channel.ts). */
@@ -28,6 +31,16 @@ export interface SaveData {
   inventory: { slots: (ItemStack | null)[]; selected: number };
   /** Items lying on the ground (top-left in world px). Missing in older saves. */
   drops?: SavedDrop[];
+  /** Per-tile data such as chest contents. Missing in older saves. */
+  tileEntities?: SavedTileEntity[];
+}
+
+/** A tile entity and where it is. Only chests so far. */
+export interface SavedTileEntity {
+  tx: number;
+  ty: number;
+  kind: 'chest';
+  slots: (ItemStack | null)[];
 }
 
 export interface SavedDrop {
@@ -73,7 +86,13 @@ export function decodeRle(rle: Uint8Array, length: number): Uint8Array {
 
 // --- Building and applying saves (pure, so they can be unit-tested). ---
 
-export function createSave(world: World, player: Player, inventory: Inventory, drops: readonly ItemDrop[]): SaveData {
+export function createSave(
+  world: World,
+  player: Player,
+  inventory: Inventory,
+  drops: readonly ItemDrop[],
+  entities?: TileEntities,
+): SaveData {
   return {
     version: SAVE_VERSION,
     seed: world.seed,
@@ -85,7 +104,13 @@ export function createSave(world: World, player: Player, inventory: Inventory, d
     // Anything held on the mouse goes back in the save as if it had been put away.
     inventory: { slots: savedSlots(inventory), selected: inventory.selected },
     drops: drops.map((d) => ({ item: d.item, count: d.count, x: d.x, y: d.y })),
+    tileEntities: entities ? savedTileEntities(entities) : [],
   };
+}
+
+/** Tile entities as saved (copies, so later changes don't leak into a save waiting to be written). */
+export function savedTileEntities(entities: TileEntities): SavedTileEntity[] {
+  return entities.entries().map(({ tx, ty, entity }) => ({ tx, ty, kind: entity.kind, slots: entity.slots.map((s) => s && { ...s }) }));
 }
 
 function savedSlots(inventory: Inventory): (ItemStack | null)[] {
@@ -105,13 +130,22 @@ export function applySavedChunks(world: World, save: SaveData): void {
   }
 }
 
+/**
+ * Saved slots copied into `slots`, skipping items that no longer exist and impossible counts.
+ * Extra saved slots are ignored.
+ */
+function restoreSlots(saved: readonly unknown[], slots: Slots): void {
+  saved.forEach((raw, i) => {
+    const s = raw as ItemStack | null;
+    if (i >= slots.length || !s || !(s.item in ITEMS) || !(s.count > 0)) return;
+    slots[i] = { item: s.item, count: Math.min(Math.floor(s.count), itemDef(s.item as ItemId).maxStack) };
+  });
+}
+
 /** Rebuild the inventory, skipping anything that no longer exists. */
 export function restoreInventory(save: SaveData): Inventory {
   const inventory = new Inventory();
-  save.inventory.slots.forEach((s, i) => {
-    if (i >= inventory.slots.length || !s || !(s.item in ITEMS) || !(s.count > 0)) return;
-    inventory.slots[i] = { item: s.item, count: Math.min(Math.floor(s.count), itemDef(s.item as ItemId).maxStack) };
-  });
+  restoreSlots(save.inventory.slots, inventory.slots);
   const selected = save.inventory.selected;
   inventory.selected = Number.isInteger(selected) && selected >= 0 && selected < HOTBAR_SIZE ? selected : 0;
   return inventory;
@@ -141,6 +175,22 @@ export function restoreDrops(save: SaveData, world: World): ItemDrop[] {
     });
 }
 
+/**
+ * Tile entities for a world that already has its saved chunks applied. Entries that are
+ * unrecognisable, or whose tile isn't a chest any more, are skipped.
+ */
+export function restoreTileEntities(save: SaveData, world: World): TileEntities {
+  const entities = new TileEntities(world);
+  for (const e of save.tileEntities ?? []) {
+    if (!e || e.kind !== 'chest' || !Number.isInteger(e.tx) || !Number.isInteger(e.ty) || !Array.isArray(e.slots)) continue;
+    if (!world.inBounds(e.tx, e.ty) || world.getTile(e.tx, e.ty) !== Tile.Chest) continue;
+    const slots: Slots = new Array(CHEST_SLOTS).fill(null);
+    restoreSlots(e.slots, slots);
+    entities.set(e.tx, e.ty, { kind: 'chest', slots });
+  }
+  return entities;
+}
+
 /** Classify whatever came out of storage. */
 export function checkSave(raw: unknown): SaveStatus {
   if (raw === undefined || raw === null) return { kind: 'none' };
@@ -156,7 +206,8 @@ export function checkSave(raw: unknown): SaveStatus {
     typeof save.player?.x === 'number' &&
     typeof save.player?.y === 'number' &&
     Array.isArray(save.inventory?.slots) &&
-    (save.drops === undefined || Array.isArray(save.drops));
+    (save.drops === undefined || Array.isArray(save.drops)) &&
+    (save.tileEntities === undefined || Array.isArray(save.tileEntities));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 

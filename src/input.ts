@@ -1,5 +1,6 @@
 // Keyboard and mouse state, read by the fixed-step update. Keys are KeyboardEvent.code values;
-// mouse buttons use the codes 'MouseLeft' and 'MouseRight' so they share isDown/wasPressed.
+// mouse buttons use the codes 'MouseLeft', 'MouseMiddle' and 'MouseRight' so they share
+// isDown/wasPressed.
 
 const down = new Set<string>();
 /** Keys pressed since the end of the last update step. */
@@ -11,7 +12,7 @@ export const mouse = { x: 0, y: 0 };
 
 // Keys whose browser default (scrolling, clicking a focused button) must not fire while playing.
 const NO_DEFAULT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab', 'F3']);
-const BUTTONS: Record<number, string> = { 0: 'MouseLeft', 2: 'MouseRight' };
+const BUTTONS: Record<number, string> = { 0: 'MouseLeft', 1: 'MouseMiddle', 2: 'MouseRight' };
 
 export function initInput(canvas: HTMLCanvasElement): void {
   window.addEventListener('keydown', (e) => {
@@ -35,6 +36,7 @@ export function initInput(canvas: HTMLCanvasElement): void {
   canvas.addEventListener('mousedown', (e) => {
     const code = BUTTONS[e.button];
     if (!code) return;
+    if (e.button === 1) e.preventDefault(); // no autoscroll on middle click
     pressed.add(code);
     down.add(code);
   });

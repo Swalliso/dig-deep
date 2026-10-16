@@ -186,6 +186,30 @@ function furnace(img: ImageData, rng: Rng): void {
   for (let x = 3; x < 13; x++) put(img, x, 14, c, 0.7);
 }
 
+function chest(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Chest).color);
+  const band: RGB = [70, 70, 78];
+  const latch: RGB = [242, 201, 76];
+  // A wooden box on the floor: lid (rows 4-7) over the body (rows 8-15), with dark iron bands.
+  for (let y = 4; y < S; y++) {
+    for (let x = 1; x < S - 1; x++) {
+      const edge = x === 1 || x === S - 2 || y === S - 1;
+      const shade = y === 4 ? 1.25 : y === 7 ? 0.62 : edge ? 0.72 : rng() < 0.15 ? 0.9 : 1;
+      put(img, x, y, c, shade);
+    }
+  }
+  for (let y = 4; y < S; y++) {
+    put(img, 3, y, band);
+    put(img, S - 4, y, band, 0.85);
+  }
+  // Latch on the seam between lid and body.
+  for (let y = 6; y < 10; y++) {
+    put(img, 7, y, latch, y === 6 ? 1.1 : 1);
+    put(img, 8, y, latch, 0.8);
+  }
+  put(img, 7, 8, [60, 46, 20]);
+}
+
 function drawTile(img: ImageData, id: number, rng: Rng): void {
   switch (id) {
     case Tile.Grass: return grass(img, rng);
@@ -203,6 +227,7 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.Planks: return planks(img, rng);
     case Tile.Workbench: return workbench(img, rng);
     case Tile.Furnace: return furnace(img, rng);
+    case Tile.Chest: return chest(img, rng);
   }
 }
 

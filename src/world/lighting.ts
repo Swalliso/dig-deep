@@ -58,7 +58,7 @@ export class LightMap {
     this.skyRow = new Int16Array(this.width);
     for (let x = 0; x < this.width; x++) this.skyRow[x] = this.findSkyRow(x);
     this.relight({ x0: 0, y0: 0, x1: this.width - 1, y1: this.height - 1 });
-    world.onTileChange = (tx, ty) => this.tileChanged(tx, ty);
+    world.onTileChange((tx, ty) => this.tileChanged(tx, ty));
   }
 
   /** Light level of a tile; 0 outside the world. */

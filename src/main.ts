@@ -19,6 +19,8 @@ import {
   readSave,
   restoreDrops,
   restoreInventory,
+  restoreTileEntities,
+  savedTileEntities,
   writeSave,
   type SaveData,
   type SaveStatus,
@@ -88,7 +90,7 @@ function applySettings(): void {
 
 async function saveGame(game: Game): Promise<void> {
   const snap = snapshot(game);
-  await writeSave(createSave(game.world, game.player, game.inventory, game.drops));
+  await writeSave(createSave(game.world, game.player, game.inventory, game.drops, game.tileEntities));
   lastSavedAt = Date.now();
   savedSnapshot = snap;
 }
@@ -103,7 +105,8 @@ function autosave(game: Game): void {
 function snapshot(game: Game): string {
   const { world, player, inventory, drops } = game;
   const ground = drops.map((d) => `${d.item}:${d.count}@${Math.round(d.x)},${Math.round(d.y)}`).join(';');
-  return `${world.revision}|${Math.round(player.x)},${Math.round(player.y)}|${inventory.selected}|${JSON.stringify(inventory.slots)}|${ground}`;
+  const chests = JSON.stringify(savedTileEntities(game.tileEntities));
+  return `${world.revision}|${Math.round(player.x)},${Math.round(player.y)}|${inventory.selected}|${JSON.stringify(inventory.slots)}|${ground}|${chests}`;
 }
 
 /** `override` replaces what's read from storage (used when a save turns out to be unreadable). */
@@ -138,7 +141,14 @@ function finishLoading(world: World, save: SaveData | null): void {
       world,
       renderer,
       settings,
-      save ? { player: save.player, inventory: restoreInventory(save), drops: restoreDrops(save, world) } : {},
+      save
+        ? {
+            player: save.player,
+            inventory: restoreInventory(save),
+            drops: restoreDrops(save, world),
+            tileEntities: restoreTileEntities(save, world),
+          }
+        : {},
     );
   } catch {
     void showTitle({ kind: 'broken' });

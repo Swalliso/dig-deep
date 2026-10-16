@@ -1,4 +1,4 @@
-import { CRACK_STAGES, HINT_DURATION, PICKAXES, REACH, TILE_SIZE } from '../config';
+import { CRACK_STAGES, DAMAGE_REPAIR_DELAY, DAMAGE_REPAIR_TIME, HINT_DURATION, PICKAXES, REACH, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
 import { Tile, tileDef, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
@@ -34,6 +34,8 @@ interface Damage {
   tile: TileId;
   /** 0..1; the tile breaks at 1. */
   progress: number;
+  /** Seconds since the tile was last hit. It starts to heal after DAMAGE_REPAIR_DELAY. */
+  idle: number;
 }
 
 /** Is tile (tx, ty) within reach? Measured from the player's centre to the tile's centre. */
@@ -62,7 +64,8 @@ const keyOf = (tx: number, ty: number): number => ty * 65536 + tx;
 
 /**
  * Break progress per tile. Damage stays on a tile when the cursor moves away, so the player
- * can come back and finish it.
+ * can come back and finish it, but after DAMAGE_REPAIR_DELAY seconds without a hit it heals
+ * back to full over DAMAGE_REPAIR_TIME.
  */
 export class Mining {
   hint: Hint | null = null;
@@ -87,6 +90,7 @@ export class Mining {
       this.hint.timeLeft -= dt;
       if (this.hint.timeLeft <= 0) this.hint = null;
     }
+    this.heal(dt);
     if (!held) return null;
 
     const check = checkMine(world, player, tx, ty, tier);
@@ -101,9 +105,10 @@ export class Mining {
     const key = keyOf(tx, ty);
     let damage = this.damage.get(key);
     if (!damage || damage.tile !== tile) {
-      damage = { tx, ty, tile, progress: 0 };
+      damage = { tx, ty, tile, progress: 0, idle: 0 };
       this.damage.set(key, damage);
     }
+    damage.idle = 0;
     damage.progress += (dt * PICKAXES[tier].speed) / tileDef(tile).hardness;
     return damage.progress < 1 ? null : this.breakTile(world, tx, ty);
   }
@@ -127,6 +132,16 @@ export class Mining {
       else result.push({ tx: d.tx, ty: d.ty, stage: crackStage(d.progress) });
     }
     return result;
+  }
+
+  /** Age every damaged tile by dt; ones left alone long enough heal, and fully healed ones are forgotten. */
+  private heal(dt: number): void {
+    for (const [key, d] of this.damage) {
+      d.idle += dt;
+      if (d.idle <= DAMAGE_REPAIR_DELAY) continue;
+      d.progress -= dt / DAMAGE_REPAIR_TIME;
+      if (d.progress <= 0) this.damage.delete(key);
+    }
   }
 
   private breakTile(world: World, tx: number, ty: number): BrokenTile {
