@@ -11,11 +11,16 @@ import {
   createSave,
   decodeRle,
   encodeRle,
+  FIRST_WORLD_ID,
+  metaFromSave,
+  metaKeyFor,
+  nextWorldId,
   restoreDrops,
   restoreInventory,
   restoreTileEntities,
   SAVE_KEY,
   SAVE_VERSION,
+  saveKeyFor,
   type SaveData,
 } from '../src/systems/save';
 import { createRng, randInt } from '../src/util/rng';
@@ -257,5 +262,27 @@ describe('save key', () => {
     expect(storageKey('save', 'live')).toBe('dig-deep:save');
     expect(storageKey('save', 'dev')).toBe('dig-deep-dev:save');
     expect(SAVE_KEY).toBe('dig-deep:save'); // tests build as the live channel
+  });
+});
+
+describe('world slots', () => {
+  it('keep world 1 on the old save key, so saves from before several worlds carry over', () => {
+    expect(saveKeyFor(FIRST_WORLD_ID)).toBe('dig-deep:save');
+    expect(saveKeyFor('2')).toBe('dig-deep:save:2');
+    expect(metaKeyFor('2')).toBe('dig-deep:world:2');
+  });
+
+  it('give each new world the next unused id', () => {
+    expect(nextWorldId([])).toBe('1');
+    expect(nextWorldId(['1', '2'])).toBe('3');
+    expect(nextWorldId(['3', '1'])).toBe('4');
+  });
+
+  it('list a world by its save, with fallbacks for older or unreadable saves', () => {
+    const save = createSave(generateWorld(1), new Player(0, 0), new Inventory(), [], undefined, { name: 'Caves' });
+    expect(metaFromSave('2', save)).toEqual({ id: '2', name: 'Caves', seed: 1, savedAt: save.savedAt, version: SAVE_VERSION });
+    const unnamed = { ...save, name: undefined };
+    expect(metaFromSave('1', unnamed).name).toBe('World 1');
+    expect(metaFromSave('3', undefined)).toEqual({ id: '3', name: 'World 3', seed: 0, savedAt: 0, version: -1 });
   });
 });

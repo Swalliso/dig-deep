@@ -15,7 +15,7 @@ import {
 } from '../systems/crafting';
 import { clickSlotIn, type Inventory, type ItemStack } from '../systems/inventory';
 import { itemDef, type ItemId } from '../systems/items';
-import { SAVE_VERSION, type SaveStatus } from '../systems/save';
+import { SAVE_VERSION, type WorldMeta } from '../systems/save';
 import type { PixelScale, Settings } from '../systems/settings';
 import { tileDef } from '../world/tiles';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
@@ -557,15 +557,19 @@ export interface SettingsHooks {
 }
 
 export interface TitleOptions {
-  /** What's in the save slot. */
-  save: SaveStatus;
-  /** Pre-filled seed text (from `?seed=`), or ''. */
+  /** Every saved world, most recently played first. */
+  worlds: WorldMeta[];
+  /** Pre-filled seed text for a new world (from `?seed=`), or ''. */
   seedText: string;
-  onContinue: () => void;
-  /** Start a new world from the seed field's text ('' means random). */
-  onNewWorld: (seedText: string) => void;
-  /** Debug mode only: shown as an extra button when there's a save. */
-  onMarkOutdated?: () => void;
+  /** A message to show under the title, e.g. that a world couldn't be loaded. */
+  note?: string;
+  onPlay: (world: WorldMeta) => void;
+  /** Start a new world with this name and seed text ('' means a random seed). */
+  onCreate: (name: string, seedText: string) => void;
+  /** Delete a world (the screen has already asked to confirm); resolves to the worlds left. */
+  onDelete: (world: WorldMeta) => Promise<WorldMeta[]>;
+  /** Debug mode only: an extra button that marks the most recent world as an older version. */
+  onMarkOutdated?: (world: WorldMeta) => void;
   settings: SettingsHooks;
 }
 
@@ -583,7 +587,10 @@ const CONTROLS: [string, string][] = [
   ['Mine', 'Hold left mouse'],
   ['Place block', 'Right mouse (hold and sweep to build)'],
   ['Pick block onto hotbar', 'Middle mouse'],
-  ['Open chest', 'Right-click it'],
+  ['Open chest, open or close door', 'Right-click it'],
+  ['Climb a ladder', 'W / S or ↑ / ↓ on it'],
+  ['Drop through a platform', 'S + Space'],
+  ['Map / minimap', 'M / N'],
   ['Select hotbar slot', '1–0 or mouse wheel'],
   ['Drop selected stack', 'Q'],
   ['Quick stack to nearby chests', 'C'],
@@ -617,62 +624,89 @@ export class Menus {
     return true;
   }
 
+  /** Title: Continue (the most recent world), Worlds, New world, Controls and Settings. */
   showTitle(options: TitleOptions): void {
-    const { save } = options;
+    const { worlds } = options;
     const menu = this.open('title');
     menu.append(el('h1', 'DIG DEEP'), el('p', 'dig · collect · craft · build', 'sub'));
     if (CHANNEL === 'dev') menu.append(el('p', BUILD_SHA ? `DEV BUILD · ${BUILD_SHA}` : 'DEV BUILD', 'devtag'));
 
-    const resume = button('Continue', options.onContinue);
-    if (save.kind === 'ok') {
-      resume.append(el('span', `seed ${save.save.seed} · saved ${timeAgo(save.save.savedAt)}`, 'detail'));
-    } else {
-      resume.disabled = true;
-    }
+    const latest = worlds[0];
+    const resume = button('Continue', () => latest && options.onPlay(latest));
+    if (latest) resume.append(el('span', `${latest.name} · ${worldDetail(latest)}`, 'detail'));
+    resume.disabled = !latest || latest.version !== SAVE_VERSION;
     menu.append(resume);
-    if (save.kind === 'outdated') {
-      const which = save.version < SAVE_VERSION ? 'an older' : 'a newer';
-      menu.append(el('p', `Save from ${which} version. Start a new world to keep playing.`, 'note'));
-    } else if (save.kind === 'broken') {
-      menu.append(el('p', "Your save couldn't be read. Start a new world to keep playing.", 'note'));
-    }
+    if (options.note) menu.append(el('p', options.note, 'note'));
 
-    const seed = document.createElement('input');
-    seed.id = 'seed';
-    seed.placeholder = 'random';
-    seed.value = options.seedText;
-    seed.autocomplete = 'off';
-    seed.spellcheck = false;
-    const label = el('label', 'World seed (number or any text)');
-    label.htmlFor = 'seed';
-
-    // Starting over replaces the only save slot, so a working save needs a second click.
-    let confirming = false;
-    const fresh = button('New world', () => {
-      if (save.kind === 'ok' && !confirming) {
-        confirming = true;
-        fresh.textContent = 'Replace your saved world? Click again';
-        fresh.classList.add('danger');
-        return;
-      }
-      options.onNewWorld(seed.value);
-    });
-    seed.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') fresh.click();
-    });
     const reopen = (): void => this.showTitle(options);
+    const list = button(`Worlds (${worlds.length})`, () => this.showWorlds(options));
+    list.disabled = worlds.length === 0;
+    const fresh = button('New world', () => this.showNewWorld(options));
     menu.append(
-      label,
-      seed,
+      list,
       fresh,
       button('Controls', () => this.showControls(reopen)),
       button('Settings', () => this.showSettings(options.settings, 'title', reopen)),
     );
 
-    if (options.onMarkOutdated && save.kind === 'ok') {
-      menu.append(button('Debug: mark save as an older version', options.onMarkOutdated, 'small'));
+    if (options.onMarkOutdated && latest && latest.version === SAVE_VERSION) {
+      const mark = options.onMarkOutdated;
+      menu.append(button(`Debug: mark "${latest.name}" as an older version`, () => mark(latest), 'small'));
     }
-    (save.kind === 'ok' ? resume : fresh).focus();
+    (resume.disabled ? fresh : resume).focus();
+  }
+
+  /** Every world: click one to play it; Delete asks for a second click. */
+  showWorlds(options: TitleOptions): void {
+    const menu = this.open('title');
+    menu.classList.add('worlds');
+    menu.append(el('h2', 'Worlds'));
+    const list = el('div', '', 'world-list');
+    for (const world of options.worlds) {
+      const row = el('div', '', 'world-row');
+      const play = button(world.name, () => options.onPlay(world), 'play');
+      play.append(el('span', worldDetail(world), 'detail'));
+      play.disabled = world.version !== SAVE_VERSION;
+      let confirming = false;
+      const remove = button('Delete', () => {
+        if (!confirming) {
+          confirming = true;
+          remove.textContent = 'Delete? Click again';
+          remove.classList.add('danger');
+          return;
+        }
+        remove.disabled = true;
+        void options.onDelete(world).then((worlds) => {
+          const next = { ...options, worlds, note: undefined };
+          if (worlds.length > 0) this.showWorlds(next);
+          else this.showTitle(next);
+        });
+      }, 'small');
+      remove.setAttribute('aria-label', `Delete ${world.name}`);
+      row.append(play, remove);
+      list.append(row);
+    }
+    const back = button('Back', () => this.showTitle(options));
+    menu.append(list, back);
+    this.onBack = () => this.showTitle(options);
+    (list.querySelector('button:not(:disabled)') as HTMLButtonElement | null ?? back).focus();
+  }
+
+  /** Name and seed for a new world. */
+  showNewWorld(options: TitleOptions): void {
+    const menu = this.open('title');
+    menu.append(el('h2', 'New world'));
+    const name = textField('world-name', 'Name', `World ${options.worlds.length + 1}`, '');
+    const seed = textField('seed', 'Seed (number or any text)', 'random', options.seedText);
+    const create = button('Create world', () => options.onCreate(name.input.value.trim() || name.input.placeholder, seed.input.value));
+    for (const field of [name.input, seed.input]) {
+      field.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') create.click();
+      });
+    }
+    menu.append(name.label, name.input, seed.label, seed.input, create, button('Back', () => this.showTitle(options)));
+    this.onBack = () => this.showTitle(options);
+    name.input.focus();
   }
 
   showControls(onBack: () => void): void {
@@ -720,7 +754,11 @@ export class Menus {
       settings.showFps = on;
       onChange();
     });
-    menu.append(el('h2', 'Settings'), master.row, effects.row, shake, scale, fps, button('Back', onBack));
+    const minimap = toggle('set-minimap', 'Minimap', settings.showMinimap, (on) => {
+      settings.showMinimap = on;
+      onChange();
+    });
+    menu.append(el('h2', 'Settings'), master.row, effects.row, shake, scale, fps, minimap, button('Back', onBack));
     this.onBack = onBack;
     master.input.focus();
   }
@@ -767,6 +805,20 @@ function button(text: string, onClick: () => void, className = ''): HTMLButtonEl
     onClick();
   });
   return node;
+}
+
+/** A labelled one-line text input. */
+function textField(id: string, label: string, placeholder: string, value: string): { label: HTMLLabelElement; input: HTMLInputElement } {
+  const input = document.createElement('input');
+  input.id = id;
+  input.placeholder = placeholder;
+  input.value = value;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.maxLength = 40;
+  const name = el('label', label);
+  name.htmlFor = id;
+  return { label: name, input };
 }
 
 /** One line of the Settings screen: a name on the left, its control on the right. */
@@ -830,6 +882,15 @@ function choices<T>(label: string, options: [T, string][], value: T, onPick: (va
   });
   group.append(...buttons);
   return settingRow(label, group);
+}
+
+/** "seed 42 · saved 5 min ago", or why the world can't be loaded. */
+function worldDetail(world: WorldMeta): string {
+  if (world.version !== SAVE_VERSION) {
+    if (world.version < 0) return "this save can't be read";
+    return `saved by ${world.version < SAVE_VERSION ? 'an older' : 'a newer'} version, can't be loaded`;
+  }
+  return `seed ${world.seed} · saved ${timeAgo(world.savedAt)}`;
 }
 
 function timeAgo(time: number): string {

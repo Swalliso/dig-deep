@@ -35,6 +35,11 @@ export const JUMP_CUT = 0.4; // upward speed is multiplied by this when jump is 
 export const COYOTE_TIME = 0.1; // s after leaving the ground that a jump still works
 export const JUMP_BUFFER = 0.1; // s before landing that a jump press is remembered
 export const MAX_MOVE_STEP = 8; // px; movement is split into steps this small so nothing tunnels
+// Ladders: W/S on a ladder grabs it; Space hops off, S + Space lets go and drops.
+export const CLIMB_SPEED = 140; // px/s up or down (a 100 m shaft takes about 11 s)
+export const CLIMB_SIDE_SPEED = 60; // px/s sideways while on a ladder; stepping off its column lets go
+export const LADDER_REGRAB_DELAY = 0.25; // s after letting go before the ladder can be grabbed again
+export const CLIMB_STEP_DISTANCE = 16; // px climbed per rung sound
 
 // --- Mining and building ---
 export const REACH = 5; // tiles, measured from the player's centre to the tile's centre
@@ -113,6 +118,7 @@ export const SFX_VOLUMES = {
   jump: 0.18,
   land: 0.5,
   ui: 0.3,
+  door: 0.4,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile
@@ -151,6 +157,23 @@ export const SPARKLE_PERIOD = 3; // s
 export const SPARKLE_DURATION = 0.4; // s
 export const SPARKLE_ALPHA = 0.85; // brightest glint, on a fully lit ore
 export const SPARKLE_MIN_LIGHT = 3; // light level (out of LIGHT_MAX) below which ores don't glint
+
+// --- Map ---
+// The map shows only tiles you've seen: on screen while lit (light level above 0), or within
+// EXPLORE_RADIUS tiles of the player even in the dark.
+export const EXPLORE_RADIUS = 5; // tiles
+export const EXPLORE_INTERVAL = 0.1; // s between looks around (cheap: just the tiles on screen)
+export const MAP_SKY_COLOR = '#8cc6f2'; // air above the surface on the map
+export const MAP_CAVE_COLOR = '#2a2018'; // dug-out or cave air below the surface
+export const MAP_FOG_COLOR = '#0c0c12'; // tiles not seen yet
+// Full map (M): zoom levels in UI units per tile (a UI unit is one world pixel on screen, so
+// 2 or 3 screen pixels); it opens at MAP_ZOOM_START.
+export const MAP_ZOOMS = [0.25, 0.5, 1, 2, 4, 8] as const;
+export const MAP_ZOOM_START = 3; // index into MAP_ZOOMS
+export const MAP_PAN_SPEED = 300; // UI units per second when panning with WASD or the arrow keys
+// Minimap (corner, N toggles): its size in UI units, at one tile per UI unit.
+export const MINIMAP_WIDTH = 100;
+export const MINIMAP_HEIGHT = 64;
 
 // --- HUD ---
 export const TOAST_DURATION = 1.5; // s

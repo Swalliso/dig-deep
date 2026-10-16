@@ -52,20 +52,21 @@ These override the spec. Don't revert them.
   pickaxe" hint (instead of a toast) were all reviewed and kept.
 - **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything
   that changed is saved within `SAVE_CHANGES_AFTER` (2 s), because browsers drop IndexedDB
-  writes made while a page unloads. New world asks for a second click if it would replace a
-  working save.
+  writes made while a page unloads. Deleting a world from the Worlds screen asks for a second
+  click.
 
 ## Debug mode
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
-**G** gives a materials kit (enough for every recipe, plus a workbench, a furnace and three
-chests), **F**
+**G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
+chests, and stacks of ladders, platforms and doors), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
-(fullbright) for exploring, and **O** puts a 4 x 2 patch of every ore at the cursor (for ore
-sounds and glints). Debug mode also opens the F3 overlay at start, and the title screen
-gets a button that marks the save as an older version (to test the version-mismatch screen). All cheats live in
+(fullbright) for exploring, **O** puts a 4 x 2 patch of every ore at the cursor (for ore
+sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, and **V** reveals the
+whole map. Debug mode also opens the F3 overlay at start, and the title screen gets a button
+that marks the most recent world as an older version (to test the version-mismatch screen). All cheats live in
 `src/debug.ts`. When a new phase adds something slow to reach by playing, add
 a shortcut there and mention it in the phase's test steps.
 
@@ -97,8 +98,10 @@ README.md            how to play, develop, branches and deploys
 SPEC.md              original design and phases 1–7
 ROADMAP.md           post-MVP design and phases 8+
 src/
-  main.ts            boot, screens (title → loading → playing ⇄ paused), game loop, saving
-  game.ts            one play session: world, player, inventory, mining, lighting, sounds, HUD
+  main.ts            boot, screens (title → loading → playing ⇄ paused), world slots, game
+                     loop, saving
+  game.ts            one play session: world, player, inventory, mining, lighting, sounds, map,
+                     HUD
   config.ts          every tunable number
   channel.ts         live vs dev-site build, storageKey() for every saved key
   input.ts           keyboard + mouse state
@@ -108,27 +111,33 @@ src/
     sfx.ts           every sound effect, synthesized with Web Audio (no audio files); starts on
                      the first click or key press
   world/
-    tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid)
+    tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid, climbable,
+                     one-way), floor checks
     world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile
     generate.ts      seeded terrain, caves, ores, trees, bedrock, spawn
     trees.ts         felling: cutting a trunk removes the tree above the cut
     lighting.ts      per-tile light: sky columns + torches, spread with falloff, incremental relight
     tileEntities.ts  per-tile data (chest contents), keyed by ty * width + tx, removed when the
                      tile changes
+    doors.ts         doors: two tiles each (open and closed are separate tile ids), toggling,
+                     finding the other half
+    explored.ts      which tiles the player has seen (the map's fog of war), per chunk
   entities/
-    player.ts        movement, jump, tile collision, auto step-up
+    player.ts        movement, jump, tile collision, auto step-up, ladder climbing, one-way
+                     platforms
     itemDrop.ts      dropped items: fall, fly to the player within 2 tiles, picked up on touch
   systems/
     items.ts         item registry (name, max stack, tile it places, icon, pickaxe tier)
     inventory.ts     40 slots (10 hotbar + 30 bag), stacking, cursor stack, shift-move,
                      trash slot, pick block, best pickaxe, starting items
     mining.ts        reach + tier checks, break progress, crack stage, hints
-    building.ts      placement rules (empty, in reach, supported, not on the player), drag-build
-                     lines, middle-click pick
+    building.ts      placement rules (empty, in reach, supported, not on the player), door
+                     placement, drag-build lines, middle-click pick
     crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
                      then nearby chests)
     chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
-    save.ts          save format (seed + changed chunks, RLE) + IndexedDB slot via idb-keyval
+    save.ts          save format (seed + changed chunks, RLE) + world slots in IndexedDB via
+                     idb-keyval (each save stored with a small world-list entry)
     settings.ts      player settings (volumes, screen shake, pixel scale, FPS counter) in
                      localStorage
   render/
@@ -138,10 +147,12 @@ src/
                      ore glints, break flashes
     particles.ts     cosmetic break particles and landing dust (Math.random is fine here)
     juice.ts         screen shake, break flash strength, where and when ores glint
+    mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
-    menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, controls,
-                     settings, pause (HTML in #ui)
+    menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
+                     new world, controls, settings, pause (HTML in #ui)
+    map.ts           full-screen map (M: pan, zoom, markers) and the corner minimap (N)
 tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 
@@ -171,7 +182,7 @@ they drop.
 - **Rendering**: `imageSmoothingEnabled = false`, integer camera positions, 2x or 3x pixel scale
   chosen by window size. Only draw what's on screen; chunk images are cached and redrawn only
   when one of their tiles changes (tracked with per-chunk version numbers).
-- **Lighting**: `World.onTileChange` (a list of listeners; tile entities listen too) tells the
+- **Lighting**: `World.onTileChange` (a list of listeners; tile entities and the map image listen too) tells the
   `LightMap` about every tile change; it relights only the box within light reach of the
   changes (plus any stretch of a column whose sky light moved), once per update step. A test checks incremental relighting against a full recompute;
   keep it passing when touching lighting.
@@ -180,8 +191,11 @@ they drop.
   ids, chunk/world size or the save format change**; old saves then show "Save from an older
   version" instead of loading wrong. Items lying on the ground are saved (as an optional
   `drops` field; adding optional fields like that needs no version bump). Chest contents are
-  saved the same way, as an optional `tileEntities` field. Particles, half-mined tile damage
-  and the trash slot aren't saved.
+  saved the same way, as an optional `tileEntities` field, and so are the map's explored tiles
+  (`explored`, per chunk, RLE). Particles, half-mined tile damage and the trash slot aren't
+  saved. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
+  `dig-deep:save` key so older saves carry over) plus a small `WorldMeta` entry written with it
+  in one transaction, so the title screen lists worlds without loading every save.
 - **Performance**: hold 60 FPS. Never do per-frame work over the whole world. World
   generation must take under 2 s.
 - Keep modules small and focused. Prefer plain functions and data over class hierarchies.
