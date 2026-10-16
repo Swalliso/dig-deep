@@ -84,6 +84,63 @@ export const PLAYER_GLOW = 6; // light level at the player's centre (out of LIGH
 export const PLAYER_GLOW_FALLOFF = 1.8; // levels lost per tile of distance (6 / 1.8 ≈ 3-tile radius)
 export const BACKDROP_BRIGHTNESS = 0.35; // underground backdrop = dirt texture at this brightness
 
+// --- Sound (synthesized in src/audio/sfx.ts) ---
+// Volume settings are 0..1 sliders; the gain applied is the square, which sounds more even.
+export const DEFAULT_MASTER_VOLUME = 0.8;
+export const DEFAULT_SFX_VOLUME = 0.8;
+export const SFX_MAX_VOICES = 32; // sounds playing at once; any more are skipped
+export const SFX_PITCH_JITTER = 0.05; // each sound's pitch varies by up to +/- this fraction
+export const SFX_PAN = 0.45; // stereo pan of a tile sound at the edge of reach (0 = none, 1 = hard left/right)
+/** Loudness of each sound before the volume settings. */
+export const SFX_VOLUMES = {
+  dig: 0.3,
+  break: 0.55,
+  pickup: 0.22,
+  place: 0.45,
+  craft: 0.4,
+  step: 0.22,
+  jump: 0.18,
+  land: 0.5,
+  ui: 0.3,
+} as const;
+export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
+export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile
+export const DIG_TICK_FREQ = 180; // Hz of a dig tick on a tile of hardness 0...
+export const DIG_TICK_FREQ_PER_HARDNESS = 320; // ...plus this per point of hardness (dirt ~280 Hz, deepstone ~980 Hz)
+export const PICKUP_FREQ = 523; // Hz (C5) of the first blip in a run of pickups
+export const PICKUP_RUN_WINDOW = 0.6; // s; a pickup this soon after the last one climbs a step of the scale
+export const PICKUP_RUN_STEPS = 10; // pentatonic steps a run can climb (10 = two octaves)
+export const PICKUP_SPACING = 0.05; // s; pickups in the same moment play one after another, as an arpeggio
+export const PICKUP_MAX_DELAY = 0.3; // s; pickups that would queue up longer than this are skipped
+export const FOOTSTEP_DISTANCE = 26; // px walked per footstep (~7 a second at full speed)
+export const LAND_MIN_SPEED = 250; // px/s; landing faster than this thuds and kicks up dust (a 2-tile drop or a jump)
+export const LAND_FULL_SPEED = 750; // px/s; the thud and the dust puff are at full size from here up
+
+// --- Juice ---
+// Screen shake on breaking a tile: a "trauma" of hardness x SHAKE_PER_HARDNESS (at most 1)
+// shakes the view up to SHAKE_MAX world px, fading out at SHAKE_DECAY per second. A new break
+// shakes at least as hard as its own trauma; breaks don't add up.
+export const SHAKE_MAX = 3; // px
+export const SHAKE_PER_HARDNESS = 0.35; // dirt barely moves, stone ~1 px, deepstone ~2.6 px
+export const SHAKE_DECAY = 4; // trauma lost per second
+// A broken tile flashes white for one frame, more opaque the harder it was.
+export const BREAK_FLASH_ALPHA = 0.3; // at hardness 0...
+export const BREAK_FLASH_ALPHA_PER_HARDNESS = 0.2; // ...plus this per point of hardness...
+export const BREAK_FLASH_ALPHA_MAX = 0.8; // ...up to this
+// Dust puff when the player lands (see LAND_MIN_SPEED).
+export const DUST_PARTICLES_MIN = 3;
+export const DUST_PARTICLES_MAX = 10;
+export const DUST_LIFETIME = 0.45; // s
+export const DUST_SPEED = 70; // px/s, sideways
+export const DUST_RISE = 25; // px/s, upward drift
+export const DUST_DRAG = 6; // 1/s; how fast the puff slows down
+// Ores glint now and then wherever they're lit: each ore tile glints once per SPARKLE_PERIOD
+// (at a random moment of its own), for SPARKLE_DURATION.
+export const SPARKLE_PERIOD = 3; // s
+export const SPARKLE_DURATION = 0.4; // s
+export const SPARKLE_ALPHA = 0.85; // brightest glint, on a fully lit ore
+export const SPARKLE_MIN_LIGHT = 3; // light level (out of LIGHT_MAX) below which ores don't glint
+
 // --- HUD ---
 export const TOAST_DURATION = 1.5; // s
 export const TOAST_FADE = 0.5; // s of fade-out at the end of a toast

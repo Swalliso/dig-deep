@@ -1,13 +1,18 @@
 import type { Inventory } from './systems/inventory';
 import type { ItemId } from './systems/items';
+import { ORE_TILES, Tile } from './world/tiles';
+import type { World } from './world/world';
 
 // Debug mode: add `debug` to the URL (`?seed=42&debug`) to turn on testing shortcuts.
 // Keep every cheat in here so it's easy to see what the debug build can do.
 
 export const DEBUG = new URLSearchParams(location.search).has('debug');
 
-/** G gives the materials kit, F toggles fly mode, I cycles instant mining, L toggles lighting. */
-export const DEBUG_KEYS = { give: 'KeyG', fly: 'KeyF', instantMine: 'KeyI', fullbright: 'KeyL' } as const;
+/**
+ * G gives the materials kit, F toggles fly mode, I cycles instant mining, L toggles lighting,
+ * O puts a patch of every ore at the cursor.
+ */
+export const DEBUG_KEYS = { give: 'KeyG', fly: 'KeyF', instantMine: 'KeyI', fullbright: 'KeyL', ores: 'KeyO' } as const;
 
 /**
  * Instant mining: 'off', one tile per tick under the cursor, or a 3x3 brush around it.
@@ -48,9 +53,23 @@ export function giveDebugKit(inventory: Inventory): void {
   for (const [item, count] of KIT) inventory.add(item, count);
 }
 
+/**
+ * Ore sampler: a 4 x 2 patch of coal, copper, iron and gold (one column each) with its top-left
+ * at (tx, ty), replacing whatever is there except bedrock. For trying ore sounds and glints
+ * without digging down to them.
+ */
+export function placeOreSampler(world: World, tx: number, ty: number): void {
+  for (let dy = 0; dy < 2; dy++) {
+    ORE_TILES.forEach((ore, dx) => {
+      if (world.getTile(tx + dx, ty + dy) !== Tile.Bedrock) world.setTile(tx + dx, ty + dy, ore);
+    });
+  }
+}
+
 export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean): string[] {
   return [
     `DEBUG  G: give materials   L: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
     `       F: fly ${flying ? 'ON' : 'off'} (W/S or ↑/↓, Shift fast)   I: instant mine ${instantMine}`,
+    '       O: ore patch at the cursor',
   ];
 }

@@ -16,7 +16,7 @@ import {
   RUN_SPEED,
   TILE_SIZE,
 } from '../config';
-import { isSolid } from '../world/tiles';
+import { isSolid, Tile, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
 
 /** One update step's worth of player intent, so physics doesn't depend on the DOM. */
@@ -55,6 +55,10 @@ export class Player {
   walkDistance = 0;
   /** Debug fly mode: free movement with no gravity or collision. Toggle with setFlying. */
   flying = false;
+  /** A jump started during the latest update (for its sound). */
+  jumped = false;
+  /** Fall speed (px/s) if the latest update landed on the ground, else 0 (for sound and dust). */
+  landingSpeed = 0;
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
   /** Rising from a jump with the button still held (early release cuts the jump). */
@@ -87,6 +91,8 @@ export class Player {
   update(dt: number, world: World, controls: PlayerControls): void {
     this.prevX = this.x;
     this.prevY = this.y;
+    this.jumped = false;
+    this.landingSpeed = 0;
     if (this.flying) {
       this.fly(dt, world, controls);
       return;
@@ -107,6 +113,7 @@ export class Player {
       this.coyoteTimer = 0;
       this.grounded = false;
       this.jumpHeld = true;
+      this.jumped = true;
     }
     if (this.jumpHeld && (!controls.jumpHeld || this.vy >= 0)) {
       if (this.vy < 0) this.vy *= JUMP_CUT;
@@ -120,6 +127,7 @@ export class Player {
     const dy = this.vy * dt;
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / MAX_MOVE_STEP));
     const wasGrounded = this.grounded;
+    const fallSpeed = this.vy;
     this.grounded = false;
     const startX = this.x;
     for (let i = 0; i < steps; i++) {
@@ -127,6 +135,17 @@ export class Player {
       if (this.vy !== 0) this.moveY(dy / steps, world);
     }
     if (this.grounded) this.walkDistance += Math.abs(this.x - startX);
+    if (this.grounded && !wasGrounded) this.landingSpeed = fallSpeed;
+  }
+
+  /** The solid tile under the player's feet (under its centre if possible), or Air in the air. */
+  groundTile(world: World): TileId {
+    const row = Math.floor((this.y + H + 0.5) / TILE_SIZE);
+    for (const x of [this.centerX, this.x + EPS, this.x + W - EPS]) {
+      const tile = world.getTile(Math.floor(x / TILE_SIZE), row);
+      if (isSolid(tile)) return tile;
+    }
+    return Tile.Air;
   }
 
   /** Turn debug fly mode on or off. Landing inside terrain lifts the player clear first. */

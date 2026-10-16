@@ -1,9 +1,32 @@
-import { HOTBAR_SIZE, PICKAXES, PLAYER_HEIGHT, PLAYER_WIDTH, SURFACE_LEVEL, TILE_SIZE } from './config';
-import { brushNeighbours, DEBUG, DEBUG_KEYS, debugHelpLines, giveDebugKit, nextInstantMine, type InstantMine } from './debug';
+import * as sfx from './audio/sfx';
+import {
+  DIG_TICK_INTERVAL,
+  FOOTSTEP_DISTANCE,
+  HOTBAR_SIZE,
+  LAND_FULL_SPEED,
+  LAND_MIN_SPEED,
+  PICKAXES,
+  PLAYER_HEIGHT,
+  PLAYER_WIDTH,
+  REACH,
+  SURFACE_LEVEL,
+  TILE_SIZE,
+} from './config';
+import {
+  brushNeighbours,
+  DEBUG,
+  DEBUG_KEYS,
+  debugHelpLines,
+  giveDebugKit,
+  nextInstantMine,
+  placeOreSampler,
+  type InstantMine,
+} from './debug';
 import { ItemDrop, updateDrops } from './entities/itemDrop';
 import { Player } from './entities/player';
 import { consumeWheel, isDown, mouse, wasPressed } from './input';
 import { Camera } from './render/camera';
+import { breakFlashAlpha, ScreenShake, type BreakFlash } from './render/juice';
 import { Particles } from './render/particles';
 import type { Renderer } from './render/renderer';
 import { canPlace, tryPlace } from './systems/building';
@@ -11,7 +34,8 @@ import { nearbyStations } from './systems/crafting';
 import { Inventory } from './systems/inventory';
 import { itemDef, type ItemId } from './systems/items';
 import { checkMine, Mining, type BrokenTile } from './systems/mining';
-import { drawDebugInfo, drawDepthMeter, drawHotbar, drawToasts, Toasts } from './ui/hud';
+import type { Settings } from './systems/settings';
+import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
 import { InventoryPanel } from './ui/menus';
 import { LightMap } from './world/lighting';
 import { Tile, tileDef, type TileId } from './world/tiles';
@@ -48,9 +72,13 @@ export class Game {
   readonly inventoryPanel = new InventoryPanel();
   readonly toasts = new Toasts();
   private readonly renderer: Renderer;
+  /** Shared with the Settings screen, which changes it while the game is paused. */
+  private readonly settings: Settings;
   private readonly camera = new Camera();
   private readonly mining = new Mining();
   private readonly particles = new Particles();
+  private readonly shake = new ScreenShake();
+  private flashes: BreakFlash[] = [];
   private readonly lightMap: LightMap;
   private readonly worldHash: string;
   private dropList: ItemDrop[];
@@ -58,10 +86,17 @@ export class Game {
   private fullbright = false;
   /** F3 overlay: FPS, seed, position, controls. Starts open in debug mode. */
   private showOverlay = DEBUG;
+  /** Seconds of play (stops while paused); times the ore glints. */
+  private time = 0;
+  /** Seconds until the next dig tick while the mine button is held on a tile. */
+  private digTickIn = 0;
+  /** player.walkDistance at the last footstep. */
+  private lastStepAt = 0;
 
-  constructor(world: World, renderer: Renderer, start: GameStart = {}) {
+  constructor(world: World, renderer: Renderer, settings: Settings, start: GameStart = {}) {
     this.world = world;
     this.renderer = renderer;
+    this.settings = settings;
     this.player = new Player(world.spawnTx, world.spawnTy);
     if (start.player) this.player.placeAt(start.player.x, start.player.y);
     this.inventory = start.inventory ?? Inventory.withStartingItems();
@@ -87,6 +122,8 @@ export class Game {
 
   update(dt: number): void {
     const { world, player, inventory, inventoryPanel, mining, toasts } = this;
+    this.time += dt;
+    this.flashes = this.flashes.filter((f) => !f.drawn);
 
     // Hotbar selection: keys 1..9, 0 and the mouse wheel.
     for (let i = 0; i < HOTBAR_SIZE; i++) {
@@ -103,6 +140,10 @@ export class Game {
       if (wasPressed(DEBUG_KEYS.fly)) player.setFlying(!player.flying, world);
       if (wasPressed(DEBUG_KEYS.instantMine)) this.instantMine = nextInstantMine(this.instantMine);
       if (wasPressed(DEBUG_KEYS.fullbright)) this.fullbright = !this.fullbright;
+      if (wasPressed(DEBUG_KEYS.ores)) {
+        const [ox, oy] = this.cursorTile();
+        placeOreSampler(world, ox, oy);
+      }
     }
 
     const right = anyDown('KeyD', 'ArrowRight');
@@ -114,6 +155,7 @@ export class Game {
       climb: (anyDown('KeyS', 'ArrowDown') ? 1 : 0) - (anyDown('KeyW', 'ArrowUp', 'Space') ? 1 : 0),
       fast: anyDown('ShiftLeft', 'ShiftRight'),
     });
+    this.playerFeedback();
 
     // E / Tab toggles the inventory + crafting panel (Esc also closes it). It pauses mining
     // and building; the mouse works the panel instead.
@@ -128,29 +170,43 @@ export class Game {
     const [tx, ty] = this.cursorTile();
     if (inventoryPanel.open) {
       mining.update(dt, world, player, tx, ty, false, 0); // lets any hint fade out
+      this.digTickIn = 0;
       if (wasPressed('MouseLeft')) {
         const shift = anyDown('ShiftLeft', 'ShiftRight');
         const stations = nearbyStations(world, player.centerX, player.centerY);
-        const crafted = inventoryPanel.click(this.renderer.canvas, this.renderer.scale, mouse.x, mouse.y, shift, inventory, stations);
-        if (crafted) toasts.gained(crafted.output, crafted.count);
+        const click = inventoryPanel.click(this.renderer.canvas, this.renderer.scale, mouse.x, mouse.y, shift, inventory, stations);
+        if (click?.crafted) {
+          toasts.gained(click.crafted.output, click.crafted.count);
+          sfx.craft();
+        } else if (click) {
+          sfx.uiClick();
+        }
       }
     } else {
       const held = isDown('MouseLeft');
       const tier = inventory.bestPickaxeTier();
-      const broken = mining.update(dt, world, player, tx, ty, held, tier, this.instantMine !== 'off');
+      const instant = this.instantMine !== 'off';
+      const broken = mining.update(dt, world, player, tx, ty, held, tier, instant);
       if (broken) this.onTileBroken(broken);
+      else this.digTick(dt, held && !instant && checkMine(world, player, tx, ty, tier) === 'ok', tx, ty);
       if (held) {
         for (const [dx, dy] of brushNeighbours(this.instantMine)) {
           const extra = mining.breakInstantly(world, player, tx + dx, ty + dy, tier);
           if (extra) this.onTileBroken(extra);
         }
       }
-      if (wasPressed('MouseRight')) tryPlace(world, player, inventory, tx, ty);
+      if (wasPressed('MouseRight') && tryPlace(world, player, inventory, tx, ty)) {
+        sfx.place(tileDef(world.getTile(tx, ty)).material, this.pan(tx));
+      }
     }
 
-    this.dropList = updateDrops(this.dropList, dt, world, player, inventory, (item, count) => toasts.gained(item, count));
+    this.dropList = updateDrops(this.dropList, dt, world, player, inventory, (item, count) => {
+      toasts.gained(item, count);
+      sfx.pickup();
+    });
     this.lightMap.update(); // relight around any tiles that changed this step
     this.particles.update(dt, world);
+    this.shake.update(dt);
     toasts.update(dt);
     this.camera.follow(player.centerX, player.centerY, dt);
     this.clampCamera();
@@ -159,17 +215,22 @@ export class Game {
   /** alpha (0..1) is how far we are between the last update step and the next one. */
   render(alpha: number, stats: FrameStats): void {
     const { renderer, player, camera, inventory } = this;
-    const camX = Math.round(lerp(camera.prevX, camera.x, alpha));
-    const camY = Math.round(lerp(camera.prevY, camera.y, alpha));
+    const shake = this.settings.screenShake ? this.shake : { x: 0, y: 0 };
+    const camX = Math.round(lerp(camera.prevX, camera.x, alpha)) + shake.x;
+    const camY = Math.round(lerp(camera.prevY, camera.y, alpha)) + shake.y;
     const px = lerp(player.prevX, player.x, alpha);
     const py = lerp(player.prevY, player.y, alpha);
+    const glowX = px + PLAYER_WIDTH / 2;
+    const glowY = py + PLAYER_HEIGHT / 2;
 
     renderer.drawWorld(this.world, camX, camY);
     for (const crack of this.mining.cracks(this.world)) renderer.drawCracks(crack.tx, crack.ty, crack.stage, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
     renderer.drawPlayer(player, px, py, camX, camY);
     renderer.drawParticles(this.particles, camX, camY);
-    if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, px + PLAYER_WIDTH / 2, py + PLAYER_HEIGHT / 2);
+    if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
+    renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.time, camX, camY, glowX, glowY);
+    renderer.drawFlashes(this.flashes, camX, camY);
     if (!this.inventoryPanel.open) this.drawCursor(camX, camY);
     if (this.mining.hint) renderer.drawHint(this.mining.hint, camX, camY);
     if (this.inventoryPanel.open) {
@@ -182,6 +243,7 @@ export class Game {
     // Depth is measured at the player's feet: standing on the surface level reads 0 m.
     drawDepthMeter(renderer.ctx, Math.floor((player.y + PLAYER_HEIGHT) / TILE_SIZE) - SURFACE_LEVEL, renderer.scale);
     if (this.showOverlay) this.drawOverlay(stats);
+    else if (this.settings.showFps) drawFpsCounter(renderer.ctx, stats.fps, renderer.scale);
   }
 
   private clampCamera(): void {
@@ -196,6 +258,8 @@ export class Game {
   }
 
   private onTileBroken({ tx, ty, tile }: BrokenTile): void {
+    this.shake.hit(tileDef(tile).hardness);
+    this.digTickIn = DIG_TICK_INTERVAL; // leave room for the break sound before the next tick
     this.shatter(tx, ty, tile);
     // Cutting a trunk brings down the rest of the tree above the cut.
     if (tile === Tile.Wood) {
@@ -203,11 +267,52 @@ export class Game {
     }
   }
 
-  /** Particles and the item drop for a tile that just broke. */
+  /** Sound, flash, particles and the item drop for a tile that just broke. */
   private shatter(tx: number, ty: number, tile: TileId): void {
     const def = tileDef(tile);
+    sfx.breakTile(def.material, def.hardness, this.pan(tx));
+    this.flashes.push({ tx, ty, alpha: breakFlashAlpha(def.hardness), drawn: false });
     this.particles.breakBurst(tx, ty, def.color);
     if (def.drop) this.dropList.push(new ItemDrop(def.drop, 1, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
+  }
+
+  /** Dig ticks every DIG_TICK_INTERVAL while `digging` (holding the mine button on a minable tile). */
+  private digTick(dt: number, digging: boolean, tx: number, ty: number): void {
+    if (!digging) {
+      this.digTickIn = 0; // the first hit on a tile ticks straight away
+      return;
+    }
+    this.digTickIn -= dt;
+    if (this.digTickIn > 0) return;
+    this.digTickIn += DIG_TICK_INTERVAL;
+    sfx.dig(tileDef(this.world.getTile(tx, ty)).hardness, this.pan(tx));
+  }
+
+  /** Jump, landing and footstep sounds, and dust when landing hard. Call after the player moves. */
+  private playerFeedback(): void {
+    const { player, world } = this;
+    if (player.jumped) sfx.jump();
+    if (player.landingSpeed >= LAND_MIN_SPEED) {
+      const ground = player.groundTile(world);
+      const strength = Math.min(1, (player.landingSpeed - LAND_MIN_SPEED) / (LAND_FULL_SPEED - LAND_MIN_SPEED));
+      sfx.land(tileDef(ground).material, strength);
+      // Grass is only green on top; its dust is dirt.
+      const dust = tileDef(ground === Tile.Grass ? Tile.Dirt : ground);
+      if (ground !== Tile.Air) this.particles.dustPuff(player.centerX, player.y + PLAYER_HEIGHT, strength, dust.color);
+      this.lastStepAt = player.walkDistance; // the landing was the footstep
+    }
+    if (!player.grounded || Math.abs(player.vx) < 1) {
+      // Standing still: the first step comes after half a stride.
+      this.lastStepAt = player.walkDistance - FOOTSTEP_DISTANCE / 2;
+    } else if (player.walkDistance - this.lastStepAt >= FOOTSTEP_DISTANCE) {
+      this.lastStepAt = player.walkDistance;
+      sfx.step(tileDef(player.groundTile(world)).material);
+    }
+  }
+
+  /** Stereo position (-1 left .. 1 right) of a sound from tile column tx, relative to the player. */
+  private pan(tx: number): number {
+    return ((tx + 0.5) * TILE_SIZE - this.player.centerX) / (REACH * TILE_SIZE);
   }
 
   private dropAtPlayer(item: ItemId, count: number): void {
@@ -240,8 +345,10 @@ export class Game {
     const tier = this.inventory.bestPickaxeTier();
     const saved = stats.lastSavedAt ? `${Math.round((Date.now() - stats.lastSavedAt) / 1000)} s ago` : 'not yet';
     const debugLines = DEBUG ? debugHelpLines(player.flying, this.instantMine, this.fullbright) : [];
+    const percent = (volume: number): string => `${Math.round(volume * 100)}%`;
     drawDebugInfo(this.renderer.ctx, [
       `FPS ${stats.fps}   frame ${stats.frameMs.toFixed(1)} ms   saved ${saved}`,
+      `Audio ${sfx.audioStatus()}   master ${percent(this.settings.masterVolume)}   SFX ${percent(this.settings.sfxVolume)}`,
       `Seed ${this.world.seed}   World hash ${this.worldHash}`,
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)}`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,

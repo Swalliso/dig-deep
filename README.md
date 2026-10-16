@@ -29,6 +29,9 @@ or **Continue** your saved world.
 - Caves are dark, so place torches.
 - The game saves to your browser (IndexedDB) automatically: within a couple of seconds of any
   change, every 60 seconds, and when you pause. There's one save slot per browser and site.
+- **Settings** (on the title screen and the pause menu) has the master and sound-effect
+  volumes, screen shake, pixel scale (auto, 2x or 3x) and an FPS counter. They're kept per
+  browser. Sound starts after your first click or key press, as browsers require.
 
 ## Development
 
@@ -45,7 +48,7 @@ npm run preview   # serve the built dist/ locally
 
 Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing shortcuts:
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
-3x3), and **L** toggles lighting. The title screen also gets a button that marks your save
+3x3), **L** toggles lighting, and **O** puts a patch of every ore at the cursor. The title screen also gets a button that marks your save
 as an older version.
 
 `SPEC.md` is the original design spec, `ROADMAP.md` plans what comes next, and `CLAUDE.md`

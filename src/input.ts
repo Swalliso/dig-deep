@@ -15,8 +15,9 @@ const BUTTONS: Record<number, string> = { 0: 'MouseLeft', 2: 'MouseRight' };
 
 export function initInput(canvas: HTMLCanvasElement): void {
   window.addEventListener('keydown', (e) => {
-    // Typing in a menu text field (the seed) isn't game input.
-    if (e.target instanceof HTMLInputElement) return;
+    // Typing in a menu field (the seed, a volume slider) isn't game input, except Esc, which
+    // backs out of menus.
+    if (e.target instanceof HTMLInputElement && e.code !== 'Escape') return;
     if (!e.repeat) pressed.add(e.code);
     down.add(e.code);
     // Leave keys alone on menu buttons so Space/Enter still press them.

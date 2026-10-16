@@ -8,20 +8,26 @@ import {
   SCALE_3X_MIN_HEIGHT,
   SKY_BOTTOM_COLOR,
   SKY_TOP_COLOR,
+  SPARKLE_ALPHA,
+  SPARKLE_MIN_LIGHT,
   TILE_SIZE,
 } from '../config';
 import type { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
 import { itemIndex } from '../systems/items';
 import type { Hint } from '../systems/mining';
+import type { PixelScale } from '../systems/settings';
 import type { GenProgress } from '../world/generate';
 import { playerGlow, type LightMap } from '../world/lighting';
-import { Tile } from '../world/tiles';
+import { ORE_TILES, Tile, TILE_COUNT } from '../world/tiles';
 import type { World } from '../world/world';
+import { oreSparkle, type BreakFlash } from './juice';
 import type { Particles } from './particles';
 import { buildBackdropTile, buildCrackAtlas, buildItemAtlas, buildTileAtlas } from './textures';
 
 const CHUNK_PX = CHUNK_SIZE * TILE_SIZE;
+const IS_ORE = new Uint8Array(TILE_COUNT);
+for (const ore of ORE_TILES) IS_ORE[ore] = 1;
 
 interface CachedChunk {
   /** null when the chunk is entirely air. */
@@ -35,6 +41,8 @@ export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
   /** Device pixels per world pixel (2 or 3). */
   scale = 2;
+  /** The pixel scale setting; 'auto' picks 2 or 3 by window height. Change with setPixelScale. */
+  private pixelScale: PixelScale = 'auto';
   /** Tile textures; tile id N at x = N * TILE_SIZE. */
   readonly atlas: HTMLCanvasElement;
   /** Item icons; see buildItemAtlas. */
@@ -71,8 +79,14 @@ export class Renderer {
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.max(1, Math.round(window.innerWidth * dpr));
     this.canvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
-    this.scale = this.canvas.height >= SCALE_3X_MIN_HEIGHT ? 3 : 2;
+    this.scale = this.pixelScale !== 'auto' ? this.pixelScale : this.canvas.height >= SCALE_3X_MIN_HEIGHT ? 3 : 2;
     this.sky = null;
+  }
+
+  setPixelScale(pixelScale: PixelScale): void {
+    if (pixelScale === this.pixelScale) return;
+    this.pixelScale = pixelScale;
+    this.resize();
   }
 
   /** View size in world pixels. */
@@ -167,6 +181,56 @@ export class Renderer {
     this.ctx.drawImage(this.lightCanvas, tx0 * TILE_SIZE - camX, ty0 * TILE_SIZE - camY, tw * TILE_SIZE, th * TILE_SIZE);
   }
 
+  /**
+   * Glints on visible ore tiles, as bright as the light on them (see drawLight for the glow
+   * arguments). `lightMap` null means everything is fully lit. Draw after the darkness.
+   */
+  drawSparkles(world: World, lightMap: LightMap | null, time: number, camX: number, camY: number, glowX: number, glowY: number): void {
+    const { ctx } = this;
+    const tx0 = Math.max(0, Math.floor(camX / TILE_SIZE));
+    const ty0 = Math.max(0, Math.floor(camY / TILE_SIZE));
+    const tx1 = Math.min(world.width - 1, Math.floor((camX + this.viewWidth) / TILE_SIZE));
+    const ty1 = Math.min(world.height - 1, Math.floor((camY + this.viewHeight) / TILE_SIZE));
+    const gx = glowX / TILE_SIZE - 0.5;
+    const gy = glowY / TILE_SIZE - 0.5;
+    ctx.fillStyle = '#fffbea';
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (!IS_ORE[world.getTile(tx, ty)]) continue;
+        const sparkle = oreSparkle(tx, ty, time);
+        if (!sparkle) continue;
+        const level = lightMap ? Math.max(lightMap.level(tx, ty), playerGlow(Math.hypot(tx - gx, ty - gy))) : LIGHT_MAX;
+        if (level < SPARKLE_MIN_LIGHT) continue;
+        const alpha = SPARKLE_ALPHA * sparkle.strength * (level / LIGHT_MAX);
+        const x = tx * TILE_SIZE + sparkle.x - camX;
+        const y = ty * TILE_SIZE + sparkle.y - camY;
+        // A bright centre pixel, with arms while the glint is at its brightest.
+        ctx.globalAlpha = alpha;
+        ctx.fillRect(x, y, 1, 1);
+        if (sparkle.strength > 0.5) {
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.fillRect(x - 1, y, 1, 1);
+          ctx.fillRect(x + 1, y, 1, 1);
+          ctx.fillRect(x, y - 1, 1, 1);
+          ctx.fillRect(x, y + 1, 1, 1);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** White flashes over tiles that just broke. Marks each one drawn. */
+  drawFlashes(flashes: readonly BreakFlash[], camX: number, camY: number): void {
+    const { ctx } = this;
+    ctx.fillStyle = '#fff';
+    for (const flash of flashes) {
+      ctx.globalAlpha = flash.alpha;
+      ctx.fillRect(flash.tx * TILE_SIZE - camX, flash.ty * TILE_SIZE - camY, TILE_SIZE, TILE_SIZE);
+      flash.drawn = true;
+    }
+    ctx.globalAlpha = 1;
+  }
+
   /** Crack overlay on a tile being mined; stage is 1..CRACK_STAGES. */
   drawCracks(tx: number, ty: number, stage: number, camX: number, camY: number): void {
     const S = TILE_SIZE;
@@ -198,9 +262,11 @@ export class Renderer {
   drawParticles(particles: Particles, camX: number, camY: number): void {
     const { ctx } = this;
     for (const p of particles.list) {
+      ctx.globalAlpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1;
       ctx.fillStyle = p.color;
       ctx.fillRect(Math.round(p.x) - camX, Math.round(p.y) - camY, p.size, p.size);
     }
+    ctx.globalAlpha = 1;
   }
 
   /** Short message above a tile, fading out over its last half second. */

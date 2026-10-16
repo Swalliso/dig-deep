@@ -1,9 +1,11 @@
+import * as sfx from '../audio/sfx';
 import { BUILD_SHA, CHANNEL } from '../channel';
 import { BAG_SIZE, HOTBAR_SIZE } from '../config';
 import { canCraft, craft, missingIngredients, RECIPES, type Recipe, type Station } from '../systems/crafting';
 import type { Inventory } from '../systems/inventory';
 import { itemDef } from '../systems/items';
 import { SAVE_VERSION, type SaveStatus } from '../systems/save';
+import type { PixelScale, Settings } from '../systems/settings';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 
 // Inventory + crafting panel (opened with E or Tab). Sizes are in UI units; one unit is
@@ -81,10 +83,16 @@ function computeLayout(width: number, height: number, scale: number): Layout {
 
 const hit = (r: Rect, x: number, y: number): boolean => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 
+/** A click that landed on a slot or a recipe. */
+export interface PanelClick {
+  /** The recipe crafted, if the click crafted one. */
+  crafted: Recipe | null;
+}
+
 export class InventoryPanel {
   open = false;
 
-  /** Left click at canvas pixel (mx, my) while the panel is open. Returns the recipe crafted, if any. */
+  /** Left click at canvas pixel (mx, my) while the panel is open. Null if it missed every slot and recipe. */
   click(
     canvas: HTMLCanvasElement,
     scale: number,
@@ -93,16 +101,17 @@ export class InventoryPanel {
     shift: boolean,
     inventory: Inventory,
     stations: ReadonlySet<Station>,
-  ): Recipe | null {
+  ): PanelClick | null {
     const layout = computeLayout(canvas.width, canvas.height, scale);
     const slot = layout.slots.findIndex((r) => hit(r, mx, my));
     if (slot >= 0) {
       if (shift && !inventory.cursor) inventory.quickMove(slot);
       else inventory.clickSlot(slot);
-      return null;
+      return { crafted: null };
     }
     const recipe = RECIPES[layout.recipes.findIndex((r) => hit(r, mx, my))];
-    return recipe && craft(inventory, recipe, stations) ? recipe : null;
+    if (!recipe) return null;
+    return { crafted: craft(inventory, recipe, stations) ? recipe : null };
   }
 
   draw(
@@ -214,7 +223,14 @@ function drawRecipe(
   }
 }
 
-// --- Title, controls and pause screens (HTML on top of the canvas) ---
+// --- Title, controls, settings and pause screens (HTML on top of the canvas) ---
+
+/** What the Settings screen edits. */
+export interface SettingsHooks {
+  settings: Settings;
+  /** Called after every change; `settings` has already been updated. */
+  onChange: () => void;
+}
 
 export interface TitleOptions {
   /** What's in the save slot. */
@@ -226,6 +242,7 @@ export interface TitleOptions {
   onNewWorld: (seedText: string) => void;
   /** Debug mode only: shown as an extra button when there's a save. */
   onMarkOutdated?: () => void;
+  settings: SettingsHooks;
 }
 
 export interface PauseOptions {
@@ -233,6 +250,7 @@ export interface PauseOptions {
   /** Resolves once the save is written; rejects if it failed. */
   onSave: () => Promise<void>;
   onQuit: () => void;
+  settings: SettingsHooks;
 }
 
 const CONTROLS: [string, string][] = [
@@ -249,14 +267,24 @@ const CONTROLS: [string, string][] = [
 /** The HTML menus. Only one screen shows at a time; hide() clears it. */
 export class Menus {
   private readonly root: HTMLElement;
+  /** Where Esc goes from the screen showing (Controls and Settings go back), if anywhere. */
+  private onBack: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
   }
 
   hide(): void {
+    this.onBack = null;
     this.root.className = '';
     this.root.replaceChildren();
+  }
+
+  /** Esc: go back a screen if the one showing has a Back button. Returns false if it doesn't. */
+  back(): boolean {
+    if (!this.onBack) return false;
+    this.onBack();
+    return true;
   }
 
   showTitle(options: TitleOptions): void {
@@ -302,7 +330,14 @@ export class Menus {
     seed.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') fresh.click();
     });
-    menu.append(label, seed, fresh, button('Controls', () => this.showControls(() => this.showTitle(options))));
+    const reopen = (): void => this.showTitle(options);
+    menu.append(
+      label,
+      seed,
+      fresh,
+      button('Controls', () => this.showControls(reopen)),
+      button('Settings', () => this.showSettings(options.settings, 'title', reopen)),
+    );
 
     if (options.onMarkOutdated && save.kind === 'ok') {
       menu.append(button('Debug: mark save as an older version', options.onMarkOutdated, 'small'));
@@ -321,7 +356,43 @@ export class Menus {
     }
     const back = button('Back', onBack);
     menu.append(table, back);
+    this.onBack = onBack;
     back.focus();
+  }
+
+  /** Volumes, screen shake, pixel scale and the FPS counter. Every change applies and saves at once. */
+  showSettings(hooks: SettingsHooks, kind: 'title' | 'pause', onBack: () => void): void {
+    const { settings, onChange } = hooks;
+    const menu = this.open(kind);
+    menu.classList.add('settings');
+    const master = slider('set-master', 'Master volume', settings.masterVolume, (v) => {
+      settings.masterVolume = v;
+      onChange();
+    });
+    const effects = slider('set-sfx', 'Sound effects', settings.sfxVolume, (v) => {
+      settings.sfxVolume = v;
+      onChange();
+    });
+    const shake = toggle('set-shake', 'Screen shake', settings.screenShake, (on) => {
+      settings.screenShake = on;
+      onChange();
+    });
+    const scales: [PixelScale, string][] = [
+      ['auto', 'Auto'],
+      [2, '2x'],
+      [3, '3x'],
+    ];
+    const scale = choices('Pixel scale', scales, settings.pixelScale, (value) => {
+      settings.pixelScale = value;
+      onChange();
+    });
+    const fps = toggle('set-fps', 'FPS counter', settings.showFps, (on) => {
+      settings.showFps = on;
+      onChange();
+    });
+    menu.append(el('h2', 'Settings'), master.row, effects.row, shake, scale, fps, button('Back', onBack));
+    this.onBack = onBack;
+    master.input.focus();
   }
 
   showPause(options: PauseOptions): void {
@@ -337,12 +408,14 @@ export class Menus {
         .catch(() => (save.textContent = 'Save failed, try again'))
         .finally(() => (save.disabled = false));
     });
-    menu.append(resume, save, button('Quit to title', options.onQuit));
+    const settings = button('Settings', () => this.showSettings(options.settings, 'pause', () => this.showPause(options)));
+    menu.append(resume, save, settings, button('Quit to title', options.onQuit));
     resume.focus();
   }
 
   private open(kind: 'title' | 'pause'): HTMLElement {
     const menu = el('div', '', 'menu');
+    this.onBack = null;
     this.root.className = `open ${kind}`;
     this.root.replaceChildren(menu);
     return menu;
@@ -359,8 +432,74 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text: string, classNa
 function button(text: string, onClick: () => void, className = ''): HTMLButtonElement {
   const node = el('button', text, className);
   node.type = 'button';
-  node.addEventListener('click', onClick);
+  node.addEventListener('click', () => {
+    sfx.uiClick();
+    onClick();
+  });
   return node;
+}
+
+/** One line of the Settings screen: a name on the left, its control on the right. */
+function settingRow(label: string, control: HTMLElement, forId = ''): HTMLDivElement {
+  const row = el('div', '', 'setting');
+  const name = el('label', label);
+  if (forId) name.htmlFor = forId;
+  row.append(name, control);
+  return row;
+}
+
+/** 0..100% slider for a 0..1 value. */
+function slider(id: string, label: string, value: number, onInput: (value: number) => void): { row: HTMLDivElement; input: HTMLInputElement } {
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.id = id;
+  input.min = '0';
+  input.max = '100';
+  input.step = '5';
+  input.value = String(Math.round(value * 100));
+  const shown = el('span', `${input.value}%`, 'value');
+  input.addEventListener('input', () => {
+    shown.textContent = `${input.value}%`;
+    onInput(Number(input.value) / 100);
+  });
+  // A click at the new level when the slider is let go, so you can hear it.
+  input.addEventListener('change', () => sfx.uiClick());
+  const control = el('div', '', 'control');
+  control.append(input, shown);
+  return { row: settingRow(label, control, id), input };
+}
+
+function toggle(id: string, label: string, value: boolean, onToggle: (on: boolean) => void): HTMLDivElement {
+  let on = value;
+  const show = (): void => {
+    node.textContent = on ? 'On' : 'Off';
+    node.setAttribute('aria-pressed', String(on));
+  };
+  const node = button('', () => {
+    on = !on;
+    show();
+    onToggle(on);
+  });
+  node.id = id;
+  show();
+  return settingRow(label, node, id);
+}
+
+/** A row of buttons where exactly one is picked. */
+function choices<T>(label: string, options: [T, string][], value: T, onPick: (value: T) => void): HTMLDivElement {
+  const group = el('div', '', 'choices');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', label);
+  const buttons = options.map(([option, text]) => {
+    const node = button(text, () => {
+      for (const other of buttons) other.setAttribute('aria-pressed', String(other === node));
+      onPick(option);
+    });
+    node.setAttribute('aria-pressed', String(option === value));
+    return node;
+  });
+  group.append(...buttons);
+  return settingRow(label, group);
 }
 
 function timeAgo(time: number): string {

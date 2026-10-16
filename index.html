@@ -174,6 +174,60 @@
         color: #ffd27a;
         text-align: right;
       }
+
+      /* Settings screen: one row per setting, name on the left and its control on the right. */
+      #ui .menu.settings {
+        width: min(420px, calc(100vw - 32px));
+      }
+      #ui .setting {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 34px;
+      }
+      #ui .setting label {
+        margin: 0;
+        font-size: 15px;
+        color: #fff;
+      }
+      #ui .setting .control,
+      #ui .setting .choices {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #ui .setting input[type='range'] {
+        width: 120px;
+        margin: 0;
+        padding: 0;
+        border: none;
+        background: none;
+        accent-color: #ffd27a;
+        cursor: pointer;
+      }
+      #ui .setting .value {
+        width: 4.5ch;
+        text-align: right;
+        font-size: 14px;
+        color: #ffd27a;
+      }
+      #ui .setting button {
+        min-width: 54px;
+        align-items: center;
+        padding: 5px 10px;
+        font-size: 14px;
+      }
+      #ui .setting button[aria-pressed='true'] {
+        color: #1a1208;
+        background: #ffd27a;
+        border-color: #ffd27a;
+      }
+      #ui .setting button[aria-pressed='true']:hover,
+      #ui .setting button[aria-pressed='true']:focus-visible {
+        background: #ffe3a8;
+        border-color: #fff;
+      }
     </style>
   </head>
   <body>

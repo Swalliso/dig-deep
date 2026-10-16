@@ -1,3 +1,4 @@
+import { initAudio, setVolumes } from './audio/sfx';
 import {
   AUTOSAVE_INTERVAL,
   GEN_FRAME_BUDGET_MS,
@@ -22,7 +23,8 @@ import {
   type SaveData,
   type SaveStatus,
 } from './systems/save';
-import { Menus } from './ui/menus';
+import { loadSettings, saveSettings } from './systems/settings';
+import { Menus, type SettingsHooks } from './ui/menus';
 import { generateWorldSteps, parseSeed, type GenProgress } from './world/generate';
 import { World } from './world/world';
 
@@ -37,9 +39,15 @@ type Screen =
   | { kind: 'paused'; game: Game };
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
+const settings = loadSettings();
 const renderer = new Renderer(canvas);
+renderer.setPixelScale(settings.pixelScale);
 initInput(canvas);
+initAudio();
+setVolumes(settings.masterVolume, settings.sfxVolume);
 const menus = new Menus(document.getElementById('ui') as HTMLElement);
+/** The Settings screen edits `settings` in place; every change is applied and saved at once. */
+const settingsHooks: SettingsHooks = { settings, onChange: applySettings };
 /** `?seed=` pre-fills the title screen's seed field. */
 const urlSeed = new URLSearchParams(location.search).get('seed') ?? '';
 
@@ -70,6 +78,13 @@ window.addEventListener('pagehide', saveIfInGame);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveIfInGame();
 });
+
+function applySettings(): void {
+  saveSettings(settings);
+  setVolumes(settings.masterVolume, settings.sfxVolume);
+  renderer.setPixelScale(settings.pixelScale);
+  if (screen.kind === 'playing' || screen.kind === 'paused') screen.game.resize();
+}
 
 async function saveGame(game: Game): Promise<void> {
   const snap = snapshot(game);
@@ -104,6 +119,7 @@ async function showTitle(override?: SaveStatus): Promise<void> {
     },
     onNewWorld: (text) => startLoading(parseSeed(text), null),
     onMarkOutdated: DEBUG ? () => void markSaveOutdated().then(() => showTitle()) : undefined,
+    settings: settingsHooks,
   });
 }
 
@@ -121,6 +137,7 @@ function finishLoading(world: World, save: SaveData | null): void {
     game = new Game(
       world,
       renderer,
+      settings,
       save ? { player: save.player, inventory: restoreInventory(save), drops: restoreDrops(save, world) } : {},
     );
   } catch {
@@ -139,6 +156,7 @@ function pause(game: Game): void {
     onResume: () => resume(game),
     onSave: () => saveGame(game),
     onQuit: () => void saveGame(game).finally(() => showTitle()),
+    settings: settingsHooks,
   });
 }
 
@@ -157,23 +175,28 @@ function frame(now: number): void {
   const workStart = performance.now();
   const dt = Math.min((now - lastTime) / 1000, MAX_FRAME_TIME);
   lastTime = now;
+  const wasPlaying = screen.kind === 'playing';
 
   switch (screen.kind) {
     case 'title':
-      break; // the HTML title screen covers everything
+      // The HTML title screen covers everything. Esc backs out of Controls or Settings.
+      if (wasPressed('Escape')) menus.back();
+      break;
     case 'loading':
       stepLoading(screen);
       break;
     case 'paused':
       screen.game.render(1, stats());
-      if (wasPressed('Escape')) resume(screen.game);
+      // Esc backs out of Settings, or resumes from the pause menu.
+      if (wasPressed('Escape') && !menus.back()) resume(screen.game);
       break;
     case 'playing':
       play(screen.game, dt);
       break;
   }
-  // Outside play, drop any input so it doesn't fire when play starts.
-  if (screen.kind !== 'playing') {
+  // Unless the whole frame was play, drop any input so it doesn't fire when play starts (the
+  // Esc that resumes from the pause menu would pause again on the next frame).
+  if (!wasPlaying || screen.kind !== 'playing') {
     endInputStep();
     consumeWheel();
   }
