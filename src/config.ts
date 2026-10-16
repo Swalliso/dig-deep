@@ -69,6 +69,9 @@ export const JUMP_VELOCITY = 480; // px/s; full-height jump clears a 4-tile ledg
 export const JUMP_CUT = 0.4; // upward speed is multiplied by this when jump is released early
 export const COYOTE_TIME = 0.1; // s after leaving the ground that a jump still works
 export const JUMP_BUFFER = 0.1; // s before landing that a jump press is remembered
+// Corner correction: a jump whose head clips a ceiling edge by at most this much on one side
+// slides sideways past it, so jumping up into a 1-tile hole doesn't need perfect alignment.
+export const JUMP_CORNER_CORRECTION = 6; // px
 export const MAX_MOVE_STEP = 8; // px; movement is split into steps this small so nothing tunnels
 // Ladders: W/S on a ladder grabs it; Space hops off, S + Space lets go and drops.
 export const CLIMB_SPEED = 140; // px/s up or down (a 100 m shaft takes about 11 s)

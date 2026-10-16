@@ -7,6 +7,7 @@ import {
   DEBUG_FLY_SPEED,
   GRAVITY,
   JUMP_BUFFER,
+  JUMP_CORNER_CORRECTION,
   JUMP_CUT,
   LADDER_REGRAB_DELAY,
   MAX_FALL_SPEED,
@@ -214,7 +215,7 @@ export class Player {
     const startX = this.x;
     for (let i = 0; i < steps; i++) {
       if (this.vx !== 0) this.moveX(dx / steps, world, wasGrounded);
-      if (this.vy !== 0) this.moveY(dy / steps, world, false);
+      if (this.vy !== 0) this.moveY(dy / steps, world, false, true);
     }
     // Once the feet are past the top of the platform being dropped through, it's a floor again.
     if (this.dropRow >= 0 && (this.grounded || this.y + H > this.dropRow * TILE_SIZE + 0.5)) this.dropRow = -1;
@@ -303,7 +304,7 @@ export class Player {
     const startY = this.y;
     for (let i = 0; i < steps; i++) {
       if (dx !== 0) this.moveX(dx / steps, world, false);
-      if (dy !== 0) this.moveY(dy / steps, world, true);
+      if (dy !== 0) this.moveY(dy / steps, world, true, false);
     }
     this.climbDistance += Math.abs(this.y - startY);
     const standing = climb >= 0 && !overlapsSolid(world, this.x, this.y) && overlapsSolid(world, this.x, this.y + 1);
@@ -366,9 +367,10 @@ export class Player {
   /**
    * Move down or up by dy, stopping at solid tiles. Moving down also lands on one-way floors
    * (platforms, ladder tops) that the feet started above, unless `ignoreOneWay` (climbing) or
-   * it's the platform being dropped through.
+   * it's the platform being dropped through. Moving up with `cornerCorrect`, a head that only
+   * clips a ceiling edge on one side slides past it (see cornerCorrection).
    */
-  private moveY(dy: number, world: World, ignoreOneWay: boolean): void {
+  private moveY(dy: number, world: World, ignoreOneWay: boolean, cornerCorrect: boolean): void {
     const feetBefore = this.y + H;
     this.y += dy;
     const row = dy > 0 ? Math.floor((this.y + H - EPS) / TILE_SIZE) : Math.floor(this.y / TILE_SIZE);
@@ -380,12 +382,30 @@ export class Player {
       if (dy > 0) {
         this.y = row * TILE_SIZE - H;
         this.grounded = true;
+      } else if (cornerCorrect && this.cornerCorrection(world, row, col0, col1)) {
+        return;
       } else {
         this.y = (row + 1) * TILE_SIZE;
       }
       this.vy = 0;
       return;
     }
+  }
+
+  /**
+   * Jump corner correction: if the head (rising into `row`) overlaps a solid tile on one side
+   * only, by at most JUMP_CORNER_CORRECTION px, shift sideways out of it and keep rising.
+   * Returns false (no shift) for a head-on hit or if the shifted box would touch anything solid.
+   */
+  private cornerCorrection(world: World, row: number, col0: number, col1: number): boolean {
+    if (col0 === col1) return false;
+    const left = isSolid(world.getTile(col0, row));
+    const right = isSolid(world.getTile(col1, row));
+    if (left === right) return false;
+    const x = left ? (col0 + 1) * TILE_SIZE : col1 * TILE_SIZE - W;
+    if (Math.abs(x - this.x) > JUMP_CORNER_CORRECTION || overlapsSolid(world, x, this.y)) return false;
+    this.x = x;
+    return true;
   }
 }
 
