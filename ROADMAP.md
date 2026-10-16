@@ -65,9 +65,10 @@ section of the phase's PR description, so the notes live next to the change they
 - Important warnings remain readable with sound muted, shake disabled and reduced flashes on.
   Use text, shape or motion as well as color.
 - Check the feature with the existing systems together: mining, lighting, storage, map and
-  autosave. Keep the 60 FPS target on a documented reference browser/device (recorded in
-  README.md's Development section), including a busy underground scene. Any missed target gets a
-  concrete follow-up before adding more load.
+  autosave. Build things efficiently (no per-frame work over the whole world, budgets for
+  anything that can pile up) and note any slowdown seen in a playtest, but frame rate doesn't
+  gate a phase: dedicated performance passes come later, measured on the reference device in
+  README.md.
 
 ## Shared foundations
 
@@ -84,7 +85,7 @@ phase that needs it, and that phase says so.
 | PlayerStats (`src/systems/stats.ts`) | 11b | Player stats computed from the base values in config, plus equipment and boons. Replaces direct reads of `REACH`, `STATION_RANGE`, `DROP_PULL_RANGE` and the run/jump constants. 11b uses it for max health and safe fall height. |
 | Active tile updates (`src/world/tileUpdates.ts`) | 12 | A queue of tiles to recheck, fed by neighbours of changed tiles and worked through with a per-step budget, like the lighting's dirty box. Runs falling blocks, torch burnout and liquids. Never touches the whole world in one frame. |
 | Generation profiles | 12, extended in 14 | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14 adds strata, and Descent floors are smaller profiles. |
-| World compatibility | 12, reviewed at 14 and 16 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it; existing worlds are **classic**. New generation features appear in new worlds. Optional later: an explicit "upgrade world" that regenerates only chunks that are both unchanged and never explored (the Phase 10 explored map knows which), so nothing the player has seen changes. Never silently reinterpret an old world with new generation. Bump `SAVE_VERSION` only for format changes old code can't read. Export/import backups arrive with Phase 11a. |
+| World compatibility | 12, reviewed at 14 and 16 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. |
 | Run rules and random streams | 18 | Record the seed, rules/generation version and eligible content pools. Derive separate generation, loot and boon streams from the seed and stable floor identifiers; keep cosmetics independent. Persist the state needed to resume without rerolling content. |
 
 Notes:
@@ -273,10 +274,9 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
   off. Secondary collapses must communicate their danger before hitting the player.
 - **Persistence and compatibility**: gravel pockets arrive in a new generation profile, so new
   worlds get them and existing (**classic**) worlds keep generating without them, per the
-  world-compatibility row. Decide in this phase whether classic worlds get the optional
-  "upgrade world" (unchanged, never-explored chunks only) or simply stay as they are. Save
-  warning/falling-block state, or settle it by an explicitly defined equivalent rule, without
-  losing material, duplicating drops or resetting the danger.
+  world-compatibility row; classic worlds stay as they are. Save warning/falling-block state,
+  or settle it by an explicitly defined equivalent rule, without losing material, duplicating
+  drops or resetting the danger.
 - Stretch, also used later by Descent tremors: ceilings of "unstable rock" collapse when the
   unsupported span gets wider than N tiles. If deferred here, this becomes required in Phase 20.
 
@@ -285,7 +285,8 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 - [ ] A player can identify a risky ceiling, preview a useful support and safely mine its reward.
       Warnings work with audio, shake and flashes disabled.
 - [ ] Save/reload during a warning or collapse preserves material and danger. Cozy worlds do not
-      suffer destructive collapses, and older worlds follow the documented compatibility policy.
+      suffer destructive collapses, and classic worlds still load (or, if that was given up,
+      show "Save from an older version").
 
 ### Phase 13: The dark
 
