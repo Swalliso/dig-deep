@@ -68,7 +68,7 @@ export const ITEMS = {
   gold_pickaxe: pickaxe('Gold pickaxe', 4, '#f2c94c', 'The fastest pickaxe.'),
   chest: block('Chest', Tile.Chest, `Holds ${CHEST_SLOTS} stacks. Crafting uses what is in nearby chests.`),
   ladder: block('Ladder', Tile.Ladder, 'Hold W or S on it to climb. You can stand on its top.'),
-  platform: block('Platform', Tile.Platform, 'Jump up through it. S + jump drops down through.'),
+  platform: block('Platform', Tile.Platform, 'Jump up through it. S drops down through (hold S to keep dropping).'),
   // Placed as the bottom half; building.ts adds the top half above it.
   door: { ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'), icon: { shape: 'door', color: '#8f6236' } },
   // Placed as the left half; building.ts adds the right half beside it.

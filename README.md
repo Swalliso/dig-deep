@@ -22,7 +22,7 @@ and pick **Normal** or **Cozy**).
 | Pick block onto hotbar             | Middle mouse              |
 | Open chest, use door or bed        | Right-click it            |
 | Climb a ladder                     | W / S or ↑ / ↓ on it      |
-| Drop through a platform            | S + Space                 |
+| Drop through a platform            | S (hold to keep dropping) |
 | Map / minimap                      | M / N                     |
 | Select hotbar slot                 | 1–0 or mouse wheel        |
 | Drop selected stack                | Q                         |
@@ -50,8 +50,9 @@ and pick **Normal** or **Cozy**).
 - **Ladders** (3 planks make 4), **platforms** (1 plank makes 2) and **doors** (6 planks) are
   made at a workbench. Hold W or S on a ladder to climb; Space hops off and S + Space lets go.
   You can stand on top of a ladder, so a shaft with a ladder in it can be walked over. Jump up
-  through platforms, and press S + Space to drop down through one. Doors are two tiles tall
-  and need ground under them; right-click to open or close one.
+  through platforms, and press S to drop down through one (hold S to keep dropping through
+  the ones below). Doors are two tiles tall and need ground under them; right-click to open
+  or close one.
 - **Health** (Normal worlds): 10 HP, shown as 5 hearts in the top left. Falls of more than 12
   tiles hurt; grab a ladder on the way down (hold W or S) and the fall ends safely, and walking
   off a ledge into a ladder shaft catches you on the ladder. Health comes back slowly after 5 s

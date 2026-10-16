@@ -96,6 +96,13 @@ export class Player {
   private heldWhenLetGo = 0;
   /** Row of the platform being dropped through (ignored as a floor until the feet pass it), or -1. */
   private dropRow = -1;
+  /** The up/down key held during the previous update, so a fresh S press can be told apart. */
+  private prevClimb = 0;
+  /**
+   * S has been held since it dropped the player through a platform: landing on another
+   * platform drops through that too, until S is let go.
+   */
+  private dropChain = false;
 
   /** Place the player standing on the tile row below (tx, ty). */
   constructor(tx: number, ty: number) {
@@ -131,6 +138,10 @@ export class Player {
     this.landingSpeed = 0;
     this.fallLanded = 0;
     this.caughtByLadder = false;
+    const climb = controls.climb ?? 0;
+    const downPressed = climb > 0 && this.prevClimb <= 0;
+    this.prevClimb = climb;
+    if (climb <= 0) this.dropChain = false;
     if (this.flying) {
       this.fly(dt, world, controls);
       this.fallTop = null;
@@ -140,7 +151,6 @@ export class Player {
 
     // Ladders: W/S on one grabs it, and S on the top of one climbs down into it. A jump press
     // while climbing hops off (Space), or lets go and drops with S held; a W press is a climb.
-    const climb = controls.climb ?? 0;
     this.regrabTimer -= dt;
     if (climb !== this.heldWhenLetGo) this.heldWhenLetGo = 0;
     const canGrab = climb !== 0 && climb !== this.heldWhenLetGo && this.regrabTimer <= 0;
@@ -167,6 +177,7 @@ export class Player {
       }
     }
     if (this.climbing) {
+      this.dropChain = false;
       this.climbStep(dt, world, controls);
       this.fallTop = this.climbing || this.grounded ? null : this.y;
       this.walkedOff = false;
@@ -179,10 +190,14 @@ export class Player {
     this.vx = approach(this.vx, controls.move * this.stats.runSpeed, rate);
     if (controls.move !== 0) this.facing = controls.move > 0 ? 1 : -1;
 
-    // S + jump on a platform drops down through it instead of jumping.
+    // Pressing S on a platform drops down through it (S + jump too, instead of jumping), and
+    // holding S keeps dropping through the platforms below. S held since before landing (from
+    // a ladder, say) doesn't drop.
     let dropping = false;
-    if (this.grounded && controls.jumpPressed && climb > 0 && this.onPlatformOnly(world)) {
+    const dropAsked = downPressed || this.dropChain || controls.jumpPressed;
+    if (this.grounded && climb > 0 && dropAsked && this.onPlatformOnly(world)) {
       dropping = true;
+      this.dropChain = true;
       this.dropRow = Math.floor((this.y + H + 0.5) / TILE_SIZE);
       this.grounded = false;
     }

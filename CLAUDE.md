@@ -58,6 +58,10 @@ These override the spec. Don't revert them.
   most `JUMP_CORNER_CORRECTION` (6 px), slides sideways past it and keeps rising, so jumping
   into a one-tile hole doesn't need perfect alignment. Only if the shifted box is clear; a
   head-on hit still stops the jump, and jump height is unchanged. Not on ladders or in fly mode.
+- **S drops through platforms.** Pressing S while standing on a platform drops through it
+  (ROADMAP's Phase 10 had S + Space, which still works). Holding S keeps dropping through the
+  platforms below; letting go stops on the next one. S held since before landing (falling or
+  off a ladder) doesn't drop, so only a fresh press starts a drop.
 - **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
   pickaxe" hint (instead of a toast) were all reviewed and kept.
 - **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything

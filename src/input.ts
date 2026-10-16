@@ -24,7 +24,7 @@ const ACTION_DEFS = {
   moveRight: { label: 'Move right', keys: ['KeyD', 'ArrowRight'] },
   jump: { label: 'Jump', keys: ['Space', 'KeyW', 'ArrowUp'] },
   climbUp: { label: 'Climb up (pan the map up)', keys: ['KeyW', 'ArrowUp'] },
-  climbDown: { label: 'Climb down, or drop through a platform with jump', keys: ['KeyS', 'ArrowDown'] },
+  climbDown: { label: 'Climb down, or drop through a platform', keys: ['KeyS', 'ArrowDown'] },
   use: { label: 'Dig, or place the held block', keys: ['MouseLeft'] },
   interact: { label: 'Open a chest or door, or sleep in a bed', keys: ['MouseRight'] },
   pickBlock: { label: 'Pick block onto the hotbar', keys: ['MouseMiddle'] },
