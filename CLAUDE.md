@@ -57,10 +57,11 @@ These override the spec. Don't revert them.
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
 **G** gives a materials kit (enough for every recipe, plus a workbench and furnace), **F**
-toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed), and
+toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
-bedrock stays unbreakable, drops and tree felling work as normal), and **L** toggles lighting
-(fullbright) for exploring. Debug mode also opens the F3 overlay at start, and the title screen
+bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
+(fullbright) for exploring, and **O** puts a 4 x 2 patch of every ore at the cursor (for ore
+sounds and glints). Debug mode also opens the F3 overlay at start, and the title screen
 gets a button that marks the save as an older version (to test the version-mismatch screen). All cheats live in
 `src/debug.ts`. When a new phase adds something slow to reach by playing, add
 a shortcut there and mention it in the phase's test steps.
@@ -94,12 +95,15 @@ SPEC.md              original design and phases 1–7
 ROADMAP.md           post-MVP design and phases 8+
 src/
   main.ts            boot, screens (title → loading → playing ⇄ paused), game loop, saving
-  game.ts            one play session: world, player, inventory, mining, lighting, HUD
+  game.ts            one play session: world, player, inventory, mining, lighting, sounds, HUD
   config.ts          every tunable number
   channel.ts         live vs dev-site build, storageKey() for every saved key
   input.ts           keyboard + mouse state
   debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining)
   util/rng.ts        seeded PRNG (shared by world gen and textures)
+  audio/
+    sfx.ts           every sound effect, synthesized with Web Audio (no audio files); starts on
+                     the first click or key press
   world/
     tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid)
     world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile
@@ -117,15 +121,20 @@ src/
     building.ts      placement rules (empty, in reach, supported, not on the player)
     crafting.ts      recipe table, station range checks, craft()
     save.ts          save format (seed + changed chunks, RLE) + IndexedDB slot via idb-keyval
+    settings.ts      player settings (volumes, screen shake, pixel scale, FPS counter) in
+                     localStorage
   render/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
-    renderer.ts      sky, underground backdrop, cached chunk canvases, light overlay, entities
-    particles.ts     cosmetic break particles (Math.random is fine here)
+    renderer.ts      sky, underground backdrop, cached chunk canvases, light overlay, entities,
+                     ore glints, break flashes
+    particles.ts     cosmetic break particles and landing dust (Math.random is fine here)
+    juice.ts         screen shake, break flash strength, where and when ores glint
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
-    menus.ts         inventory + crafting panel (canvas); title, controls, pause (HTML in #ui)
-tests/               Vitest unit tests (world gen, inventory, crafting)
+    menus.ts         inventory + crafting panel (canvas); title, controls, settings, pause (HTML
+                     in #ui)
+tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 
 `util/rng.ts`, `render/textures.ts` and `systems/items.ts` are small additions to the spec's

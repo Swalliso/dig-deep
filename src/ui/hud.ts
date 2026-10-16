@@ -157,6 +157,17 @@ export function drawToasts(ctx: CanvasRenderingContext2D, toasts: Toasts, u: num
   ctx.restore();
 }
 
+/** "60 FPS" in the top-left corner, when the Settings screen turns it on. */
+export function drawFpsCounter(ctx: CanvasRenderingContext2D, fps: number, u: number): void {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = `${7 * u}px monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  shadowText(ctx, `${fps} FPS`, 6 * u, 6 * u, '#fff', u);
+  ctx.restore();
+}
+
 /** "Depth: 87 m" in the top-right corner (1 tile = 1 m, 0 at surface level); "Height" above it. */
 export function drawDepthMeter(ctx: CanvasRenderingContext2D, depth: number, u: number): void {
   ctx.save();
