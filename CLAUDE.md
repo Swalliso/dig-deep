@@ -54,6 +54,10 @@ These override the spec. Don't revert them.
   their own actions. Right-click only interacts (chests, doors, later beds and lift stops); it
   never digs or places. E or Tab also opens the nearest chest in reach. The spec had left mine
   and right place; a tester found right-click doing both placing and interacting confusing.
+- **Jump corner correction.** A jump whose head clips a ceiling edge on one side only, by at
+  most `JUMP_CORNER_CORRECTION` (6 px), slides sideways past it and keeps rising, so jumping
+  into a one-tile hole doesn't need perfect alignment. Only if the shifted box is clear; a
+  head-on hit still stops the jump, and jump height is unchanged. Not on ladders or in fly mode.
 - **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
   pickaxe" hint (instead of a toast) were all reviewed and kept.
 - **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything
