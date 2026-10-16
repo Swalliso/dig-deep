@@ -18,6 +18,7 @@ import { itemDef, type ItemId } from '../systems/items';
 import { SAVE_VERSION, type WorldMeta } from '../systems/save';
 import type { PixelScale, Settings } from '../systems/settings';
 import { tileDef } from '../world/tiles';
+import { CONTROLS } from './controls';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 
 // Inventory + crafting panel (opened with E or Tab, or by right-clicking a chest). Sizes are in
@@ -581,25 +582,6 @@ export interface PauseOptions {
   settings: SettingsHooks;
 }
 
-const CONTROLS: [string, string][] = [
-  ['Move', 'A / D or ← / →'],
-  ['Jump', 'Space, W or ↑'],
-  ['Mine', 'Hold left mouse'],
-  ['Place block', 'Right mouse (hold and sweep to build)'],
-  ['Pick block onto hotbar', 'Middle mouse'],
-  ['Open chest, open or close door', 'Right-click it'],
-  ['Climb a ladder', 'W / S or ↑ / ↓ on it'],
-  ['Drop through a platform', 'S + Space'],
-  ['Map / minimap', 'M / N'],
-  ['Select hotbar slot', '1–0 or mouse wheel'],
-  ['Drop selected stack', 'Q'],
-  ['Quick stack to nearby chests', 'C'],
-  ['Inventory / crafting', 'E or Tab'],
-  ['Move stack (hotbar ↔ bag ↔ chest)', 'Shift-click'],
-  ['Craft 10', 'Shift-click a recipe'],
-  ['Pause', 'Esc'],
-  ['Debug overlay', 'F3'],
-];
 
 /** The HTML menus. Only one screen shows at a time; hide() clears it. */
 export class Menus {

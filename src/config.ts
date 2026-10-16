@@ -16,6 +16,41 @@ export const SCALE_3X_MIN_HEIGHT = 1000;
 export const SKY_TOP_COLOR = '#5fa8e8';
 export const SKY_BOTTOM_COLOR = '#bfe3ff';
 export const CHUNK_CACHE_LIMIT = 48; // cached chunk canvases kept in memory (~1 MB each)
+
+// --- Background (parallax) ---
+// Layers drawn behind the world, back to front, between the sky and the tiles. Each scrolls at
+// `factor` times the camera's speed (0 = fixed to the screen, 1 = moves with the world), so far
+// layers drift slowly and the world feels bigger. They're generated once per world from its
+// seed, as strips BACKGROUND_STRIP_WIDTH world px wide that repeat sideways.
+export interface BackgroundLayerSpec {
+  kind: 'clouds' | 'mountains' | 'hills';
+  factor: number;
+  /** World px the layer's horizon sits above the average surface (SURFACE_LEVEL). */
+  lift: number;
+  /** Height range of the skyline above the horizon, world px. Clouds: the band they float in. */
+  minHeight: number;
+  maxHeight: number;
+  color: string;
+  /** Mountains: snow on the high peaks. Hills: tree silhouettes. Clouds: their shaded undersides. */
+  accent: string;
+  /** Clouds only: world px per second they drift, on top of the parallax. */
+  drift?: number;
+}
+export const BACKGROUND_STRIP_WIDTH = 1024; // world px before a layer repeats
+// World px of solid colour under each skyline in its strip; at least BACKGROUND_SHADE_DEPTH, so
+// the strip is fully shaded where the plain fill below it takes over.
+export const BACKGROUND_FILL_BELOW = 96;
+// Skyline layers darken by up to this fraction with depth below their ridge, over
+// BACKGROUND_SHADE_DEPTH world px, so big areas of a near layer don't read as a flat wall.
+export const BACKGROUND_SHADE = 0.14;
+export const BACKGROUND_SHADE_DEPTH = 90;
+/** The surface background set. Later strata and biomes get their own sets (ROADMAP Phase 14). */
+export const SURFACE_BACKGROUND: readonly BackgroundLayerSpec[] = [
+  { kind: 'clouds', factor: 0.04, lift: 110, minHeight: 10, maxHeight: 80, color: '#ffffff', accent: '#d9e9f6', drift: 3 },
+  { kind: 'mountains', factor: 0.1, lift: 50, minHeight: 40, maxHeight: 150, color: '#9dbfdc', accent: '#dcebf6' },
+  { kind: 'hills', factor: 0.25, lift: 24, minHeight: 20, maxHeight: 70, color: '#89b3a3', accent: '#76a091' },
+  { kind: 'hills', factor: 0.45, lift: 4, minHeight: 12, maxHeight: 44, color: '#6f9c76', accent: '#5c8864' },
+];
 export const TEXTURE_SEED = 1337; // fixed so tile textures look the same in every world
 
 // --- Camera ---

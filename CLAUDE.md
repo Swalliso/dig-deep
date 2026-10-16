@@ -48,6 +48,12 @@ These override the spec. Don't revert them.
 - **Player glow.** A faint ~3-tile glow around the player (`PLAYER_GLOW`) so you can see where
   to put a torch in a pitch-black cave. It's applied when drawing the darkness overlay only;
   the light map (and "caves are dark") is unaffected.
+- **Mouse: left uses what's held, right interacts.** A left press decides what its hold does
+  (`primaryAction` in `systems/building.ts`): holding a block over an empty spot places it
+  (hold to sweep), anything else digs with the best carried pickaxe, and held tools will get
+  their own actions. Right-click only interacts (chests, doors, later beds and lift stops); it
+  never digs or places. E or Tab also opens the nearest chest in reach. The spec had left mine
+  and right place; a tester found right-click doing both placing and interacting confusing.
 - **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
   pickaxe" hint (instead of a toast) were all reviewed and kept.
 - **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything
@@ -143,8 +149,10 @@ src/
   render/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
-    renderer.ts      sky, underground backdrop, cached chunk canvases, light overlay, entities,
-                     ore glints, break flashes
+    renderer.ts      sky, parallax background, underground backdrop, cached chunk canvases,
+                     light overlay, entities, ore glints, break flashes
+    parallax.ts      background layers (clouds, mountains, hills) built per world from its seed
+                     as repeating strips; scroll math (layer sets in config.ts)
     particles.ts     cosmetic break particles and landing dust (Math.random is fine here)
     juice.ts         screen shake, break flash strength, where and when ores glint
     mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
@@ -153,6 +161,8 @@ src/
     menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
                      new world, controls, settings, pause (HTML in #ui)
     map.ts           full-screen map (M: pan, zoom, markers) and the corner minimap (N)
+    controls.ts      the controls list for the Controls screen (a test keeps README.md's table
+                     matching it and every row short enough to fit)
 tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 
@@ -195,7 +205,12 @@ they drop.
   (`explored`, per chunk, RLE). Particles, half-mined tile damage and the trash slot aren't
   saved. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
   `dig-deep:save` key so older saves carry over) plus a small `WorldMeta` entry written with it
-  in one transaction, so the title screen lists worlds without loading every save.
-- **Performance**: hold 60 FPS. Never do per-frame work over the whole world. World
-  generation must take under 2 s.
+  in one transaction, so the title screen lists worlds without loading every save. Keeping
+  old worlds working is nice but never a constraint (testers know breaking changes may come):
+  when it would hold a feature back, bump `SAVE_VERSION` instead. See ROADMAP.md's "World
+  compatibility" row.
+- **Performance**: build things efficiently: never do per-frame work over the whole world,
+  give anything that can pile up a per-step budget, and keep world generation around 2 s. Frame
+  rate isn't a gate for a phase, though; dedicated performance passes come later, measured on
+  the reference device in README.md.
 - Keep modules small and focused. Prefer plain functions and data over class hierarchies.

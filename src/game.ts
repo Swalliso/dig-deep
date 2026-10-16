@@ -34,7 +34,7 @@ import { breakFlashAlpha, ScreenShake, type BreakFlash } from './render/juice';
 import { MapImage } from './render/mapImage';
 import { Particles } from './render/particles';
 import type { Renderer } from './render/renderer';
-import { canPlace, itemForTile, overlapsPlayer, tilesOnLine, tryPlace } from './systems/building';
+import { canPlace, itemForTile, overlapsPlayer, primaryAction, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
 import { nearbyStations } from './systems/crafting';
 import { Inventory } from './systems/inventory';
@@ -118,13 +118,13 @@ export class Game {
   private readonly mapImage: MapImage;
   /** Seconds until the next look around (marking tiles seen). */
   private exploreIn = 0;
-  /** The chest shown next to the inventory (opened with right-click), if any. */
+  /** The chest shown next to the inventory (opened with right-click or E), if any. */
   private openChest: { tx: number; ty: number } | null = null;
   /**
-   * Drag-building: true while a right-button hold that started on the world (not on a chest
-   * or the panel) is going on. Each step places along the cursor's path since the last step.
+   * What the current left-button hold does, decided when it went down (see primaryAction), or
+   * null when the button isn't held. Building places along the cursor's path since the last step.
    */
-  private building = false;
+  private leftAction: PrimaryAction | null = null;
   private lastBuildTile: [number, number] = [0, 0];
   /** Tiles placed during this hold (keys ty * width + tx), so a tile mined meanwhile isn't refilled. */
   private readonly builtThisHold = new Set<number>();
@@ -224,7 +224,7 @@ export class Game {
       this.fullMap.update(dt, this.mapInput(), this.renderer.canvas.width, this.renderer.canvas.height, this.renderer.scale, world.width, world.height);
       mining.update(dt, world, player, 0, 0, false, 0); // lets any hint fade out
       this.digTickIn = 0;
-      this.building = false;
+      this.leftAction = null;
     } else {
       this.handlePlayInput(dt);
     }
@@ -252,11 +252,15 @@ export class Game {
     if (wasPressed('KeyQ')) this.throwSelected();
     if (wasPressed('KeyC')) this.quickStackNearby();
 
-    // E / Tab toggles the inventory + crafting panel (Esc also closes it). It pauses mining
-    // and building; the mouse works the panel instead.
+    // E / Tab toggles the inventory + crafting panel (Esc also closes it), opening the nearest
+    // chest in reach alongside it. It pauses mining and building; the mouse works the panel instead.
     if (anyPressed('KeyE', 'Tab') || (inventoryPanel.open && wasPressed('Escape'))) {
-      if (inventoryPanel.open) this.closePanel();
-      else inventoryPanel.open = true;
+      if (inventoryPanel.open) {
+        this.closePanel();
+      } else {
+        inventoryPanel.open = true;
+        this.openChest = this.nearestChestInReach();
+      }
     }
     // An open chest closes when it's broken or the player walks out of reach.
     const open = this.openChest;
@@ -264,25 +268,20 @@ export class Game {
 
     const [tx, ty] = this.cursorTile();
     const { canvas, scale } = this.renderer;
-    // Right-clicking a chest in reach opens it (unless the click is on the panel), and on a door
-    // opens or closes it. Otherwise a right press on the world starts drag-building, which
-    // lasts until the button is let go.
+    // Right-click interacts: a chest in reach opens (unless the click is on the panel), and a
+    // door opens or closes. It never places or mines anything.
     if (wasPressed('MouseRight') && !inventoryPanel.covers(canvas, scale, mouse.x, mouse.y, this.panelState())) {
       if (this.chestAt(tx, ty) && inReach(player, tx, ty)) {
         this.openChest = { tx, ty };
         inventoryPanel.open = true;
         sfx.uiClick();
-      } else if (!inventoryPanel.open && this.useDoor(tx, ty)) {
-        // opened or closed it
       } else if (!inventoryPanel.open) {
-        this.building = true;
-        this.lastBuildTile = [tx, ty];
-        this.builtThisHold.clear();
+        this.useDoor(tx, ty);
       }
     }
 
     if (inventoryPanel.open) {
-      this.building = false;
+      this.leftAction = null;
       mining.update(dt, world, player, tx, ty, false, 0); // lets any hint fade out
       this.digTickIn = 0;
       if (wasPressed('MouseLeft')) {
@@ -296,7 +295,14 @@ export class Game {
         }
       }
     } else {
-      const held = isDown('MouseLeft');
+      // Left-click uses what's held: the press decides whether this hold digs or builds.
+      if (wasPressed('MouseLeft')) {
+        const stack = inventory.selectedStack;
+        this.leftAction = primaryAction(stack ? stack.item : null, world.getTile(tx, ty));
+        this.lastBuildTile = [tx, ty];
+        this.builtThisHold.clear();
+      }
+      const held = this.leftAction === 'dig' && isDown('MouseLeft');
       const tier = inventory.bestPickaxeTier();
       const instant = this.instantMine !== 'off';
       const broken = mining.update(dt, world, player, tx, ty, held, tier, instant);
@@ -308,13 +314,13 @@ export class Game {
           if (extra) this.onTileBroken(extra);
         }
       }
-      if (this.building) {
+      if (this.leftAction === 'build') {
         const [lx, ly] = this.lastBuildTile;
         for (const [bx, by] of tilesOnLine(lx, ly, tx, ty)) this.buildAt(bx, by);
         this.lastBuildTile = [tx, ty];
-        // Checked after placing, so a click shorter than one step still places once.
-        if (!isDown('MouseRight')) this.building = false;
       }
+      // Checked after placing, so a click shorter than one step still places once.
+      if (!isDown('MouseLeft')) this.leftAction = null;
       if (wasPressed('MouseMiddle')) this.pickBlock(tx, ty);
     }
 
@@ -331,7 +337,7 @@ export class Game {
     const glowX = px + PLAYER_WIDTH / 2;
     const glowY = py + PLAYER_HEIGHT / 2;
 
-    renderer.drawWorld(this.world, camX, camY);
+    renderer.drawWorld(this.world, camX, camY, this.time);
     for (const crack of this.mining.cracks(this.world)) renderer.drawCracks(crack.tx, crack.ty, crack.stage, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
     renderer.drawPlayer(player, px, py, camX, camY);
@@ -362,7 +368,7 @@ export class Game {
       return;
     }
     if (this.inventoryPanel.open) this.closePanel();
-    this.building = false;
+    this.leftAction = null;
     this.fullMap.show(this.player.centerX, this.player.centerY);
     sfx.uiClick();
   }
@@ -452,6 +458,26 @@ export class Game {
     this.openChest = null;
     const leftover = this.inventory.returnCursor();
     if (leftover) this.dropAtPlayer(leftover.item, leftover.count);
+  }
+
+  /** The chest in reach nearest the player, for E to open with the inventory, or null. */
+  private nearestChestInReach(): { tx: number; ty: number } | null {
+    const { player } = this;
+    const ptx = Math.floor(player.centerX / TILE_SIZE);
+    const pty = Math.floor(player.centerY / TILE_SIZE);
+    let best: { tx: number; ty: number } | null = null;
+    let bestDistance = Infinity;
+    for (let ty = pty - REACH - 1; ty <= pty + REACH + 1; ty++) {
+      for (let tx = ptx - REACH - 1; tx <= ptx + REACH + 1; tx++) {
+        if (!this.chestAt(tx, ty) || !inReach(player, tx, ty)) continue;
+        const distance = Math.hypot((tx + 0.5) * TILE_SIZE - player.centerX, (ty + 0.5) * TILE_SIZE - player.centerY);
+        if (distance < bestDistance) {
+          best = { tx, ty };
+          bestDistance = distance;
+        }
+      }
+    }
+    return best;
   }
 
   /** Drag-building: place the selected block at (tx, ty) unless this hold already did. */
@@ -612,9 +638,10 @@ export class Game {
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)}`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
       'A/D or ←/→: move   Space, W or ↑: jump   W/S on a ladder: climb   S + Space: drop through',
-      'Left mouse: mine   Right mouse: place (hold to sweep), open chest or door   Middle: pick block',
+      'Left mouse: dig, or place the held block on an empty spot (hold to sweep)',
+      'Right mouse: open chest or door   Middle mouse: pick block',
       '1–0 or wheel: select   Q: drop stack   C: quick stack to nearby chests',
-      'E or Tab: inventory + crafting (shift-click: move stack, craft 10)',
+      'E or Tab: inventory + crafting, with the nearest chest (shift-click: move stack, craft 10)',
       'M: map   N: minimap   Esc: pause   F3: hide this overlay',
       ...debugLines,
     ]);
