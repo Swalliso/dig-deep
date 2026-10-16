@@ -22,8 +22,11 @@ import {
   markWorldOutdated,
   nextWorldId,
   readWorld,
+  restoreDifficulty,
   restoreDrops,
   restoreExplored,
+  restoreFallTop,
+  restoreHealth,
   restoreInventory,
   restorePlayTime,
   restoreTileEntities,
@@ -31,8 +34,12 @@ import {
   SAVE_VERSION,
   writeWorld,
   type SaveData,
+  type SurvivalState,
   type WorldMeta,
 } from './systems/save';
+import { restoreBed, restoreSatchels } from './systems/death';
+import type { Difficulty } from './systems/health';
+import { computeStats } from './systems/stats';
 import { loadSettings, saveSettings } from './systems/settings';
 import { downloadText, Menus, type SettingsHooks, type TitleOptions } from './ui/menus';
 import { generateWorldSteps, parseSeed, type GenProgress } from './world/generate';
@@ -57,6 +64,8 @@ type Screen =
       status: GenProgress;
       save: SaveData | null;
       slot: Slot;
+      /** A new world's difficulty (a save brings its own). */
+      difficulty: Difficulty;
     }
   | { kind: 'playing'; game: Game }
   /** The pause menu, opened with Esc or because the window lost focus. */
@@ -154,12 +163,18 @@ function applySettings(): void {
   currentGame()?.resize();
 }
 
+/** Health, difficulty, bed and satchels: the game's saved state beyond the player and inventory. */
+function survival(game: Game): SurvivalState {
+  return { health: game.health, difficulty: game.difficulty, bed: game.bed, satchels: game.satchels };
+}
+
 /** The game as a save, right now. */
 function currentSave(game: Game, slot: Slot): SaveData {
   return createSave(game.world, game.player, game.inventory, game.drops, game.tileEntities, {
     explored: game.explored,
     name: slot.name,
     playTime: game.clock.time,
+    survival: survival(game),
   });
 }
 
@@ -186,7 +201,7 @@ function autosave(game: Game): void {
  * are rounded to whole pixels, so a still player or a resting item doesn't count as a change.
  */
 function snapshot(game: Game): string {
-  const state = savedState(game.player, game.inventory, game.drops, game.tileEntities);
+  const state = savedState(game.player, game.inventory, game.drops, game.tileEntities, survival(game));
   const rounded = JSON.stringify(state, (_key, value: unknown) => (typeof value === 'number' ? Math.round(value) : value));
   return `${game.world.revision}|${game.explored.revision}|${rounded}`;
 }
@@ -205,8 +220,10 @@ function titleOptions(worlds: WorldMeta[], note?: string): TitleOptions {
     seedText: urlSeed,
     note,
     onPlay: (world) => void playWorld(world),
-    onCreate: (name, seedText) =>
-      void listWorlds().then((current) => startLoading(parseSeed(seedText), null, { id: nextWorldId(current.map((w) => w.id)), name })),
+    onCreate: (name, seedText, difficulty) =>
+      void listWorlds().then((current) =>
+        startLoading(parseSeed(seedText), null, { id: nextWorldId(current.map((w) => w.id)), name }, difficulty),
+      ),
     onDelete: async (world) => {
       await deleteWorld(world.id).catch(() => {});
       return listWorlds();
@@ -255,14 +272,17 @@ async function playWorld(world: WorldMeta): Promise<void> {
   void showTitle(`"${world.name}" ${why}, so it can't be loaded.`);
 }
 
-/** Generate the world from its seed (the loading screen shows progress), then apply the save if any. */
-function startLoading(seed: number, save: SaveData | null, slot: Slot): void {
+/**
+ * Generate the world from its seed (the loading screen shows progress), then apply the save if
+ * any. `difficulty` is for a new world.
+ */
+function startLoading(seed: number, save: SaveData | null, slot: Slot, difficulty: Difficulty = 'normal'): void {
   menus.hide();
   const world = new World(WORLD_WIDTH, WORLD_HEIGHT, seed);
-  screen = { kind: 'loading', world, steps: generateWorldSteps(world), status: { label: 'Starting', progress: 0 }, save, slot };
+  screen = { kind: 'loading', world, steps: generateWorldSteps(world), status: { label: 'Starting', progress: 0 }, save, slot, difficulty };
 }
 
-function finishLoading(world: World, save: SaveData | null, slot: Slot): void {
+function finishLoading(world: World, save: SaveData | null, slot: Slot, difficulty: Difficulty): void {
   let game: Game;
   try {
     if (save) applySavedChunks(world, save);
@@ -273,13 +293,18 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot): void {
       save
         ? {
             player: save.player,
+            fallTop: restoreFallTop(save),
             inventory: restoreInventory(save),
             drops: restoreDrops(save, world),
             tileEntities: restoreTileEntities(save, world),
             explored: restoreExplored(save, world),
             playTime: restorePlayTime(save),
+            difficulty: restoreDifficulty(save),
+            health: restoreHealth(save, computeStats().maxHealth),
+            bed: restoreBed(save.bed, world),
+            satchels: restoreSatchels(save.satchels, world),
           }
-        : {},
+        : { difficulty },
     );
   } catch {
     void showTitle(`"${slot.name}" couldn't be loaded.`);
@@ -307,6 +332,7 @@ function pause(game: Game, reason: 'menu' | 'focus'): void {
       }),
     onQuitWithoutSaving: () => void showTitle(),
     onExport: () => exportLive(game),
+    difficulty: { value: game.difficulty, set: (d) => game.setDifficulty(d) },
     settings: settingsHooks,
     failSaves: DEBUG ? { on: debugState.failSaves, set: (on) => (debugState.failSaves = on) } : undefined,
   });
@@ -402,7 +428,7 @@ function stepLoading(loading: Extract<Screen, { kind: 'loading' }>): void {
   while (performance.now() - start < GEN_FRAME_BUDGET_MS) {
     const next = loading.steps.next();
     if (next.done) {
-      finishLoading(loading.world, loading.save, loading.slot);
+      finishLoading(loading.world, loading.save, loading.slot, loading.difficulty);
       return;
     }
     loading.status = next.value;

@@ -76,6 +76,39 @@ export const CLIMB_SIDE_SPEED = 60; // px/s sideways while on a ladder; stepping
 export const LADDER_REGRAB_DELAY = 0.25; // s after letting go before the ladder can be grabbed again
 export const CLIMB_STEP_DISTANCE = 16; // px climbed per rung sound
 
+// --- Health, falls and respawn (Phase 11b) ---
+// Base values for the player's stats; src/systems/stats.ts adds equipment and boons on top.
+export const MAX_HEALTH = 10; // HP, drawn as 5 hearts of 2 HP each
+// Falls up to this many tiles (from the top of the arc to the landing) never hurt, so normal
+// jumps and drops are always safe. Each tile past it costs FALL_DAMAGE_PER_TILE HP (rounded up):
+// a 20-tile fall costs 4 HP and anything past 32 tiles is fatal from full health.
+export const SAFE_FALL_TILES = 12;
+export const FALL_DAMAGE_PER_TILE = 0.5;
+// Hurt protection: after taking damage, further damage is ignored for this long, whatever its
+// source, so simultaneous hits can't take all your reaction time. The same rule covers every
+// hazard (Phase 12's falling blocks too).
+export const HURT_PROTECTION = 0.8; // s
+export const RESPAWN_PROTECTION = 3; // s of the same protection after respawning
+export const REGEN_DELAY = 5; // s without damage before health starts coming back...
+export const REGEN_INTERVAL = 3; // ...then 1 HP every this many seconds
+// Cues: the red screen flash on taking damage (off with Reduced flashes), the falling "-N" number
+// over the player and the shake of the hearts that were lost (always on).
+export const HURT_FLASH_ALPHA = 0.35;
+export const HURT_FLASH_TIME = 0.3; // s for the red flash to fade
+export const DAMAGE_NUMBER_TIME = 0.9; // s the "-N" number floats up from the player
+export const HEART_SHAKE_TIME = 0.5; // s the lost hearts shake for
+// While protected the player blinks this often, or (with Reduced flashes) is drawn see-through.
+export const PROTECTION_BLINK = 0.1; // s per blink phase
+export const PROTECTION_ALPHA = 0.5; // player opacity while protected, with Reduced flashes
+// The death screen ignores the respawn key for this long, so a key held at the moment of
+// death doesn't skip it.
+export const DEATH_SCREEN_DELAY = 0.8; // s (real time)
+// A respawn with no usable bed searches this many columns either side of the world spawn for
+// the top of the ground with room to stand.
+export const FALLBACK_SEARCH = 40; // tiles
+// A satchel (the bag contents left where you died) is picked up by touching it.
+export const SATCHEL_SIZE = 10; // px square
+
 // --- Mining and building ---
 export const REACH = 5; // tiles, measured from the player's centre to the tile's centre
 export const CRACK_STAGES = 4;
@@ -154,6 +187,9 @@ export const SFX_VOLUMES = {
   land: 0.5,
   ui: 0.3,
   door: 0.4,
+  hurt: 0.55,
+  death: 0.6,
+  bed: 0.4,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile

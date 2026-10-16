@@ -16,6 +16,7 @@ describe('settings', () => {
       masterVolume: DEFAULT_MASTER_VOLUME,
       sfxVolume: DEFAULT_SFX_VOLUME,
       screenShake: true,
+      reducedFlashes: false,
       pixelScale: 'auto',
       showFps: false,
       showMinimap: true,
@@ -26,7 +27,7 @@ describe('settings', () => {
   });
 
   it('round-trip through JSON', () => {
-    const settings = { masterVolume: 0, sfxVolume: 0.35, screenShake: false, pixelScale: 3 as const, showFps: true, showMinimap: false };
+    const settings = { masterVolume: 0, sfxVolume: 0.35, screenShake: false, reducedFlashes: true, pixelScale: 3 as const, showFps: true, showMinimap: false };
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
   });
 

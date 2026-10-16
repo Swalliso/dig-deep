@@ -1,4 +1,4 @@
-import { CRACK_STAGES, DAMAGE_REPAIR_DELAY, DAMAGE_REPAIR_TIME, HINT_DURATION, PICKAXES, REACH, TILE_SIZE } from '../config';
+import { CRACK_STAGES, DAMAGE_REPAIR_DELAY, DAMAGE_REPAIR_TIME, HINT_DURATION, PICKAXES, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
 import { Tile, tileDef, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
@@ -38,11 +38,11 @@ interface Damage {
   idle: number;
 }
 
-/** Is tile (tx, ty) within reach? Measured from the player's centre to the tile's centre. */
+/** Is tile (tx, ty) within the player's reach? Measured from the player's centre to the tile's centre. */
 export function inReach(player: Player, tx: number, ty: number): boolean {
   const dx = (tx + 0.5) * TILE_SIZE - player.centerX;
   const dy = (ty + 0.5) * TILE_SIZE - player.centerY;
-  return dx * dx + dy * dy <= (REACH * TILE_SIZE) ** 2;
+  return dx * dx + dy * dy <= (player.stats.reach * TILE_SIZE) ** 2;
 }
 
 export function checkMine(world: World, player: Player, tx: number, ty: number, tier: number): MineCheck {

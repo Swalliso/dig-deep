@@ -16,7 +16,8 @@ export interface ActionDef {
  * Every action and its keys: the one place key bindings live. The Controls screen, the F3 help,
  * tooltips and hints all read key names from here (see ui/controls.ts), so a remapping screen
  * only has to edit this table. Some actions share a key on purpose: W/↑ both jumps and climbs,
- * and the left mouse button uses the held item in the world and clicks in menus.
+ * Space also respawns from the death screen, and the left mouse button uses the held item in
+ * the world and clicks in menus.
  */
 const ACTION_DEFS = {
   moveLeft: { label: 'Move left', keys: ['KeyA', 'ArrowLeft'] },
@@ -25,7 +26,7 @@ const ACTION_DEFS = {
   climbUp: { label: 'Climb up (pan the map up)', keys: ['KeyW', 'ArrowUp'] },
   climbDown: { label: 'Climb down, or drop through a platform with jump', keys: ['KeyS', 'ArrowDown'] },
   use: { label: 'Dig, or place the held block', keys: ['MouseLeft'] },
-  interact: { label: 'Open a chest or door', keys: ['MouseRight'] },
+  interact: { label: 'Open a chest or door, or sleep in a bed', keys: ['MouseRight'] },
   pickBlock: { label: 'Pick block onto the hotbar', keys: ['MouseMiddle'] },
   click: { label: 'Click in the inventory and drag the map', keys: ['MouseLeft'] },
   modifier: { label: 'Shift-click: move a stack or craft 10', keys: ['ShiftLeft', 'ShiftRight'] },
@@ -46,6 +47,7 @@ const ACTION_DEFS = {
   minimap: { label: 'Minimap', keys: ['KeyN'] },
   pause: { label: 'Pause, or close the inventory, map or a menu screen', keys: ['Escape'] },
   overlay: { label: 'Debug overlay (FPS)', keys: ['F3'] },
+  respawn: { label: 'Respawn after dying', keys: ['Space', 'Enter'] },
   debugGive: { label: 'Debug: materials kit', keys: ['KeyG'], debug: true },
   debugFly: { label: 'Debug: fly mode', keys: ['KeyF'], debug: true },
   debugInstantMine: { label: 'Debug: instant mining', keys: ['KeyI'], debug: true },
@@ -53,6 +55,8 @@ const ACTION_DEFS = {
   debugOres: { label: 'Debug: ore patch at the cursor', keys: ['KeyO'], debug: true },
   debugLadderShaft: { label: 'Debug: ladder shaft down from the cursor', keys: ['KeyK'], debug: true },
   debugRevealMap: { label: 'Debug: reveal the map', keys: ['KeyV'], debug: true },
+  debugGodMode: { label: 'Debug: god mode on/off (and heal)', keys: ['KeyH'], debug: true },
+  debugHurt: { label: 'Debug: take 2 damage', keys: ['KeyJ'], debug: true },
 } satisfies Record<string, ActionDef>;
 
 export type Action = keyof typeof ACTION_DEFS;

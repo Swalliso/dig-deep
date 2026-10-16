@@ -54,6 +54,7 @@ describe('recipes', () => {
       ['4 ladder', '3 planks', 'workbench'],
       ['2 platform', '1 planks', 'workbench'],
       ['1 door', '6 planks', 'workbench'],
+      ['1 bed', '10 planks + 4 wood', 'workbench'], // Phase 11b
     ]);
   });
 
@@ -63,7 +64,7 @@ describe('recipes', () => {
       blocks: ['planks', 'torch', 'ladder', 'platform', 'door'],
       tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe'],
       materials: ['copper_bar', 'iron_bar', 'gold_bar'],
-      stations: ['workbench', 'furnace', 'chest'],
+      stations: ['workbench', 'furnace', 'chest', 'bed'],
     });
   });
 

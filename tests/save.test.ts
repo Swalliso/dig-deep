@@ -4,6 +4,7 @@ import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, MAX_STACK, TILE_SIZE } from '../src
 import { ItemDrop } from '../src/entities/itemDrop';
 import { Player } from '../src/entities/player';
 import { chestAt } from '../src/systems/chests';
+import { Health } from '../src/systems/health';
 import { Inventory } from '../src/systems/inventory';
 import {
   applySavedChunks,
@@ -95,7 +96,7 @@ describe('saving and loading', () => {
     applySavedChunks(reloaded, save);
     expect(reloaded.hash()).toBe(world.hash());
     expect(reloaded.getTile(world.spawnTx + 4, world.spawnTy + 10)).toBe(Tile.Torch);
-    expect(save.player).toEqual({ x: player.x, y: player.y });
+    expect(save.player).toEqual({ x: player.x, y: player.y, fallTop: null });
 
     const restored = restoreInventory(save);
     expect(restored.slots).toEqual(inventory.slots);
@@ -332,8 +333,9 @@ describe('save reliability', () => {
     const world = generateWorld(1);
     const player = new Player(0, 0);
     const inventory = Inventory.withStartingItems();
-    const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5 });
-    const state = savedState(player, inventory, [], new TileEntities(world));
+    const survival = { health: new Health(10), difficulty: 'normal' as const, bed: { tx: 3, ty: 4 }, satchels: [{ x: 1, y: 2, stacks: [{ item: 'coal' as const, count: 3 }] }] };
+    const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5, survival });
+    const state = savedState(player, inventory, [], new TileEntities(world), survival);
     // Autosave compares savedState (plus the world's and map's revisions), so new saved state
     // must go through it to trigger the 2 s save.
     const rest = Object.keys(save).filter((key) => !(key in state));

@@ -5,6 +5,7 @@ import {
   HINT_DURATION,
   LIGHT_MAX,
   PLAYER_WIDTH,
+  SATCHEL_SIZE,
   SCALE_3X_MIN_HEIGHT,
   SKY_BOTTOM_COLOR,
   SKY_TOP_COLOR,
@@ -15,6 +16,7 @@ import {
 } from '../config';
 import type { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
+import type { Satchel } from '../systems/death';
 import { itemIndex } from '../systems/items';
 import type { Hint } from '../systems/mining';
 import type { PixelScale } from '../systems/settings';
@@ -317,10 +319,52 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Draw the player at top-left (x, y) in world px. Call after drawWorld. */
-  drawPlayer(player: Player, x: number, y: number, camX: number, camY: number): void {
+  /**
+   * Satchels: a tied brown sack with a light strap, so it stands out from the ground. It
+   * bobs a little (by `time`, s) to catch the eye.
+   */
+  drawSatchels(satchels: readonly Satchel[], time: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    const S = SATCHEL_SIZE;
+    for (const satchel of satchels) {
+      const x = Math.round(satchel.x) - camX;
+      const y = Math.round(satchel.y) - camY - (Math.sin(time * 3) > 0.6 ? 1 : 0);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x, y + 3, S, S - 3);
+      ctx.fillRect(x + 2, y + 1, S - 4, 3);
+      ctx.fillStyle = '#8a5a2b';
+      ctx.fillRect(x + 1, y + 4, S - 2, S - 5);
+      ctx.fillStyle = '#a8743c';
+      ctx.fillRect(x + 2, y + 4, 3, S - 6);
+      ctx.fillStyle = '#6d4520';
+      ctx.fillRect(x + 3, y + 2, S - 6, 2); // the tied neck
+      ctx.fillStyle = '#ffe066';
+      ctx.fillRect(x + 1, y + 6, S - 2, 1); // strap
+    }
+  }
+
+  /** Text floating in the world centred on (x, y) world px, e.g. the "-2" when hurt. */
+  drawFloatingText(text: string, x: number, y: number, color: string, alpha: number, camX: number, camY: number): void {
     const { ctx } = this;
     ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const sx = Math.round(x) - camX;
+    const sy = Math.round(y) - camY;
+    ctx.fillStyle = '#000';
+    ctx.fillText(text, sx + 1, sy + 1);
+    ctx.fillStyle = color;
+    ctx.fillText(text, sx, sy);
+    ctx.restore();
+  }
+
+  /** Draw the player at top-left (x, y) in world px, `alpha` opaque. Call after drawWorld. */
+  drawPlayer(player: Player, x: number, y: number, camX: number, camY: number, alpha = 1): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.globalAlpha = alpha;
     // Draw facing right in a 12 x 28 box; mirror for facing left.
     ctx.translate(Math.round(x) - camX + (player.facing < 0 ? PLAYER_WIDTH : 0), Math.round(y) - camY);
     ctx.scale(player.facing, 1);

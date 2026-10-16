@@ -276,6 +276,37 @@ function doorOpen(img: ImageData, top: boolean): void {
   }
 }
 
+const BED_WOOD: RGB = [122, 82, 48];
+const SHEET: RGB = [232, 228, 218];
+
+/**
+ * One half of a bed, which is two tiles wide and stands on the floor: a wooden frame with a
+ * headboard on the left half (with the pillow) and a footboard on the right (under the blanket).
+ */
+function bed(img: ImageData, rng: Rng, left: boolean): void {
+  const blanket = rgb(tileDef(Tile.BedLeft).color);
+  const post = left ? 1 : 13;
+  for (let y = left ? 3 : 7; y < S; y++) {
+    put(img, post, y, BED_WOOD, 1.1);
+    put(img, post + 1, y, BED_WOOD, 0.8);
+  }
+  for (let x = 0; x < S; x++) {
+    if (x === post || x === post + 1) continue;
+    put(img, x, 12, BED_WOOD, 1);
+    put(img, x, 13, BED_WOOD, 0.75);
+  }
+  // Mattress, then the blanket over it from the middle of the left half to the footboard.
+  for (let x = left ? 3 : 0; x < (left ? S : 13); x++) {
+    for (let y = 9; y < 12; y++) put(img, x, y, SHEET, y === 11 ? 0.85 : 1);
+    if (!left || x >= 9) {
+      for (let y = 8; y < 12; y++) put(img, x, y, blanket, y === 8 ? 1.2 : rng() < 0.1 ? 0.9 : 1);
+    }
+  }
+  if (left) {
+    for (let x = 3; x < 8; x++) for (let y = 6; y < 9; y++) put(img, x, y, SHEET, y === 6 ? 1.05 : y === 8 ? 0.8 : 0.95);
+  }
+}
+
 function drawTile(img: ImageData, id: number, rng: Rng): void {
   switch (id) {
     case Tile.Grass: return grass(img, rng);
@@ -300,6 +331,8 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.DoorClosedBottom: return doorClosed(img, rng, false);
     case Tile.DoorOpenTop: return doorOpen(img, true);
     case Tile.DoorOpenBottom: return doorOpen(img, false);
+    case Tile.BedLeft: return bed(img, rng, true);
+    case Tile.BedRight: return bed(img, rng, false);
   }
 }
 
@@ -345,6 +378,24 @@ function doorIcon(img: ImageData, color: string): void {
   put(img, 10, 9, [242, 201, 76]);
 }
 
+/** A whole bed, shrunk to fit one icon: headboard, pillow and blanket. */
+function bedIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  for (let y = 5; y < 14; y++) put(img, 1, y, BED_WOOD, 1.1);
+  for (let y = 8; y < 14; y++) put(img, 14, y, BED_WOOD, 1.1);
+  for (let x = 2; x < 14; x++) {
+    put(img, x, 11, BED_WOOD);
+    put(img, x, 9, SHEET, 0.9);
+    put(img, x, 10, SHEET, 0.8);
+  }
+  for (let x = 2; x < 5; x++) put(img, x, 8, SHEET);
+  for (let x = 6; x < 14; x++) {
+    put(img, x, 8, c, 1.2);
+    put(img, x, 9, c);
+    put(img, x, 10, c, 0.85);
+  }
+}
+
 /** Item icons: ITEM_IDS[i] lives at x = i * TILE_SIZE. Tile items reuse their tile texture. */
 export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement {
   const atlas = document.createElement('canvas');
@@ -361,6 +412,7 @@ export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement 
     const img = new ImageData(S, S);
     if (icon.shape === 'bar') barIcon(img, icon.color);
     else if (icon.shape === 'door') doorIcon(img, icon.color);
+    else if (icon.shape === 'bed') bedIcon(img, icon.color);
     else pickaxeIcon(img, icon.color);
     ctx.putImageData(img, i * S, 0);
   });

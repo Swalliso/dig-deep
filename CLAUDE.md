@@ -65,13 +65,14 @@ These override the spec. Don't revert them.
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
 **G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
-chests, and stacks of ladders, platforms and doors), **F**
+chests, two beds, and stacks of ladders, platforms and doors), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
 (fullbright) for exploring, **O** puts a 4 x 2 patch of every ore at the cursor (for ore
-sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, and **V** reveals the
-whole map. Debug mode also opens the F3 overlay at start, the title screen gets a button
+sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, **V** reveals the
+whole map, **H** toggles god mode (and heals) and **J** deals 2 damage (to test falls, fly up
+with F and turn fly off). Debug mode also opens the F3 overlay at start, the title screen gets a button
 that marks the most recent world as an older version (to test the version-mismatch screen), and
 the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
 mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
@@ -133,6 +134,7 @@ src/
                      tile changes
     doors.ts         doors: two tiles each (open and closed are separate tile ids), toggling,
                      finding the other half
+    beds.ts          beds: two tiles side by side (the respawn point), finding the other half
     explored.ts      which tiles the player has seen (the map's fog of war), per chunk
   entities/
     player.ts        movement, jump, tile collision, auto step-up, ladder climbing, one-way
@@ -146,13 +148,19 @@ src/
     building.ts      placement rules (empty, in reach, supported, not on the player), door
                      placement, drag-build lines, middle-click pick
     clock.ts         the session clock (seconds of simulated play) and what can pause it
+    stats.ts         PlayerStats: base values from config plus gear/boon modifiers (reach,
+                     station range, drop pull, run/jump, max health, safe fall height)
+    health.ts        HP, hurt protection and regeneration (on the session clock), difficulty
+                     (Cozy/Normal), fall damage
+    death.ts         satchels (the bag left on death) and collecting them, the respawn point
+                     (bed, or a safe fallback near spawn)
     crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
                      then nearby chests)
     chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
     save.ts          save format (seed + changed chunks, RLE) + world slots in IndexedDB via
                      idb-keyval (each save stored with a small world-list entry)
     backup.ts        world backup files: export a save as JSON, check one before importing
-    settings.ts      player settings (volumes, screen shake, pixel scale, FPS counter) in
+    settings.ts      player settings (volumes, screen shake, reduced flashes, pixel scale, FPS counter) in
                      localStorage
   render/
     camera.ts        camera position, clamping
@@ -166,6 +174,7 @@ src/
     mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
+    vitals.ts        hearts, the protection bar, the way to a satchel, the death screen
     controls.ts      every on-screen key hint (Controls screen, F3 help, map help, tooltips),
                      built from the action table
     menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,

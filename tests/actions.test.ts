@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ACTIONS, HOTBAR_ACTIONS, isNamedKey, keyName, type Action, type ActionTable } from '../src/input';
-import { controlsList, keyList, mapHelpText, overlayHelpLines } from '../src/ui/controls';
+import { controlsList, keyList, ladderGrabHint, mapHelpText, overlayHelpLines, respawnPrompt } from '../src/ui/controls';
 
 const actions = Object.keys(ACTIONS) as Action[];
 const gameplay = actions.filter((a) => !ACTIONS[a].debug);
@@ -40,8 +40,10 @@ describe('action table', () => {
       for (const code of ACTIONS[action].keys) users.set(code, [...(users.get(code) ?? []), action]);
     }
     const shared = [...users].filter(([, list]) => list.length > 1).map(([code, list]) => [code, list.sort()]);
-    // W/↑ jump and climb; the left mouse button uses the held item in the world and clicks in menus.
+    // W/↑ jump and climb; Space also respawns (only on the death screen, where nothing else
+    // moves); the left mouse button uses the held item in the world and clicks in menus.
     expect(shared).toEqual([
+      ['Space', ['jump', 'respawn']],
       ['KeyW', ['climbUp', 'jump']],
       ['ArrowUp', ['climbUp', 'jump']],
       ['MouseLeft', ['click', 'use']],
@@ -68,6 +70,8 @@ describe('key hints', () => {
       ...controlsList(table).map(([action, input]) => `${action} | ${input}`),
       ...overlayHelpLines(table),
       mapHelpText(table),
+      respawnPrompt(table),
+      ladderGrabHint(table),
     ].join('\n');
     const defaults = new Set(actions.flatMap((a) => ACTIONS[a].keys.map(keyName)));
     for (const name of defaults) {

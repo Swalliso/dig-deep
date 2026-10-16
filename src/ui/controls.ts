@@ -61,7 +61,7 @@ export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
     ['Place the held block', `${key('use')} on empty space`],
     ['Build a row', `Hold ${use} and sweep`],
     ['Pick block onto hotbar', key('pickBlock')],
-    ['Open chest, open or close door', `${clickName('interact', table)} it`],
+    ['Open chest, use door or bed', `${clickName('interact', table)} it`],
     ['Climb a ladder', `${keyPairs('climbUp', 'climbDown', table)} on it`],
     ['Drop through a platform', `${key('climbDown')} + ${key('jump')}`],
     ['Map / minimap', `${key('map')} / ${key('minimap')}`],
@@ -86,11 +86,21 @@ export function overlayHelpLines(table: ActionTable = ACTIONS): string[] {
   return [
     `${keyPairs('moveLeft', 'moveRight', table, '/')}: move   ${list('jump')}: jump   ${keyPairs('climbUp', 'climbDown', table, '/')} on a ladder: climb   ${key('climbDown')} + ${key('jump')}: drop through`,
     `${key('use')}: dig, or place the held block on an empty spot (hold to sweep)`,
-    `${key('interact')}: open chest or door   ${key('pickBlock')}: pick block`,
+    `${key('interact')}: open chest or door, sleep in bed (respawn there)   ${key('pickBlock')}: pick block`,
     `${hotbarRange(table)} or wheel: select   ${list('dropStack')}: drop stack   ${list('quickStack')}: quick stack to nearby chests`,
     `${list('inventory')}: inventory + crafting, with the nearest chest (${key('modifier').toLowerCase()}-click: move stack, craft 10)`,
     `${list('map')}: map   ${list('minimap')}: minimap   ${list('pause')}: pause   ${list('overlay')}: hide this overlay`,
   ];
+}
+
+/** The death screen's prompt: 'Press Space or Enter (or left mouse) to respawn'. */
+export function respawnPrompt(table: ActionTable = ACTIONS): string {
+  return `Press ${keyList('respawn', table)} (or ${inSentence(mainKey('click', table))}) to respawn`;
+}
+
+/** The hint the first time the player falls past a ladder: 'Hold W or S to grab the ladder'. */
+export function ladderGrabHint(table: ActionTable = ACTIONS): string {
+  return `Hold ${mainKey('climbUp', table)} or ${mainKey('climbDown', table)} to grab the ladder`;
 }
 
 /** The help line along the top of the full map. */
