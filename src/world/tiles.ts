@@ -31,6 +31,10 @@ export const Tile = {
   // A bed is two tiles side by side: the head (pillow) on the left, the foot on the right.
   BedLeft: 23,
   BedRight: 24,
+  // Phase 12: loose gravel, and the supports that hold it up.
+  Gravel: 25,
+  Beam: 26,
+  Crossbeam: 27,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -57,6 +61,14 @@ export interface TileDef {
   climbable?: boolean;
   /** Platforms: a floor you can jump up through and drop down through (S + jump). */
   oneWay?: boolean;
+  /** Gravel: falls when nothing holds it up from below (see supports.ts). */
+  loose?: boolean;
+  /**
+   * Holds up loose tiles resting on it, if it's anchored (see supports.ts): a 'post' (beam)
+   * stands on firm ground, a 'span' (crossbeam, platform) rests on a wall, a beam or the ground
+   * within SPAN_MAX tiles.
+   */
+  support?: 'post' | 'span';
 }
 
 const defs: TileDef[] = [
@@ -78,7 +90,7 @@ const defs: TileDef[] = [
   { id: Tile.Furnace, name: 'Furnace', hardness: 1.0, minTier: 0, color: '#6e6e74', drop: 'furnace', solid: false, material: 'stone' },
   { id: Tile.Chest, name: 'Chest', hardness: 0.5, minTier: 0, color: '#9a6834', drop: 'chest', solid: false, material: 'wood' },
   { id: Tile.Ladder, name: 'Ladder', hardness: 0.3, minTier: 0, color: '#a87a46', drop: 'ladder', solid: false, material: 'wood', climbable: true },
-  { id: Tile.Platform, name: 'Platform', hardness: 0.3, minTier: 0, color: '#b88a52', drop: 'platform', solid: false, material: 'wood', oneWay: true },
+  { id: Tile.Platform, name: 'Platform', hardness: 0.3, minTier: 0, color: '#b88a52', drop: 'platform', solid: false, material: 'wood', oneWay: true, support: 'span' },
   // Either half of a door drops the door; breaking one half removes the other (see doors.ts).
   { id: Tile.DoorClosedTop, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: true, material: 'wood' },
   { id: Tile.DoorClosedBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: true, material: 'wood' },
@@ -87,6 +99,10 @@ const defs: TileDef[] = [
   // Either half of a bed drops the bed; breaking one half removes the other (see beds.ts).
   { id: Tile.BedLeft, name: 'Bed', hardness: 0.5, minTier: 0, color: '#b84a4a', drop: 'bed', solid: false, material: 'wood' },
   { id: Tile.BedRight, name: 'Bed', hardness: 0.5, minTier: 0, color: '#b84a4a', drop: 'bed', solid: false, material: 'wood' },
+  { id: Tile.Gravel, name: 'Gravel', hardness: 0.5, minTier: 0, color: '#a39a8c', drop: 'gravel', solid: true, material: 'soil', loose: true },
+  // A vertical post you can walk through, and a horizontal beam along the top of its tile.
+  { id: Tile.Beam, name: 'Beam', hardness: 0.25, minTier: 0, color: '#9c7240', drop: 'beam', solid: false, material: 'wood', support: 'post' },
+  { id: Tile.Crossbeam, name: 'Crossbeam', hardness: 0.25, minTier: 0, color: '#9c7240', drop: 'crossbeam', solid: false, material: 'wood', support: 'span' },
 ];
 
 /** Indexed by tile id. */

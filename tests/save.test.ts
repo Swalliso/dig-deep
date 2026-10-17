@@ -3,6 +3,7 @@ import { storageKey } from '../src/channel';
 import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, MAX_STACK, TILE_SIZE } from '../src/config';
 import { ItemDrop } from '../src/entities/itemDrop';
 import { Player } from '../src/entities/player';
+import { CaveIns } from '../src/systems/caveIns';
 import { chestAt } from '../src/systems/chests';
 import { Health } from '../src/systems/health';
 import { Inventory } from '../src/systems/inventory';
@@ -32,6 +33,7 @@ import { ExploredMap } from '../src/world/explored';
 import { generateWorld } from '../src/world/generate';
 import { TileEntities } from '../src/world/tileEntities';
 import { Tile } from '../src/world/tiles';
+import { TileUpdates } from '../src/world/tileUpdates';
 
 const CHUNK_BYTES = CHUNK_SIZE * CHUNK_SIZE;
 
@@ -333,13 +335,20 @@ describe('save reliability', () => {
     const world = generateWorld(1);
     const player = new Player(0, 0);
     const inventory = Inventory.withStartingItems();
-    const survival = { health: new Health(10), difficulty: 'normal' as const, bed: { tx: 3, ty: 4 }, satchels: [{ x: 1, y: 2, stacks: [{ item: 'coal' as const, count: 3 }] }] };
+    const caveIns = new CaveIns(world, new TileUpdates(world), true);
+    const survival = {
+      health: new Health(10),
+      difficulty: 'normal' as const,
+      bed: { tx: 3, ty: 4 },
+      satchels: [{ x: 1, y: 2, stacks: [{ item: 'coal' as const, count: 3 }] }],
+      caveIns,
+    };
     const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5, survival });
     const state = savedState(player, inventory, [], new TileEntities(world), survival);
     // Autosave compares savedState (plus the world's and map's revisions), so new saved state
     // must go through it to trigger the 2 s save.
     const rest = Object.keys(save).filter((key) => !(key in state));
-    expect(rest.sort()).toEqual(['chunks', 'explored', 'name', 'playTime', 'savedAt', 'seed', 'version']);
+    expect(rest.sort()).toEqual(['chunks', 'explored', 'name', 'playTime', 'profile', 'savedAt', 'seed', 'version']);
     for (const key of Object.keys(state)) expect(save[key as keyof SaveData]).toEqual(state[key as keyof typeof state]);
   });
 

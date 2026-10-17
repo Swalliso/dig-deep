@@ -63,7 +63,22 @@ and pick **Normal** or **Cozy**).
   (your hotbar and every pickaxe stay with you). Satchels stay until you collect them, show on
   the map and in the top-left corner, and keep whatever doesn't fit in your inventory. With no
   bed, or a blocked one, you wake up near the world spawn.
-- **Cozy** worlds have no damage at all. Worlds from before health existed are Cozy. Change it
+- **Gravel** (lumpy, light grey) is loose: it rests only on what's right under it. Dig that
+  out and the gravel shakes for a moment, with dust trickling down and an orange outline, then
+  falls, and it hurts if it lands on you. Gravel hanging from a cave ceiling (pebbles dangle
+  under it) stays put until you dig or build right next to it, then comes down column by
+  column. New worlds have gravel pockets, often in cave ceilings, and deeper ones sometimes
+  hide ore. **Beams** and **crossbeams** (1 plank makes 2 of either, no station needed) hold it
+  up, better than blocks do: a block holds only the tile right on it, but supports also hold
+  gravel diagonally above them, so a few of them shore a whole ceiling and leave it open. A beam
+  is a post you walk through. It goes on solid ground or on another beam, and its top holds the
+  tile above it and one to each side (10 beams high at most); take out the bottom and the beams
+  above it break. A crossbeam, or a platform, holds the tiles above its row and one past each
+  end, if the row rests within 4 tiles on a wall, a beam, the ground, or solid rock right above
+  it. Holding one shows which gravel it would hold up (green), with a
+  line of help the first time; the inventory tooltips have the details. Pointing at a beam that
+  holds gravel up warns you before you take it out. Worlds from before gravel existed don't get any.
+- **Cozy** worlds have no damage at all, and their gravel never falls. Worlds from before health existed are Cozy. Change it
   any time from the pause menu.
 - **M** opens the map: drag or use WASD to pan, scroll to zoom. It only shows what you've
   seen: places you've had on screen in the light, and anything close to you in the dark. **N**
@@ -102,7 +117,8 @@ Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
 3x3), **L** toggles lighting, **O** puts a patch of every ore at the cursor, **K** digs a
 100 m ladder shaft down from the cursor, **V** reveals the whole map, **H** toggles god mode
-(and heals) and **J** deals 2 damage. The title screen also
+(and heals), **J** deals 2 damage and **B** puts a 3 x 3 block of gravel at the cursor (it
+falls if nothing holds it up). The title screen also
 gets a button that marks your most recent world as an older version, and the pause menu a
 **Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't
 pause when its window loses focus, and the running game is on `window.digDeep` in the browser

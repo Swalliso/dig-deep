@@ -4,14 +4,14 @@ import { FALL_DAMAGE_PER_TILE, HURT_PROTECTION, REGEN_DELAY, REGEN_INTERVAL } fr
 // nothing ticks while the game is paused), plus the world's difficulty and fall damage.
 
 /**
- * A world's difficulty. Cozy has no damage at all (and, later, no dread and no destructive
- * cave-ins); Normal has them. Worlds from before Phase 11b load as Cozy.
+ * A world's difficulty. Cozy has no damage at all, no cave-ins (gravel never falls) and, later,
+ * no dread; Normal has them. Worlds from before Phase 11b load as Cozy.
  */
 export type Difficulty = 'cozy' | 'normal';
 
 export const DIFFICULTIES: readonly { id: Difficulty; name: string; description: string }[] = [
-  { id: 'normal', name: 'Normal', description: 'Falls and later hazards hurt. Dying leaves your bag in a satchel.' },
-  { id: 'cozy', name: 'Cozy', description: 'Nothing can hurt you. Build and explore at your own pace.' },
+  { id: 'normal', name: 'Normal', description: 'Falls and falling gravel hurt. Dying leaves your bag in a satchel.' },
+  { id: 'cozy', name: 'Cozy', description: 'Nothing can hurt you, and gravel never falls. Build and explore at your own pace.' },
 ];
 
 export function difficultyName(difficulty: Difficulty): string {
@@ -19,11 +19,13 @@ export function difficultyName(difficulty: Difficulty): string {
 }
 
 /** What hurt the player. */
-export type DamageCause = { kind: 'fall'; tiles: number } | { kind: 'debug' };
+export type DamageCause = { kind: 'fall'; tiles: number } | { kind: 'gravel' } | { kind: 'debug' };
 
 /** "You fell 24 m." */
 export function deathCauseText(cause: DamageCause): string {
-  return cause.kind === 'fall' ? `You fell ${Math.round(cause.tiles)} m.` : 'Debug damage finished you off.';
+  if (cause.kind === 'fall') return `You fell ${Math.round(cause.tiles)} m.`;
+  if (cause.kind === 'gravel') return 'Falling gravel crushed you.';
+  return 'Debug damage finished you off.';
 }
 
 /** HP lost landing after a fall of `tiles` (from the top of the arc), with `safeTiles` free. */

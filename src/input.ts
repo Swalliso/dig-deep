@@ -57,6 +57,7 @@ const ACTION_DEFS = {
   debugRevealMap: { label: 'Debug: reveal the map', keys: ['KeyV'], debug: true },
   debugGodMode: { label: 'Debug: god mode on/off (and heal)', keys: ['KeyH'], debug: true },
   debugHurt: { label: 'Debug: take 2 damage', keys: ['KeyJ'], debug: true },
+  debugGravel: { label: 'Debug: gravel pocket at the cursor', keys: ['KeyB'], debug: true },
 } satisfies Record<string, ActionDef>;
 
 export type Action = keyof typeof ACTION_DEFS;

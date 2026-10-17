@@ -112,6 +112,40 @@ export const FALLBACK_SEARCH = 40; // tiles
 // A satchel (the bag contents left where you died) is picked up by touching it.
 export const SATCHEL_SIZE = 10; // px square
 
+// --- Cave-ins and supports (Phase 12) ---
+// Gravel is loose: it rests only on what's directly below it. A tile change rechecks the tiles
+// around it (src/world/tileUpdates.ts, at most TILE_UPDATE_BUDGET rechecks per step), and a
+// gravel column with nothing holding it up shakes for GRAVEL_WARN_TIME, then falls as blocks
+// that land as gravel again. Gravel nobody disturbs stays where it is, even hanging from a
+// cave ceiling (it shows dangling pebbles there: it would fall if disturbed).
+export const TILE_UPDATE_BUDGET = 256; // tile rechecks per step
+export const GRAVEL_WARN_TIME = 0.4; // s of shaking before a loose column falls
+export const MAX_FALLING_BLOCKS = 200; // more waiting columns keep shaking until there's room
+export const LOOSE_COLUMN_MAX = 32; // tiles a gravel column scan looks through (taller columns fall in parts)
+// Supports: a beam (post) holds up the tile above it when its column of beams, at most
+// BEAM_MAX_HEIGHT tall, stands on firm ground (any solid tile but gravel, or gravel that rests on
+// firm ground). A crossbeam or a platform (span) holds up the tile above it when a tile of its
+// row, at most SPAN_MAX tiles along, rests on something: a wall or a standing beam at the end
+// of the row, a standing beam or firm ground directly below, or solid rock directly above
+// (pinned to the ceiling).
+export const BEAM_MAX_HEIGHT = 10; // tiles
+export const SPAN_MAX = 4; // tiles
+// Supports also reach sideways: the top of a standing beam, and every tile of an anchored
+// crossbeam or platform row, hold up loose tiles diagonally above them, up to SUPPORT_REACH
+// columns to each side (a solid block holds only the tile right above it). So a beam every few
+// tiles, or one crossbeam row, shores a whole gravel ceiling and leaves the space open.
+export const SUPPORT_REACH = 1; // tiles
+// A falling block that hits the player bursts into a gravel item and does
+// GRAVEL_DAMAGE_BASE HP, plus 1 for every GRAVEL_DAMAGE_TILES tiles it fell, at most
+// GRAVEL_DAMAGE_MAX. Hurt protection applies, so a whole column landing on you hurts once.
+export const GRAVEL_DAMAGE_BASE = 1;
+export const GRAVEL_DAMAGE_TILES = 4;
+export const GRAVEL_DAMAGE_MAX = 4;
+// Warning cues, besides the shake: dust trickling from under shaking gravel (always on, also
+// with screen shake and flashes off) and a still orange outline on it.
+export const GRAVEL_DUST_RATE = 8; // specks per second per shaking tile
+export const GRAVEL_SHAKE_PX = 1; // how far shaking gravel jitters (off with screen shake off)
+
 // --- Mining and building ---
 export const REACH = 5; // tiles, measured from the player's centre to the tile's centre
 export const CRACK_STAGES = 4;
@@ -193,6 +227,8 @@ export const SFX_VOLUMES = {
   hurt: 0.55,
   death: 0.6,
   bed: 0.4,
+  rumble: 0.45,
+  gravelLand: 0.4,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile
@@ -316,6 +352,39 @@ export const ORE_COAL: OreSpec = { minDepth: 20, maxDepth: 200, tilesPerVein: 50
 export const ORE_COPPER: OreSpec = { minDepth: 30, maxDepth: 250, tilesPerVein: 700, veinMin: 3, veinMax: 8 };
 export const ORE_IRON: OreSpec = { minDepth: 120, maxDepth: 400, tilesPerVein: 900, veinMin: 3, veinMax: 8 };
 export const ORE_GOLD: OreSpec = { minDepth: 250, maxDepth: 550, tilesPerVein: 1300, veinMin: 3, veinMax: 8 };
+
+/**
+ * Gravel pockets (the 'gravel' generation profile, Phase 12): blobs of gravel in stone. A
+ * share of them sit on cave ceilings, hanging from them (they fall once disturbed), and
+ * deeper ones sometimes hold ore near their bottom, worth shoring up before mining.
+ */
+export interface GravelSpec {
+  minDepth: number; // m below SURFACE_LEVEL; none above this
+  tilesPerPocket: number; // one pocket per this many tiles of the band
+  radiusMin: number; // tiles, sideways (pockets are wider than tall)
+  radiusMax: number;
+  gentleDepth: number; // m; pockets above this depth are small (a forgiving first meeting)
+  gentleRadiusMax: number;
+  ceilingShare: number; // 0..1 of pockets moved onto a cave ceiling, if one is near
+  ceilingSearch: number; // rows searched downward for a cave ceiling
+  richMinDepth: number; // m; ceiling pockets this deep may hold ore...
+  richChance: number; // ...with this chance...
+  richOres: number; // ...this many ore tiles, in their bottom rows
+}
+
+export const GRAVEL_POCKETS: GravelSpec = {
+  minDepth: 12,
+  tilesPerPocket: 1100,
+  radiusMin: 2,
+  radiusMax: 4,
+  gentleDepth: 45,
+  gentleRadiusMax: 2,
+  ceilingShare: 0.55,
+  ceilingSearch: 24,
+  richMinDepth: 30,
+  richChance: 0.6,
+  richOres: 4,
+};
 
 // Generation runs in slices across frames so the loading screen can show progress.
 export const GEN_FRAME_BUDGET_MS = 12;

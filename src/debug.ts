@@ -41,7 +41,7 @@ export function brushNeighbours(mode: InstantMine): [number, number][] {
 
 /**
  * Enough of every material to craft every recipe, plus both stations, some chests and a stack
- * of ladders, platforms, doors and beds ready to place.
+ * of ladders, platforms, doors, beds, gravel, beams and crossbeams ready to place.
  */
 const KIT: ReadonlyArray<[ItemId, number]> = [
   ['wood', 99],
@@ -59,6 +59,9 @@ const KIT: ReadonlyArray<[ItemId, number]> = [
   ['platform', 100],
   ['door', 3],
   ['bed', 2],
+  ['gravel', 50],
+  ['beam', 99],
+  ['crossbeam', 99],
 ];
 
 /** Add the materials kit. Anything that doesn't fit is skipped. */
@@ -76,6 +79,19 @@ export function placeOreSampler(world: World, tx: number, ty: number): void {
     ORE_TILES.forEach((ore, dx) => {
       if (world.getTile(tx + dx, ty + dy) !== Tile.Bedrock) world.setTile(tx + dx, ty + dy, ore);
     });
+  }
+}
+
+/**
+ * Gravel pocket: a 3 x 3 block of gravel with its bottom middle at (tx, ty), replacing whatever is
+ * there except bedrock. In the open (or once the tile under it is dug out) it shakes and falls, to
+ * try cave-ins; in rock it's a pocket to dig under.
+ */
+export function placeGravelPocket(world: World, tx: number, ty: number): void {
+  for (let dy = -2; dy <= 0; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (world.getTile(tx + dx, ty + dy) !== Tile.Bedrock) world.setTile(tx + dx, ty + dy, Tile.Gravel);
+    }
   }
 }
 
@@ -98,5 +114,6 @@ export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbr
     `       ${mainKey('debugFly')}: fly ${flying ? 'ON' : 'off'} (${keyPairs('climbUp', 'climbDown', undefined, '/')}, ${mainKey('modifier')} fast)   ${mainKey('debugInstantMine')}: instant mine ${instantMine}`,
     `       ${mainKey('debugOres')}: ore patch at the cursor   ${mainKey('debugLadderShaft')}: ${LADDER_SHAFT_LENGTH} m ladder shaft down from the cursor   ${mainKey('debugRevealMap')}: reveal the map`,
     `       ${mainKey('debugGodMode')}: god mode ${god ? 'ON' : 'off'} (and heal)   ${mainKey('debugHurt')}: take 2 damage (fly up and turn fly off to test falls)`,
+    `       ${mainKey('debugGravel')}: 3 x 3 gravel at the cursor (falls if nothing holds it up)`,
   ];
 }

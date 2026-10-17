@@ -1,5 +1,6 @@
 import { PLAYER_HEIGHT, PLAYER_WIDTH, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
+import { beamFooting, worldGetter } from '../world/supports';
 import { isClimbable, isSolid, Tile, tileDef, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
 import type { Inventory } from './inventory';
@@ -8,7 +9,8 @@ import { inReach } from './mining';
 
 /**
  * Can `tile` be placed at (tx, ty)? The spot must be empty air within reach, next to a tile
- * that holds blocks up (no floating blocks), and a solid block can't overlap the player.
+ * that holds blocks up (no floating blocks), and a solid block can't overlap the player. A beam
+ * also needs a beam or firm ground right under it (see beamFooting).
  * Doors and beds have their own rules; see doorSpot and bedSpot.
  */
 export function canPlace(world: World, player: Player, tx: number, ty: number, tile: TileId): boolean {
@@ -22,13 +24,18 @@ export function canPlace(world: World, player: Player, tx: number, ty: number, t
     holdsBlocks(world.getTile(tx, ty - 1)) ||
     holdsBlocks(world.getTile(tx, ty + 1));
   if (!supported) return false;
+  if (tile === Tile.Beam && !beamFooting(worldGetter(world), tx, ty)) return false;
   if (isSolid(tile) && overlapsPlayer(player, tx, ty)) return false;
   return true;
 }
 
-/** Blocks can be placed against solid tiles, and against ladders and platforms so those can be extended. */
+/**
+ * Blocks can be placed against solid tiles, and against ladders, platforms, beams and crossbeams
+ * so those can be extended.
+ */
 function holdsBlocks(tile: TileId): boolean {
-  return isSolid(tile) || isClimbable(tile) || tileDef(tile).oneWay === true;
+  const def = tileDef(tile);
+  return isSolid(tile) || isClimbable(tile) || def.oneWay === true || def.support !== undefined;
 }
 
 /**

@@ -368,6 +368,27 @@ export function door(open: boolean, pan = 0): void {
   });
 }
 
+/** Gravel starting to shake: a low rumble with a patter of small stones. */
+export function rumble(pan = 0): void {
+  play({ volume: SFX_VOLUMES.rumble, pan, key: 'rumble' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'lowpass', freq: 220 * p, to: 140 * p, attack: 0.04, decay: 0.38, gain: 1 });
+    tone(v, { type: 'sawtooth', freq: 48 * p, to: 40 * p, attack: 0.05, decay: 0.32, gain: 0.12 });
+    for (let i = 0; i < 4; i++) {
+      noiseBurst(v, { filter: 'bandpass', freq: 2400 * p, q: 5, delay: 0.06 + i * 0.08, attack: 0.001, decay: 0.025, gain: 0.35 });
+    }
+  });
+}
+
+/** A falling block of gravel landed (or burst): a crunchy thud. */
+export function gravelLand(pan = 0): void {
+  play({ volume: SFX_VOLUMES.gravelLand, pan, key: 'gravelLand' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'bandpass', freq: 900 * p, to: 500 * p, q: 1.2, attack: 0.002, decay: 0.12, gain: 1 });
+    tone(v, { type: 'sine', freq: 95 * p, to: 50 * p, attack: 0.002, decay: 0.12, gain: 0.6 });
+  });
+}
+
 /** The player took damage: a dull thump with a short falling grunt. */
 export function hurt(): void {
   play({ volume: SFX_VOLUMES.hurt, key: 'hurt' }, (v) => {

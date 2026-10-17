@@ -73,14 +73,15 @@ These override the spec. Don't revert them.
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
 **G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
-chests, two beds, and stacks of ladders, platforms and doors), **F**
+chests, two beds, and stacks of ladders, platforms, doors, gravel, beams and crossbeams), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
 (fullbright) for exploring, **O** puts a 4 x 2 patch of every ore at the cursor (for ore
 sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, **V** reveals the
-whole map, **H** toggles god mode (and heals) and **J** deals 2 damage (to test falls, fly up
-with F and turn fly off). Debug mode also opens the F3 overlay at start, the title screen gets a button
+whole map, **H** toggles god mode (and heals), **J** deals 2 damage (to test falls, fly up
+with F and turn fly off) and **B** puts a 3 x 3 block of gravel at the cursor (in the open it
+shakes and falls at once; in rock it's a pocket to dig under). Debug mode also opens the F3 overlay at start, the title screen gets a button
 that marks the most recent world as an older version (to test the version-mismatch screen), and
 the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
 mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
@@ -134,8 +135,14 @@ src/
   world/
     tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid, climbable,
                      one-way), floor checks
-    world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile
-    generate.ts      seeded terrain, caves, ores, trees, bedrock, spawn
+    world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile, the world's
+                     generation profile
+    generate.ts      generation profiles (frozen 'classic', 'gravel' for new worlds); seeded
+                     terrain, caves, ores, gravel pockets, trees, bedrock, spawn
+    supports.ts      loose tiles and what holds them up: firm ground, anchored beams (posts) and
+                     crossbeams/platforms (spans); the support preview
+    tileUpdates.ts   active tile updates: a queue of tiles to recheck after a change next to them,
+                     worked through with a per-step budget
     trees.ts         felling: cutting a trunk removes the tree above the cut
     lighting.ts      per-tile light: sky columns + torches, spread with falloff, incremental relight
     tileEntities.ts  per-tile data (chest contents), keyed by ty * width + tx, removed when the
@@ -155,6 +162,9 @@ src/
     mining.ts        reach + tier checks, break progress, crack stage, hints
     building.ts      placement rules (empty, in reach, supported, not on the player), door
                      placement, drag-build lines, middle-click pick
+    caveIns.ts       shaking and falling gravel: warnings, falling blocks, landing, damage, Cozy,
+                     saved state; beams that lose their footing break
+    hints.ts         one-time hints already seen (per device, localStorage)
     clock.ts         the session clock (seconds of simulated play) and what can pause it
     stats.ts         PlayerStats: base values from config plus gear/boon modifiers (reach,
                      station range, drop pull, run/jump, max health, safe fall height)
@@ -245,12 +255,18 @@ they drop.
   saving never loses it. Particles, half-mined tile damage and the trash slot aren't saved.
   Autosave's change check compares `savedState()` (everything but tiles, map and play time)
   plus the world's and map's revisions, so new saved state goes in `savedState()`; a test
-  enforces it. Save & quit only leaves once the write succeeds. Backups (`systems/backup.ts`)
+  enforces it. Cave-ins (shaking tiles, falling blocks, queued rechecks) are saved as an
+  optional `caveIns` field, so a reload mid-collapse loses and duplicates nothing. Save & quit only leaves once the write succeeds. Backups (`systems/backup.ts`)
   are the save as JSON with Uint8Arrays as `{ "$bytes": base64 }`; imports must pass
   `checkSave` and `findSaveProblem` before anything is written, and replacing a world needs a
   second click. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
   `dig-deep:save` key so older saves carry over) plus a small `WorldMeta` entry written with it
-  in one transaction, so the title screen lists worlds without loading every save. Keeping
+  in one transaction, so the title screen lists worlds without loading every save. Each save
+  records its world's **generation profile** (`profile`: name and version; missing = classic)
+  and loading regenerates with it, so existing worlds never pick up new generation. A profile
+  must never change what it generates once released (a test pins classic's world hashes): new
+  generation goes in a new profile, and `NEW_WORLD_PROFILE` picks what new worlds get. A
+  profile this version doesn't know reads as a save from a newer version. Keeping
   old worlds working is nice but never a constraint (testers know breaking changes may come):
   when it would hold a feature back, bump `SAVE_VERSION` instead. See ROADMAP.md's "World
   compatibility" row.

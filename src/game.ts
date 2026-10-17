@@ -1,5 +1,6 @@
 import * as sfx from './audio/sfx';
 import {
+  BEAM_MAX_HEIGHT,
   CLIMB_STEP_DISTANCE,
   DAMAGE_NUMBER_TIME,
   DEATH_SCREEN_DELAY,
@@ -7,6 +8,8 @@ import {
   DROP_THROW_SPEED,
   EXPLORE_INTERVAL,
   FOOTSTEP_DISTANCE,
+  GRAVEL_DUST_RATE,
+  GRAVEL_SHAKE_PX,
   HEART_SHAKE_TIME,
   HURT_FLASH_ALPHA,
   HURT_FLASH_TIME,
@@ -20,8 +23,10 @@ import {
   PROTECTION_BLINK,
   RESPAWN_PROTECTION,
   SATCHEL_SIZE,
+  SPAN_MAX,
   SURFACE_LEVEL,
   TILE_SIZE,
+  TILE_UPDATE_BUDGET,
 } from './config';
 import {
   brushNeighbours,
@@ -30,6 +35,7 @@ import {
   giveDebugKit,
   nextInstantMine,
   placeLadderShaft,
+  placeGravelPocket,
   placeOreSampler,
   type InstantMine,
 } from './debug';
@@ -42,6 +48,7 @@ import { MapImage } from './render/mapImage';
 import { Particles } from './render/particles';
 import type { Renderer } from './render/renderer';
 import { canPlace, itemForTile, overlapsPlayer, primaryAction, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
+import { CaveIns, gravelDamage, type CaveInHooks, type SavedCaveIns } from './systems/caveIns';
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
 import { SessionClock, type PauseReason } from './systems/clock';
 import { nearbyStations } from './systems/crafting';
@@ -59,6 +66,7 @@ import { deathCauseText, difficultyName, fallDamage, Health, type DamageCause, t
 import { Inventory } from './systems/inventory';
 import { itemDef, type ItemId } from './systems/items';
 import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
+import { hintSeen, markHintSeen, type HintId } from './systems/hints';
 import { saveSettings, type Settings } from './systems/settings';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
@@ -68,10 +76,13 @@ import { directionText, drawDeathScreen, drawHearts, drawHudLine, offsetText } f
 import { bedLeft, bedPartner, isBed, isWholeBed } from './world/beds';
 import { ExploredMap } from './world/explored';
 import { doorBottom, doorPartner, isDoorOpen, toggleDoor } from './world/doors';
+import { profileLabel } from './world/generate';
 import { LightMap } from './world/lighting';
+import { beamFooting, columnHeld, holdsLoose, isLoose, isSupport, supportEffect, withTile, worldGetter, type SupportEffect } from './world/supports';
 import { TileEntities, type TileEntity } from './world/tileEntities';
 import { Tile, tileDef, type TileId } from './world/tiles';
 import { fellTreeAbove } from './world/trees';
+import { TileUpdates } from './world/tileUpdates';
 import type { World } from './world/world';
 
 /** Where a session starts: a fresh world (defaults) or a loaded save. */
@@ -98,6 +109,8 @@ export interface GameStart {
   satchels?: Satchel[];
   /** The top of the fall the player was in when saved (see Player.fallTop); defaults to none. */
   fallTop?: number | null;
+  /** Shaking gravel, falling blocks and tiles waiting for a recheck; defaults to none. */
+  caveIns?: SavedCaveIns;
 }
 
 /** What the death screen says, shown until the player respawns. */
@@ -124,6 +137,14 @@ interface Hit {
   /** Session clock time. */
   at: number;
   hpBefore: number;
+}
+
+/** The support preview at the cursor, worked out again only when the cursor, the held tile or the world changes. */
+interface SupportPreview {
+  key: string;
+  effect: SupportEffect;
+  /** Placing: would the support itself be anchored? */
+  anchored: boolean;
 }
 
 /** Numbers from the main loop shown on the F3 overlay. */
@@ -161,6 +182,10 @@ export class Game {
   satchels: Satchel[];
   /** Showing after a death until the player presses the respawn key (the world is paused). */
   deathScreen: DeathScreen | null = null;
+  /** Active tile updates: tiles to recheck after nearby changes (cave-ins use them). */
+  readonly tileUpdates: TileUpdates;
+  /** Shaking and falling gravel (off in Cozy worlds). */
+  readonly caveIns: CaveIns;
   private readonly renderer: Renderer;
   /** Shared with the Settings screen, which changes it while the game is paused. */
   private readonly settings: Settings;
@@ -202,6 +227,10 @@ export class Game {
   private ladderHintShown = false;
   /** Satchels the player was touching last step, so "inventory full" is said once per touch. */
   private touchingSatchels = new Set<Satchel>();
+  /** The "loose gravel" hint shows the first time gravel starts shaking near the player. */
+  private gravelHintShown = false;
+  private supportPreview: SupportPreview | null = null;
+  private readonly caveInHooks: CaveInHooks;
 
   constructor(world: World, renderer: Renderer, settings: Settings, start: GameStart = {}) {
     this.world = world;
@@ -221,6 +250,36 @@ export class Game {
     // Whatever removes a chest (mining, or a debug patch over it) spills its contents.
     this.tileEntities.onRemove = (tx, ty, entity) => this.spill(tx, ty, entity);
     this.lightMap = new LightMap(world);
+    this.tileUpdates = new TileUpdates(world);
+    this.caveIns = new CaveIns(world, this.tileUpdates, this.difficulty === 'normal', start.caveIns);
+    this.caveInHooks = {
+      touchesPlayer: (x, y) => this.blockTouchesPlayer(x, y),
+      burst: (block, onPlayer, fell) => {
+        if (onPlayer) this.hurt(gravelDamage(fell), { kind: 'gravel' });
+        this.particles.breakBurst(block.tx, block.y / TILE_SIZE, tileDef(block.tile).color);
+        const drop = tileDef(block.tile).drop;
+        if (drop) this.dropList.push(new ItemDrop(drop, 1, (block.tx + 0.5) * TILE_SIZE, block.y + TILE_SIZE / 2));
+        sfx.gravelLand(this.pan(block.tx));
+      },
+      landed: (tx, ty, tile) => {
+        sfx.gravelLand(this.pan(tx));
+        this.particles.dustPuff((tx + 0.5) * TILE_SIZE, (ty + 1) * TILE_SIZE, 0.5, tileDef(tile).color);
+      },
+      beamBroke: (tx, ty, tile) => {
+        const def = tileDef(tile);
+        sfx.breakTile(def.material, def.hardness, this.pan(tx));
+        this.particles.breakBurst(tx, ty, def.color);
+        if (def.drop) this.dropList.push(new ItemDrop(def.drop, 1, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
+      },
+      warned: (tx, ty) => {
+        sfx.rumble(this.pan(tx));
+        const near = Math.hypot((tx + 0.5) * TILE_SIZE - this.player.centerX, (ty + 0.5) * TILE_SIZE - this.player.centerY) < 20 * TILE_SIZE;
+        if (near && !this.gravelHintShown) {
+          this.gravelHintShown = true;
+          this.toasts.show('Loose gravel falls when nothing holds it up. Beams and crossbeams (from planks) hold it.', 6);
+        }
+      },
+    };
     this.explored = start.explored ?? new ExploredMap(world);
     this.mapImage = new MapImage(world, this.explored);
     this.worldHash = world.hash().toString(16).padStart(8, '0');
@@ -352,6 +411,11 @@ export class Game {
       const [ox, oy] = this.cursorTile();
       placeOreSampler(world, ox, oy);
     }
+    if (actionPressed('debugGravel')) {
+      const [gx, gy] = this.cursorTile();
+      placeGravelPocket(world, gx, gy);
+      toasts.show(this.caveIns.isEnabled ? 'Debug: gravel at the cursor' : 'Debug: gravel at the cursor (Cozy: it never falls)');
+    }
     if (actionPressed('debugLadderShaft')) {
       const [lx, ly] = this.cursorTile();
       toasts.show(`Debug: ${placeLadderShaft(world, lx, ly)} m ladder shaft`);
@@ -406,6 +470,9 @@ export class Game {
     this.health.update(this.clock.time, player.stats.maxHealth);
     if (this.deathScreen) return; // the fall was fatal: the rest waits for the respawn
     this.useHeldItem(dt);
+    this.caveIns.update(dt, this.clock.time, TILE_UPDATE_BUDGET, this.caveInHooks);
+    if (this.deathScreen) return; // crushed: the rest waits for the respawn
+    this.trickleDust(dt);
     this.updateSatchels();
 
     this.dropList = updateDrops(this.dropList, dt, world, player, this.inventory, (item, count) => {
@@ -472,6 +539,12 @@ export class Game {
     const reduced = this.settings.reducedFlashes;
     renderer.drawWorld(this.world, camX, camY, this.clock.time);
     for (const crack of this.mining.cracks(this.world)) renderer.drawCracks(crack.tx, crack.ty, crack.stage, camX, camY);
+    if (this.caveIns.isEnabled) {
+      renderer.drawLooseMarks(this.unsupportedOnScreen(camX, camY), camX, camY);
+      const jitter = this.settings.screenShake && !this.pausedBy ? GRAVEL_SHAKE_PX : 0;
+      renderer.drawShaking(this.world, this.caveIns.warningTiles(), this.clock.time, jitter, camX, camY);
+    }
+    renderer.drawFallingBlocks(this.caveIns.falling, alpha, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
     renderer.drawSatchels(this.satchels, this.clock.time, camX, camY);
     // Dead: the player isn't drawn (they're already back at the bed, off screen).
@@ -696,6 +769,8 @@ export class Game {
     const key = ty * this.world.width + tx;
     if (this.builtThisHold.has(key) || !tryPlace(this.world, this.player, this.inventory, tx, ty)) return;
     this.builtThisHold.add(key);
+    const placed = this.world.getTile(tx, ty);
+    if (placed === Tile.Beam || placed === Tile.Crossbeam) markHintSeen(this.supportHintId(placed));
     sfx.place(tileDef(this.world.getTile(tx, ty)).material, this.pan(tx));
     if (isBed(this.world.getTile(tx, ty))) this.toasts.show(`${mainKey('interact')} the bed to respawn there`, 4);
   }
@@ -729,7 +804,8 @@ export class Game {
   setDifficulty(difficulty: Difficulty): void {
     if (difficulty === this.difficulty) return;
     this.difficulty = difficulty;
-    this.toasts.show(difficulty === 'cozy' ? 'Cozy: nothing can hurt you now' : 'Normal: falls hurt now', 3);
+    this.caveIns.setEnabled(difficulty === 'normal');
+    this.toasts.show(difficulty === 'cozy' ? 'Cozy: nothing can hurt you now, and gravel stays put' : 'Normal: falls and falling gravel hurt now', 3);
   }
 
   /** Take damage (ignored in Cozy worlds, in god mode and while protected). Dying shows the death screen. */
@@ -972,20 +1048,133 @@ export class Game {
     this.dropList.push(drop);
   }
 
-  /** Outline the tile under the cursor: white if it can be mined, red if not. */
+  /**
+   * Outline the tile under the cursor: white if it can be mined, red if not. With cave-ins on,
+   * a support under the cursor shows the gravel that would fall without it, and a support about
+   * to be placed shows the gravel it would hold up.
+   */
   private drawCursor(camX: number, camY: number): void {
+    const { world, renderer } = this;
     const [tx, ty] = this.cursorTile();
-    const check = checkMine(this.world, this.player, tx, ty, this.inventory.bestPickaxeTier());
+    const check = checkMine(world, this.player, tx, ty, this.inventory.bestPickaxeTier());
     if (check !== 'empty') {
-      this.renderer.drawTileOutline(tx, ty, check === 'ok' ? '#ffffff' : '#ff4040', camX, camY);
+      renderer.drawTileOutline(tx, ty, check === 'ok' ? '#ffffff' : '#ff4040', camX, camY);
+      const here = world.getTile(tx, ty);
+      if (this.caveIns.isEnabled && isSupport(here)) this.drawRemovalWarning(tx, ty, here, camX, camY);
       return;
     }
     // Empty tile: a faint outline where the selected block could be placed.
     const stack = this.inventory.selectedStack;
     const tile = stack ? itemDef(stack.item).placeTile : null;
-    if (tile !== null && canPlace(this.world, this.player, tx, ty, tile)) {
-      this.renderer.drawTileOutline(tx, ty, 'rgba(255, 255, 255, 0.45)', camX, camY);
+    if (tile !== null && canPlace(world, this.player, tx, ty, tile)) {
+      if (this.caveIns.isEnabled && isSupport(tile)) this.drawSupportPreview(tx, ty, tile, camX, camY);
+      else renderer.drawTileOutline(tx, ty, 'rgba(255, 255, 255, 0.45)', camX, camY);
+    } else if (tile === Tile.Beam && world.inBounds(tx, ty) && inReach(this.player, tx, ty) && !beamFooting(worldGetter(world), tx, ty)) {
+      // A beam can't go here only because there's nothing under it: say so (the first few times).
+      renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+      this.drawSupportHint('placeBeam', 'Beams stand on solid ground or on another beam', tx, ty, '#ffc080', camX, camY);
     }
+  }
+
+  /** Which one-time hint covers placing `tile`. */
+  private supportHintId(tile: TileId): HintId {
+    return tileDef(tile).support === 'post' ? 'placeBeam' : 'placeSpan';
+  }
+
+  /**
+   * A line of text over the cursor tile explaining a support, shown until the player has placed
+   * one of that kind (then the item tooltip in the inventory keeps the details).
+   */
+  private drawSupportHint(id: HintId, text: string, tx: number, ty: number, color: string, camX: number, camY: number): void {
+    if (hintSeen(id)) return;
+    this.renderer.drawFloatingText(text, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, color, 1, camX, camY);
+  }
+
+  /** The support preview for `tile` at (tx, ty) (Air: removing what's there), cached until something changes. */
+  private previewAt(tx: number, ty: number, tile: TileId): SupportPreview {
+    const key = `${tx},${ty},${tile},${this.world.revision}`;
+    if (this.supportPreview?.key !== key) {
+      const anchored = tile === Tile.Air || holdsLoose(withTile(this.world, tx, ty, tile), tx, ty);
+      this.supportPreview = { key, effect: supportEffect(this.world, tx, ty, tile), anchored };
+    }
+    return this.supportPreview;
+  }
+
+  /**
+   * Placing a support: green tiles are gravel it would hold up, orange ones loose gravel nearby
+   * that would still hang free. The cursor is green when the support is anchored, orange when not,
+   * with a line saying why.
+   */
+  private drawSupportPreview(tx: number, ty: number, tile: TileId, camX: number, camY: number): void {
+    const { renderer } = this;
+    const { effect, anchored } = this.previewAt(tx, ty, tile);
+    // Platforms are mostly floors: they only get the preview when there's gravel about.
+    if (tile === Tile.Platform && effect.stabilized.length === 0 && effect.unsupported.length === 0) {
+      renderer.drawTileOutline(tx, ty, 'rgba(255, 255, 255, 0.45)', camX, camY);
+      return;
+    }
+    for (const [x, y] of effect.stabilized) {
+      renderer.drawTileTint(x, y, 'rgba(90, 230, 110, 0.3)', camX, camY);
+      renderer.drawTileOutline(x, y, '#6be37a', camX, camY);
+    }
+    for (const [x, y] of effect.unsupported) renderer.drawTileOutline(x, y, 'rgba(255, 150, 40, 0.7)', camX, camY);
+    renderer.drawTileOutline(tx, ty, anchored ? '#6be37a' : '#ff9628', camX, camY);
+    const n = effect.stabilized.length;
+    let text: string | null = null;
+    if (!anchored) {
+      text =
+        tileDef(tile).support === 'post'
+          ? `Too tall: beams hold things up to ${BEAM_MAX_HEIGHT} high`
+          : `Not anchored: needs a wall, beam, ground or rock above within ${SPAN_MAX} tiles`;
+    } else if (n > 0) {
+      text = `Holds up ${n} gravel`;
+    }
+    if (text) this.drawSupportHint(this.supportHintId(tile), text, tx, ty, anchored ? '#a8f0b0' : '#ffc080', camX, camY);
+  }
+
+  /** A support under the cursor that holds gravel up: the gravel that would fall without it, in red. */
+  private drawRemovalWarning(tx: number, ty: number, tile: TileId, camX: number, camY: number): void {
+    const { renderer } = this;
+    const { effect } = this.previewAt(tx, ty, Tile.Air);
+    if (effect.endangered.length === 0) return;
+    for (const [x, y] of effect.endangered) {
+      renderer.drawTileTint(x, y, 'rgba(255, 60, 40, 0.3)', camX, camY);
+      renderer.drawTileOutline(x, y, '#ff5040', camX, camY);
+    }
+    const text = `Load-bearing ${tileDef(tile).name.toLowerCase()}: ${effect.endangered.length} gravel would fall`;
+    renderer.drawFloatingText(text, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ff9a8a', 1, camX, camY);
+  }
+
+  /** Loose tiles on screen that nothing holds up (the bottoms of their columns), for their dangling-pebble mark. */
+  private unsupportedOnScreen(camX: number, camY: number): [number, number][] {
+    const { world, renderer } = this;
+    const get = worldGetter(world);
+    const tiles: [number, number][] = [];
+    const tx0 = Math.max(0, Math.floor(camX / TILE_SIZE));
+    const ty0 = Math.max(0, Math.floor(camY / TILE_SIZE));
+    const tx1 = Math.min(world.width - 1, Math.floor((camX + renderer.viewWidth) / TILE_SIZE));
+    const ty1 = Math.min(world.height - 1, Math.floor((camY + renderer.viewHeight) / TILE_SIZE));
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (isLoose(get(tx, ty)) && !isLoose(get(tx, ty + 1)) && !columnHeld(get, tx, ty)) tiles.push([tx, ty]);
+      }
+    }
+    return tiles;
+  }
+
+  /** Dust trickling from under shaking gravel (always, whatever the shake and flash settings). */
+  private trickleDust(dt: number): void {
+    for (const [tx, ty] of this.caveIns.warningTiles()) {
+      if (isLoose(this.world.getTile(tx, ty + 1))) continue; // only from a column's bottom
+      if (Math.random() < GRAVEL_DUST_RATE * dt) this.particles.trickle(tx, ty, tileDef(this.world.getTile(tx, ty)).color);
+    }
+  }
+
+  /** Does a falling block with its top-left at (x, y) overlap the player? (A pixel of slack on each side.) */
+  private blockTouchesPlayer(x: number, y: number): boolean {
+    const { player } = this;
+    if (this.deathScreen) return false;
+    return x + TILE_SIZE - 1 > player.x && x + 1 < player.x + PLAYER_WIDTH && y + TILE_SIZE - 1 > player.y && y + 1 < player.y + PLAYER_HEIGHT;
   }
 
   /** F3 debug overlay. */
@@ -1002,11 +1191,12 @@ export class Game {
     drawDebugInfo(this.renderer.ctx, [
       `FPS ${stats.fps}   frame ${stats.frameMs.toFixed(1)} ms   saved ${saved}`,
       `Audio ${sfx.audioStatus()}   master ${percent(this.settings.masterVolume)}   SFX ${percent(this.settings.sfxVolume)}`,
-      `Seed ${this.world.seed}   World hash ${this.worldHash}`,
+      `Seed ${this.world.seed}   World hash ${this.worldHash}   Generation ${profileLabel(this.world.profile)}`,
       `Play time ${this.clock.time.toFixed(1)} s   World ${this.pausedBy ? `paused (${this.pausedBy})` : 'running'}`,
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)}`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
       `${difficultyName(this.difficulty)}   HP ${this.health.hp}/${player.stats.maxHealth}   protected ${protectedFor.toFixed(1)} s   fall ${fall}   bed ${this.activeBed() ? `(${this.bed!.tx}, ${this.bed!.ty})` : 'none'}   satchels ${this.satchels.length}`,
+      `Cave-ins ${this.caveIns.isEnabled ? 'on' : 'off (Cozy)'}   shaking ${this.caveIns.warnings.size}   falling ${this.caveIns.falling.length}   rechecks queued ${this.tileUpdates.size}`,
       ...overlayHelpLines(),
       ...debugLines,
     ]);

@@ -21,6 +21,8 @@ export class World {
   readonly surface: Int16Array;
   spawnTx = 0;
   spawnTy = 0;
+  /** The generation profile the world was made with (see generate.ts); set by generation. */
+  profile: { name: string; version: number } = { name: 'classic', version: 1 };
   /** Called after any tile changes. Lighting and tile entities listen here (see onTileChange). */
   private readonly tileListeners: TileListener[] = [];
   /**

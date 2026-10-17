@@ -2,7 +2,7 @@ import { checkSave, findSaveProblem, SAVE_VERSION, type SaveData } from './save'
 
 // World backups: a save exported to a JSON file, and read back in with checks before it may
 // replace anything. The save goes in whole, so whatever identifies how its world was generated
-// (the seed and SAVE_VERSION now, a generation profile later) travels with it. JSON has no
+// (the seed, SAVE_VERSION and the generation profile) travels with it. JSON has no
 // binary type, so Uint8Arrays (chunk and map data) are written as { "$bytes": "<base64>" }.
 
 /** What a backup file holds. */

@@ -16,6 +16,7 @@ import {
 } from '../config';
 import type { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
+import type { FallingBlock } from '../systems/caveIns';
 import type { Satchel } from '../systems/death';
 import { itemIndex } from '../systems/items';
 import type { Hint } from '../systems/mining';
@@ -39,6 +40,14 @@ interface CachedChunk {
   version: number;
   lastUsed: number;
 }
+
+/** Pebbles drawn under loose tiles nothing holds up: [x, y, size] from the tile's bottom-left. */
+const LOOSE_PEBBLES: readonly [number, number, number][] = [
+  [3, 0, 2],
+  [7, 0, 3],
+  [12, 0, 2],
+  [9, 5, 1],
+];
 
 export class Renderer {
   readonly canvas: HTMLCanvasElement;
@@ -281,6 +290,59 @@ export class Renderer {
     ctx.fillRect(x, y + S - 1, S, 1);
     ctx.fillRect(x, y + 1, 1, S - 2);
     ctx.fillRect(x + S - 1, y + 1, 1, S - 2);
+  }
+
+  /** Falling gravel blocks, between their last two steps. */
+  drawFallingBlocks(blocks: readonly FallingBlock[], alpha: number, camX: number, camY: number): void {
+    for (const b of blocks) {
+      const y = Math.round(b.prevY + (b.y - b.prevY) * alpha) - camY;
+      this.ctx.drawImage(this.atlas, b.tile * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE, b.tx * TILE_SIZE - camX, y, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  /**
+   * Shaking gravel: drawn again a pixel off now and then (when `jitter`), with a still orange
+   * outline that shows the warning without motion or flashing.
+   */
+  drawShaking(world: World, tiles: readonly [number, number][], time: number, jitter: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    for (const [tx, ty] of tiles) {
+      const tile = world.getTile(tx, ty);
+      const x = tx * TILE_SIZE - camX;
+      const y = ty * TILE_SIZE - camY;
+      if (jitter > 0) {
+        const phase = Math.floor(time * 24) + tx * 7 + ty * 3;
+        const dx = ((phase % 3) - 1) * jitter;
+        const dy = (((phase >> 1) % 2) - 0.5) * jitter;
+        ctx.drawImage(this.atlas, tile * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE, x + dx, y + Math.round(dy), TILE_SIZE, TILE_SIZE);
+      }
+      this.drawTileOutline(tx, ty, 'rgba(255, 150, 40, 0.85)', camX, camY);
+    }
+  }
+
+  /**
+   * Dangling pebbles under loose tiles nothing holds up (they'd fall if disturbed): a still
+   * mark, so a risky ceiling can be spotted without sound, shake or flashes.
+   */
+  drawLooseMarks(tiles: readonly [number, number][], camX: number, camY: number): void {
+    const { ctx } = this;
+    for (const [tx, ty] of tiles) {
+      const x = tx * TILE_SIZE - camX;
+      const y = (ty + 1) * TILE_SIZE - camY;
+      // Three pebbles hanging under the tile and one falling away, each with a dark rim.
+      for (const [px, py, size] of LOOSE_PEBBLES) {
+        ctx.fillStyle = '#1e1a16';
+        ctx.fillRect(x + px - 1, y + py, size + 2, size + 1);
+        ctx.fillStyle = '#c9bfae';
+        ctx.fillRect(x + px, y + py, size, size);
+      }
+    }
+  }
+
+  /** A see-through fill over a tile, for the support preview. */
+  drawTileTint(tx: number, ty: number, color: string, camX: number, camY: number): void {
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(tx * TILE_SIZE - camX, ty * TILE_SIZE - camY, TILE_SIZE, TILE_SIZE);
   }
 
   drawDrops(drops: readonly ItemDrop[], alpha: number, camX: number, camY: number): void {

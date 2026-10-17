@@ -16,6 +16,7 @@ import {
   DIRT_DEPTH_MAX,
   DIRT_DEPTH_MIN,
   DIRT_NOISE_SCALE,
+  GRAVEL_POCKETS,
   ORE_COAL,
   ORE_COPPER,
   ORE_GOLD,
@@ -32,6 +33,7 @@ import {
   TREE_TRUNK_MIN,
   WORLD_HEIGHT,
   WORLD_WIDTH,
+  type GravelSpec,
   type OreSpec,
 } from '../config';
 import { createRng, randInt, type Rng } from '../util/rng';
@@ -51,14 +53,52 @@ export const ORE_LAYERS: ReadonlyArray<{ tile: TileId; spec: OreSpec }> = [
   { tile: Tile.GoldOre, spec: ORE_GOLD },
 ];
 
+/**
+ * How a world is generated. Saves regenerate unchanged chunks from the seed, so a world keeps the
+ * profile it was made with (its name and version are saved with it) and new generation features
+ * arrive in new profiles: an existing profile must never change what it generates. World size,
+ * layers and caves are shared settings in config.ts for now; a profile names what differs.
+ */
+export interface GenProfile {
+  name: string;
+  version: number;
+  ores: ReadonlyArray<{ tile: TileId; spec: OreSpec }>;
+  /** Gravel pockets, or null for none. */
+  gravel: GravelSpec | null;
+}
+
+/** Which profile a world was generated with, as saved. */
+export interface ProfileRef {
+  name: string;
+  version: number;
+}
+
+/** Generation as it was up to Phase 11: frozen, so worlds made then keep regenerating the same. */
+export const CLASSIC_PROFILE: GenProfile = { name: 'classic', version: 1, ores: ORE_LAYERS, gravel: null };
+/** Phase 12: classic plus gravel pockets. */
+export const GRAVEL_PROFILE: GenProfile = { name: 'gravel', version: 1, ores: ORE_LAYERS, gravel: GRAVEL_POCKETS };
+export const PROFILES: readonly GenProfile[] = [CLASSIC_PROFILE, GRAVEL_PROFILE];
+/** What new worlds are generated with. */
+export const NEW_WORLD_PROFILE = GRAVEL_PROFILE;
+
+/** The profile a save names, or null if this version doesn't know it. */
+export function findProfile(ref: ProfileRef): GenProfile | null {
+  return PROFILES.find((p) => p.name === ref.name && p.version === ref.version) ?? null;
+}
+
+/** "gravel v1" */
+export function profileLabel(ref: ProfileRef): string {
+  return `${ref.name} v${ref.version}`;
+}
+
 const STEP_COUNT = 7;
 const DX = [1, -1, 0, 0];
 const DY = [0, 0, 1, -1];
 
 /** Generate a whole world in one go (tests, and anywhere a loading screen isn't needed). */
-export function generateWorld(seed: number): World {
+export function generateWorld(seed: number, profile: GenProfile = CLASSIC_PROFILE): World {
   const world = new World(WORLD_WIDTH, WORLD_HEIGHT, seed);
-  const steps = generateWorldSteps(world);
+  const steps = generateWorldSteps(world, profile);
   while (!steps.next().done) {
     // run every step
   }
@@ -69,8 +109,9 @@ export function generateWorld(seed: number): World {
  * Fill an empty world from its seed. Yields progress often so the caller can spread the work
  * over several frames. All randomness comes from RNGs derived from the seed.
  */
-export function* generateWorldSteps(world: World): Generator<GenProgress, void, void> {
+export function* generateWorldSteps(world: World, profile: GenProfile): Generator<GenProgress, void, void> {
   const seed = world.seed;
+  world.profile = { name: profile.name, version: profile.version };
   const subRng = (salt: number): Rng => createRng((seed ^ Math.imul(salt, 0x9e3779b9)) >>> 0);
   const progress = (step: number, label: string): GenProgress => ({ label, progress: step / STEP_COUNT });
   const { width, height } = world;
@@ -127,9 +168,15 @@ export function* generateWorldSteps(world: World): Generator<GenProgress, void, 
 
   // 4. Ores: random-walk veins, only into stone/deepstone, only inside each ore's depth band.
   const oreRng = subRng(5);
-  for (let i = 0; i < ORE_LAYERS.length; i++) {
-    yield progress(3 + i / ORE_LAYERS.length, 'Placing ores');
-    placeOreVeins(world, oreRng, ORE_LAYERS[i].tile, ORE_LAYERS[i].spec);
+  for (let i = 0; i < profile.ores.length; i++) {
+    yield progress(3 + i / profile.ores.length, 'Placing ores');
+    placeOreVeins(world, oreRng, profile.ores[i].tile, profile.ores[i].spec);
+  }
+
+  // 4b. Gravel pockets (not in classic), from their own RNG so nothing else changes.
+  if (profile.gravel) {
+    yield progress(3.9, 'Loosening gravel');
+    placeGravelPockets(world, subRng(7), profile.gravel, profile.ores);
   }
 
   // 5. Trees on flat stretches of grass.
@@ -200,6 +247,78 @@ function placeOreVeins(world: World, rng: Rng, tile: TileId, spec: OreSpec): voi
       const dir = randInt(rng, 0, 3);
       tx = Math.min(world.width - 2, Math.max(1, tx + DX[dir]));
       ty = Math.min(bottom, Math.max(top, ty + DY[dir]));
+    }
+  }
+}
+
+/**
+ * Gravel pockets: ragged ellipses of gravel, replacing stone only. Some are moved up onto a cave
+ * ceiling found below their spot, so their bottom row hangs over the cave (still until
+ * disturbed); deeper ceiling pockets may get ore in their bottom rows. Pockets above
+ * spec.gentleDepth are small.
+ */
+function placeGravelPockets(world: World, rng: Rng, spec: GravelSpec, ores: GenProfile['ores']): void {
+  const top = SURFACE_LEVEL + spec.minDepth;
+  const bottom = world.height - 1 - BEDROCK_BOTTOM_ROWS - 2;
+  const pockets = Math.round(((bottom - top + 1) * world.width) / spec.tilesPerPocket);
+  for (let p = 0; p < pockets; p++) {
+    const cx = randInt(rng, 3, world.width - 4);
+    let cy = randInt(rng, top, bottom);
+    const gentle = cy - SURFACE_LEVEL < spec.gentleDepth;
+    const rx = gentle ? randInt(rng, 1, spec.gentleRadiusMax) : randInt(rng, spec.radiusMin, spec.radiusMax);
+    const ry = Math.max(1, rx - 1);
+    let ceiling = false;
+    if (rng() < spec.ceilingShare) {
+      // The first stone tile with air under it, below the spot: the pocket's bottom row goes there.
+      for (let y = cy; y < Math.min(bottom, cy + spec.ceilingSearch); y++) {
+        if (world.getTile(cx, y) === Tile.Stone && world.getTile(cx, y + 1) === Tile.Air) {
+          cy = y - ry;
+          ceiling = true;
+          break;
+        }
+      }
+    }
+    const placed: [number, number][] = [];
+    for (let dy = -ry; dy <= ry; dy++) {
+      for (let dx = -rx; dx <= rx; dx++) {
+        const d = (dx / (rx + 0.5)) ** 2 + (dy / (ry + 0.5)) ** 2;
+        if (d > 1 || (d > 0.6 && rng() < 0.35)) continue;
+        const tx = cx + dx;
+        const ty = cy + dy;
+        if (ty < top || ty > bottom || world.getTile(tx, ty) !== Tile.Stone) continue;
+        world.setTile(tx, ty, Tile.Gravel);
+        placed.push([tx, ty]);
+      }
+    }
+    // A ceiling pocket reaches down to the cave wherever only a tile or two of stone is left under it.
+    if (ceiling) {
+      for (let tx = cx - rx; tx <= cx + rx; tx++) {
+        let low = -1;
+        for (const [x, y] of placed) if (x === tx) low = Math.max(low, y);
+        if (low < 0) continue;
+        for (let k = 1; k <= 3; k++) {
+          if (world.getTile(tx, low + k) === Tile.Air) {
+            for (let y = low + 1; y < low + k; y++) {
+              if (world.getTile(tx, y) !== Tile.Stone) break;
+              world.setTile(tx, y, Tile.Gravel);
+              placed.push([tx, y]);
+            }
+            break;
+          }
+          if (world.getTile(tx, low + k) !== Tile.Stone) break;
+        }
+      }
+    }
+    // Ore in the bottom rows of a deep ceiling pocket: the best ore for its depth.
+    if (!ceiling || cy - SURFACE_LEVEL < spec.richMinDepth || rng() >= spec.richChance || placed.length === 0) continue;
+    const depth = cy - SURFACE_LEVEL;
+    let ore: TileId | null = null;
+    for (const layer of ores) if (depth >= layer.spec.minDepth && depth <= layer.spec.maxDepth) ore = layer.tile;
+    if (ore === null) continue;
+    const low = placed.filter(([, ty]) => ty >= cy);
+    for (let i = 0; i < spec.richOres && low.length > 0; i++) {
+      const [tx, ty] = low.splice(randInt(rng, 0, low.length - 1), 1)[0];
+      world.setTile(tx, ty, ore);
     }
   }
 }

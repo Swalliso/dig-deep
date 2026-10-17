@@ -4,9 +4,11 @@ import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE, WORLD_HEIGH
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
 import { ExploredMap } from '../world/explored';
+import { CLASSIC_PROFILE, findProfile, type GenProfile, type ProfileRef } from '../world/generate';
 import { TileEntities } from '../world/tileEntities';
 import { Tile, TILE_COUNT } from '../world/tiles';
 import type { World } from '../world/world';
+import type { CaveIns, SavedCaveIns } from './caveIns';
 import type { BedSpot, Satchel } from './death';
 import { Health, type Difficulty, type SavedHealth } from './health';
 import { Inventory, type ItemStack, type Slots } from './inventory';
@@ -32,6 +34,11 @@ export interface SaveData {
   /** The world's name in the world list. Missing in older saves. */
   name?: string;
   seed: number;
+  /**
+   * The generation profile the world was made with (see generate.ts). Missing in saves from before
+   * Phase 12, which are classic worlds.
+   */
+  profile?: ProfileRef;
   /** Date.now() when saved. */
   savedAt: number;
   /** Seconds of play in this world (the session clock). Missing in older saves. */
@@ -61,6 +68,8 @@ export interface SaveData {
   bed?: BedSpot | null;
   /** Bags left where the player died. */
   satchels?: Satchel[];
+  /** Shaking gravel, falling blocks and tiles waiting for a recheck (Phase 12). */
+  caveIns?: SavedCaveIns;
 }
 
 /**
@@ -136,6 +145,8 @@ export interface SurvivalState {
   difficulty: Difficulty;
   bed: BedSpot | null;
   satchels: readonly Satchel[];
+  /** Phase 12. */
+  caveIns?: CaveIns;
 }
 
 export function createSave(
@@ -150,6 +161,7 @@ export function createSave(
     version: SAVE_VERSION,
     name: extra.name,
     seed: world.seed,
+    profile: { ...world.profile },
     savedAt: Date.now(),
     playTime: extra.playTime ?? 0,
     chunks: [...world.changedChunks]
@@ -168,7 +180,10 @@ export function createSave(
  * tell whether there's anything new to save. Saved state belongs here, so its changes are
  * always noticed; a test checks createSave adds nothing else.
  */
-export type SavedState = Pick<SaveData, 'player' | 'inventory' | 'drops' | 'tileEntities' | 'difficulty' | 'health' | 'bed' | 'satchels'>;
+export type SavedState = Pick<
+  SaveData,
+  'player' | 'inventory' | 'drops' | 'tileEntities' | 'difficulty' | 'health' | 'bed' | 'satchels' | 'caveIns'
+>;
 
 export function savedState(
   player: Player,
@@ -193,6 +208,7 @@ export function savedState(
       bed: survival.bed && { ...survival.bed },
       satchels: survival.satchels.map((s) => ({ x: s.x, y: s.y, stacks: s.stacks.map((st) => ({ ...st })) })),
     }),
+    ...(survival?.caveIns && { caveIns: survival.caveIns.saved() }),
   };
 }
 
@@ -233,6 +249,11 @@ function restoreSlots(saved: readonly unknown[], slots: Slots): void {
     if (i >= slots.length || !s || !(s.item in ITEMS) || !(s.count > 0)) return;
     slots[i] = { item: s.item, count: Math.min(Math.floor(s.count), itemDef(s.item as ItemId).maxStack) };
   });
+}
+
+/** The generation profile to regenerate a save's world with. Saves from before Phase 12 are classic. */
+export function restoreProfile(save: SaveData): GenProfile {
+  return save.profile ? (findProfile(save.profile) ?? CLASSIC_PROFILE) : CLASSIC_PROFILE;
 }
 
 /** Seconds played in the world, or 0 for a save from before play time was saved. */
@@ -329,6 +350,10 @@ export function checkSave(raw: unknown): SaveStatus {
   if (save.version !== SAVE_VERSION) {
     return typeof save.version === 'number' ? { kind: 'outdated', version: save.version } : { kind: 'broken' };
   }
+  // A generation profile this version doesn't know can only come from a newer version.
+  const profile = save.profile;
+  if (profile !== undefined && !(profile && typeof profile.name === 'string' && typeof profile.version === 'number')) return { kind: 'broken' };
+  if (profile && !findProfile(profile)) return { kind: 'outdated', version: SAVE_VERSION + 1 };
   const valid =
     typeof save.seed === 'number' &&
     Array.isArray(save.chunks) &&
@@ -339,7 +364,8 @@ export function checkSave(raw: unknown): SaveStatus {
     (save.drops === undefined || Array.isArray(save.drops)) &&
     (save.tileEntities === undefined || Array.isArray(save.tileEntities)) &&
     (save.explored === undefined || Array.isArray(save.explored)) &&
-    (save.satchels === undefined || Array.isArray(save.satchels));
+    (save.satchels === undefined || Array.isArray(save.satchels)) &&
+    (save.caveIns === undefined || (typeof save.caveIns === 'object' && save.caveIns !== null));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 

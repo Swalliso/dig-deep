@@ -29,6 +29,7 @@ import {
   restoreHealth,
   restoreInventory,
   restorePlayTime,
+  restoreProfile,
   restoreTileEntities,
   savedState,
   SAVE_VERSION,
@@ -42,7 +43,7 @@ import type { Difficulty } from './systems/health';
 import { computeStats } from './systems/stats';
 import { loadSettings, saveSettings } from './systems/settings';
 import { downloadText, Menus, type SettingsHooks, type TitleOptions } from './ui/menus';
-import { generateWorldSteps, parseSeed, type GenProgress } from './world/generate';
+import { generateWorldSteps, NEW_WORLD_PROFILE, parseSeed, type GenProgress } from './world/generate';
 import { World } from './world/world';
 
 // Boot and the main loop: title screen → generating/loading → playing ⇄ paused.
@@ -163,9 +164,9 @@ function applySettings(): void {
   currentGame()?.resize();
 }
 
-/** Health, difficulty, bed and satchels: the game's saved state beyond the player and inventory. */
+/** Health, difficulty, bed, satchels and cave-ins: the game's saved state beyond the player and inventory. */
 function survival(game: Game): SurvivalState {
-  return { health: game.health, difficulty: game.difficulty, bed: game.bed, satchels: game.satchels };
+  return { health: game.health, difficulty: game.difficulty, bed: game.bed, satchels: game.satchels, caveIns: game.caveIns };
 }
 
 /** The game as a save, right now. */
@@ -274,12 +275,13 @@ async function playWorld(world: WorldMeta): Promise<void> {
 
 /**
  * Generate the world from its seed (the loading screen shows progress), then apply the save if
- * any. `difficulty` is for a new world.
+ * any. A saved world is generated with the profile it was made with (classic for worlds from
+ * before Phase 12); a new one with NEW_WORLD_PROFILE. `difficulty` is for a new world.
  */
 function startLoading(seed: number, save: SaveData | null, slot: Slot, difficulty: Difficulty = 'normal'): void {
   menus.hide();
   const world = new World(WORLD_WIDTH, WORLD_HEIGHT, seed);
-  screen = { kind: 'loading', world, steps: generateWorldSteps(world), status: { label: 'Starting', progress: 0 }, save, slot, difficulty };
+  screen = { kind: 'loading', world, steps: generateWorldSteps(world, save ? restoreProfile(save) : NEW_WORLD_PROFILE), status: { label: 'Starting', progress: 0 }, save, slot, difficulty };
 }
 
 function finishLoading(world: World, save: SaveData | null, slot: Slot, difficulty: Difficulty): void {
@@ -303,6 +305,7 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
             health: restoreHealth(save, computeStats().maxHealth),
             bed: restoreBed(save.bed, world),
             satchels: restoreSatchels(save.satchels, world),
+            caveIns: save.caveIns,
           }
         : { difficulty },
     );
