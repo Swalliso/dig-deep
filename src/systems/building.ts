@@ -1,4 +1,4 @@
-import { PLAYER_HEIGHT, PLAYER_WIDTH, TILE_SIZE } from '../config';
+import { PLAYER_HEIGHT, PLAYER_WIDTH, QUICK_TORCH_RADIUS, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
 import { beamFooting, worldGetter } from '../world/supports';
 import { isClimbable, isSolid, Tile, tileDef, type TileId } from '../world/tiles';
@@ -95,6 +95,31 @@ export function tryPlace(world: World, player: Player, inventory: Inventory, tx:
   }
   inventory.removeFromSlot(inventory.selected, 1);
   return true;
+}
+
+/**
+ * Where quick torch puts a torch: the cursor tile (tx, ty) if a torch can go there, otherwise
+ * the spot within QUICK_TORCH_RADIUS tiles of the player that's nearest the player's centre
+ * (ties go to the higher spot, so it doesn't end up at the player's feet). Null if there's
+ * nowhere a torch can go. Torches follow the usual placement rules (see canPlace).
+ */
+export function quickTorchSpot(world: World, player: Player, tx: number, ty: number): [number, number] | null {
+  if (canPlace(world, player, tx, ty, Tile.Torch)) return [tx, ty];
+  const ptx = Math.floor(player.centerX / TILE_SIZE);
+  const pty = Math.floor(player.centerY / TILE_SIZE);
+  let best: [number, number] | null = null;
+  let bestDistance = Infinity;
+  for (let y = pty - QUICK_TORCH_RADIUS; y <= pty + QUICK_TORCH_RADIUS; y++) {
+    for (let x = ptx - QUICK_TORCH_RADIUS; x <= ptx + QUICK_TORCH_RADIUS; x++) {
+      const distance = Math.hypot((x + 0.5) * TILE_SIZE - player.centerX, (y + 0.5) * TILE_SIZE - player.centerY);
+      // Rows go top to bottom, so on a tie the higher spot is already the best.
+      if (distance < bestDistance - 1e-6 && canPlace(world, player, x, y, Tile.Torch)) {
+        best = [x, y];
+        bestDistance = distance;
+      }
+    }
+  }
+  return best;
 }
 
 /** What a left-click does for as long as the button stays down: mine tiles, place blocks, or throw one (a flare). */

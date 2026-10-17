@@ -41,6 +41,8 @@ import {
 } from './systems/save';
 import { restoreBed, restoreSatchels } from './systems/death';
 import { Dread } from './systems/dread';
+import { restorePinnedRecipe } from './systems/goal';
+import { MapPins } from './systems/mapPins';
 import type { Difficulty } from './systems/health';
 import { computeStats } from './systems/stats';
 import { loadSettings, saveSettings } from './systems/settings';
@@ -166,10 +168,13 @@ function applySettings(): void {
   currentGame()?.resize();
 }
 
-/** Health, difficulty, bed, satchels, cave-ins, dread and flares: the game's saved state beyond the player and inventory. */
+/**
+ * Health, difficulty, bed, satchels, cave-ins, dread, flares, the pinned recipe and the map pins:
+ * the game's saved state beyond the player and inventory.
+ */
 function survival(game: Game): SurvivalState {
-  const { health, difficulty, bed, satchels, caveIns, dread, flares } = game;
-  return { health, difficulty, bed, satchels, caveIns, dread, flares };
+  const { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins } = game;
+  return { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins };
 }
 
 /** The game as a save, right now. */
@@ -311,6 +316,8 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
             caveIns: save.caveIns,
             dread: Dread.fromSave(save.dread),
             flares: flaresFromSave(save.flares),
+            pinnedRecipe: restorePinnedRecipe(save.pinnedRecipe),
+            mapPins: MapPins.fromSave(save.mapPins, world),
           }
         : { difficulty },
     );
@@ -327,6 +334,7 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
 }
 
 function pause(game: Game, reason: 'menu' | 'focus'): void {
+  game.endTyping(); // keys go to the pause menu, not a pin name
   screen = { kind: 'paused', game, reason };
   autosave(game);
   menus.showPause({

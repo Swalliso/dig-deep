@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ACTIONS, HOTBAR_ACTIONS, isNamedKey, keyName, type Action, type ActionTable } from '../src/input';
-import { controlsList, keyList, ladderGrabHint, mapHelpText, overlayHelpLines, respawnPrompt } from '../src/ui/controls';
+import {
+  controlsList,
+  keyList,
+  ladderGrabHint,
+  mapHelpText,
+  overlayHelpLines,
+  pinEditorHelp,
+  pinRecipeHint,
+  pinRecipeTip,
+  respawnPrompt,
+} from '../src/ui/controls';
 
 const actions = Object.keys(ACTIONS) as Action[];
 const gameplay = actions.filter((a) => !ACTIONS[a].debug);
@@ -41,12 +51,16 @@ describe('action table', () => {
     }
     const shared = [...users].filter(([, list]) => list.length > 1).map(([code, list]) => [code, list.sort()]);
     // W/↑ jump and climb; Space also respawns (only on the death screen, where nothing else
-    // moves); the left mouse button uses the held item in the world and clicks in menus.
+    // moves); the left mouse button uses the held item in the world and clicks in menus; the
+    // right one interacts in the world and pins in the crafting panel and on the map; Enter
+    // respawns and finishes typing a pin name.
     expect(shared).toEqual([
       ['Space', ['jump', 'respawn']],
       ['KeyW', ['climbUp', 'jump']],
       ['ArrowUp', ['climbUp', 'jump']],
       ['MouseLeft', ['click', 'use']],
+      ['MouseRight', ['interact', 'pin']],
+      ['Enter', ['confirm', 'respawn']],
     ]);
   });
 
@@ -70,6 +84,10 @@ describe('key hints', () => {
       ...controlsList(table).map(([action, input]) => `${action} | ${input}`),
       ...overlayHelpLines(table),
       mapHelpText(table),
+      pinEditorHelp(table),
+      pinRecipeHint(table),
+      pinRecipeTip(false, table),
+      pinRecipeTip(true, table),
       respawnPrompt(table),
       ladderGrabHint(table),
     ].join('\n');

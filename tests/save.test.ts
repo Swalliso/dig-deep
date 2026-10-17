@@ -31,6 +31,7 @@ import {
   type SaveData,
 } from '../src/systems/save';
 import { createRng, randInt } from '../src/util/rng';
+import { MapPins } from '../src/systems/mapPins';
 import { ExploredMap } from '../src/world/explored';
 import { generateWorld } from '../src/world/generate';
 import { TileEntities } from '../src/world/tileEntities';
@@ -346,6 +347,8 @@ describe('save reliability', () => {
       caveIns,
       dread: new Dread(),
       flares: [throwFlare(10, 20, 100, 20)],
+      pinnedRecipe: 'torch' as const,
+      mapPins: new MapPins(),
     };
     const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5, survival });
     const state = savedState(player, inventory, [], new TileEntities(world), survival);

@@ -21,23 +21,29 @@ and pick **Normal** or **Cozy**).
 | Build a row                        | Hold left mouse and sweep |
 | Throw a held flare                 | Left mouse at a spot      |
 | Pick block onto hotbar             | Middle mouse              |
+| Quick torch (keeps what you hold)  | T                         |
 | Open chest, use door or bed        | Right-click it            |
 | Climb a ladder                     | W / S or ↑ / ↓ on it      |
 | Drop through a platform            | S (hold to keep dropping) |
 | Map / minimap                      | M / N                     |
+| Add or edit a map pin              | Right-click the map       |
 | Select hotbar slot                 | 1–0 or mouse wheel        |
 | Drop selected stack                | Q                         |
 | Quick stack to nearby chests       | C                         |
 | Inventory, crafting, nearest chest | E or Tab                  |
 | Move stack (hotbar ↔ bag ↔ chest)  | Shift-click               |
 | Craft 10                           | Shift-click a recipe      |
+| Pin a recipe as your goal          | Right-click the recipe    |
 | Pause                              | Esc                       |
 | Debug overlay (FPS)                | F3                        |
 
 - **Left mouse uses what you're holding.** Holding a block and pointing at an empty spot places
   it (hold and sweep to build a row); pointing at a tile digs it with your best pickaxe,
   whatever is selected. **Right mouse interacts**: it opens chests and doors, and never digs or
-  places.
+  places. In the crafting panel it pins a recipe, and on the map it adds a pin.
+- **T places a torch** from anywhere in your inventory without changing what you hold: at the
+  cursor, or when that spot can't take one, right next to you. It tells you when you have no
+  torches or there's nowhere to put one.
 - You start with a wooden pickaxe and 10 torches. Better pickaxes mine faster and reach harder
   blocks: **Wooden → Stone → Copper → Iron → Gold**.
 - Chop trees for wood, turn it into planks and a **Workbench**, then mine stone for a
@@ -99,6 +105,15 @@ and pick **Normal** or **Cozy**).
 - **M** opens the map: drag or use WASD to pan, scroll to zoom. It only shows what you've
   seen: places you've had on screen in the light, and anything close to you in the dark. **N**
   toggles the minimap in the corner (it's in Settings too).
+- **Map pins**: right-click a place you've explored on the map to pin it (up to 12), then type
+  a name (Enter to finish, Esc to keep the old one). Right-click a pin to rename it, **Track**
+  it or **Delete** it. The tracked pin (white) shows its name, distance and direction under your
+  hearts and on the minimap, so you can find your way back without opening the map.
+- **Next goal**: right-click a recipe in the crafting panel to pin it (right-click again, or
+  **Unpin**, to clear it). The top-left corner then shows what it needs, how many you have
+  (counting chests within 4 tiles), where to craft it and, for missing ore, the depths it's
+  found at. The **Next goal** box in the inventory also suggests your next pickaxe and where
+  its ore is; click it to pin that pickaxe.
 - In the inventory, hover anything for a tooltip. The trash slot (top right) destroys a stack;
   you can take the last one back. **Craftable only** hides recipes you can't make yet.
 - The world stands still while the inventory, the map or the pause menu is open. Switching to

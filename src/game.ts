@@ -58,7 +58,7 @@ import { breakFlashAlpha, ScreenShake, type BreakFlash } from './render/juice';
 import { MapImage } from './render/mapImage';
 import { Particles } from './render/particles';
 import type { Renderer } from './render/renderer';
-import { canPlace, itemForTile, overlapsPlayer, primaryAction, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
+import { canPlace, itemForTile, overlapsPlayer, primaryAction, quickTorchSpot, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
 import { CaveIns, gravelDamage, type CaveInHooks, type SavedCaveIns } from './systems/caveIns';
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
 import { SessionClock, type PauseReason } from './systems/clock';
@@ -74,15 +74,18 @@ import {
   type BedSpot,
   type Satchel,
 } from './systems/death';
+import { goalStatus, recipeFor } from './systems/goal';
 import { deathCauseText, difficultyName, fallDamage, Health, type DamageCause, type Difficulty } from './systems/health';
 import { Inventory } from './systems/inventory';
 import { itemDef, type ItemId } from './systems/items';
+import { MapPins } from './systems/mapPins';
 import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { hintSeen, markHintSeen, type HintId } from './systems/hints';
 import { saveSettings, type Settings } from './systems/settings';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
-import { drawMinimap, FullMap, type MapInput, type MapMarkers } from './ui/map';
+import { goalHudLines } from './ui/guidance';
+import { drawMinimap, FullMap, PIN_COLOR, type MapInput, type MapMarkers } from './ui/map';
 import { InventoryPanel, type PanelState } from './ui/menus';
 import { directionText, drawDeathScreen, drawDreadMeter, drawHearts, drawHudLine, offsetText } from './ui/vitals';
 import { bedLeft, bedPartner, isBed, isWholeBed } from './world/beds';
@@ -127,6 +130,10 @@ export interface GameStart {
   dread?: Dread;
   /** Burning flares; defaults to none. */
   flares?: Flare[];
+  /** The pinned recipe (the next goal), by the item it makes; defaults to none. */
+  pinnedRecipe?: ItemId | null;
+  /** The player's map pins; defaults to none. */
+  mapPins?: MapPins;
 }
 
 /** What the death screen says, shown until the player respawns. */
@@ -204,6 +211,10 @@ export class Game {
   readonly caveIns: CaveIns;
   /** Builds up in the dark and hurts when full (none in Cozy worlds). */
   readonly dread: Dread;
+  /** The pinned recipe (the next goal) by the item it makes, or null: shown on the HUD and in the panel. */
+  pinnedRecipe: ItemId | null;
+  /** Named pins on the map; the tracked one shows its direction on the HUD. */
+  readonly mapPins: MapPins;
   /** How lit the player's tile was at the last simulation step. */
   private safety: LightSafety = 'established';
   private flareList: Flare[];
@@ -273,6 +284,8 @@ export class Game {
     this.satchels = start.satchels ?? [];
     this.dread = start.dread ?? new Dread();
     this.flareList = start.flares ?? [];
+    this.pinnedRecipe = start.pinnedRecipe ?? null;
+    this.mapPins = start.mapPins ?? new MapPins();
     this.inventory = start.inventory ?? Inventory.withStartingItems();
     this.dropList = start.drops ?? [];
     this.tileEntities = start.tileEntities ?? new TileEntities(world);
@@ -378,7 +391,8 @@ export class Game {
     this.handleKeys();
     if (this.fullMap.open) {
       const { canvas, scale } = this.renderer;
-      this.fullMap.update(dt, this.mapInput(), canvas.width, canvas.height, scale, this.world.width, this.world.height);
+      const pins = { pins: this.mapPins, explored: this.explored };
+      this.fullMap.update(dt, this.mapInput(), canvas.width, canvas.height, scale, this.world.width, this.world.height, pins);
     } else {
       this.handlePanelInput();
     }
@@ -390,7 +404,8 @@ export class Game {
     if (actionPressed('overlay')) this.showOverlay = !this.showOverlay;
     // M opens the full map (closing the inventory panel); M or Esc closes it. While it's open the
     // mouse wheel, dragging and the movement keys move the map.
-    if (actionPressed('map') || (this.fullMap.open && actionPressed('pause'))) this.toggleMap();
+    // While a pin name is being typed, Esc only stops the typing (the map handles it).
+    if (actionPressed('map') || (this.fullMap.open && actionPressed('pause') && !this.fullMap.isEditing)) this.toggleMap();
     if (actionPressed('minimap')) {
       this.settings.showMinimap = !this.settings.showMinimap;
       saveSettings(this.settings);
@@ -482,15 +497,34 @@ export class Game {
       }
     }
 
+    // Right-click on a recipe pins it as the goal (or unpins it).
+    if (inventoryPanel.open && actionPressed('pin')) {
+      const click = inventoryPanel.pinClick(canvas, scale, mouse.x, mouse.y, this.panelState());
+      if (click?.kind === 'pin') this.pinRecipe(click.item);
+    }
     if (inventoryPanel.open && actionPressed('click')) {
       const click = inventoryPanel.click(canvas, scale, mouse.x, mouse.y, actionDown('modifier'), this.panelState());
       if (click?.kind === 'crafted') {
         toasts.gained(click.recipe.output, click.recipe.count * click.batches);
         sfx.craft();
+      } else if (click?.kind === 'pin') {
+        this.pinRecipe(click.item);
       } else if (click) {
         sfx.uiClick();
       }
     }
+  }
+
+  /** Pin the recipe that makes `item` as the goal, or clear the goal (null). */
+  private pinRecipe(item: ItemId | null): void {
+    this.pinnedRecipe = item && recipeFor(item) ? item : null;
+    sfx.uiClick();
+    this.toasts.show(item ? `Goal pinned: ${itemDef(item).name}` : 'Goal cleared');
+  }
+
+  /** Stop typing a pin name, keeping it (the pause menu is opening). */
+  endTyping(): void {
+    this.fullMap.stopEditing(this.mapPins, true);
   }
 
   /** One step of the world: the player, mining and building, drops, and everything else timed. */
@@ -511,6 +545,7 @@ export class Game {
     this.health.update(this.clock.time, player.stats.maxHealth, this.safety === 'established');
     if (this.deathScreen) return; // the fall was fatal: the rest waits for the respawn
     this.useHeldItem(dt);
+    if (actionPressed('quickTorch')) this.quickTorch();
     this.caveIns.update(dt, this.clock.time, TILE_UPDATE_BUDGET, this.caveInHooks);
     if (this.deathScreen) return; // crushed: the rest waits for the respawn
     this.trickleDust(dt);
@@ -672,6 +707,21 @@ export class Game {
       const more = this.satchels.length > 1 ? ` (${this.satchels.length} satchels)` : '';
       y = drawHudLine(renderer.ctx, directionText('Satchel', dx, dy) + more, y, u, '#d9bfff');
     }
+    const pin = this.mapPins.trackedPin;
+    if (pin) {
+      const dx = pin.tx + 0.5 - player.centerX / TILE_SIZE;
+      const dy = pin.ty + 0.5 - player.centerY / TILE_SIZE;
+      y = drawHudLine(renderer.ctx, directionText(pin.name, dx, dy), y, u, PIN_COLOR);
+    }
+    // The goal (the panel shows it while it's open).
+    const goal = this.pinnedRecipe ? recipeFor(this.pinnedRecipe) : null;
+    if (goal && !this.inventoryPanel.open) {
+      const { world } = this;
+      const range = player.stats.stationRange;
+      const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY, range);
+      const status = goalStatus(goal, this.inventory, nearbyStations(world, player.centerX, player.centerY, range), chests);
+      for (const [text, color] of goalHudLines(status)) y = drawHudLine(renderer.ctx, text, y, u, color);
+    }
     return y;
   }
 
@@ -700,7 +750,7 @@ export class Game {
   /** Open the full map (closing the inventory panel), or close it. */
   private toggleMap(): void {
     if (this.fullMap.open) {
-      this.fullMap.open = false;
+      this.fullMap.hide(this.mapPins);
       return;
     }
     if (this.inventoryPanel.open) this.closePanel();
@@ -718,6 +768,10 @@ export class Game {
       dragging: actionDown('click'),
       panX: (actionDown('moveRight') ? 1 : 0) - (actionDown('moveLeft') ? 1 : 0),
       panY: (actionDown('climbDown') ? 1 : 0) - (actionDown('climbUp') ? 1 : 0),
+      clicked: actionPressed('click'),
+      pin: actionPressed('pin'),
+      confirm: actionPressed('confirm'),
+      cancel: actionPressed('pause'),
     };
   }
 
@@ -744,6 +798,8 @@ export class Game {
       chests: this.tileEntities.entries().map(({ tx, ty }) => ({ tx, ty })),
       bed: this.activeBed(),
       satchels: this.satchels.map((s) => ({ tx: (s.x + SATCHEL_SIZE / 2) / TILE_SIZE, ty: (s.y + SATCHEL_SIZE / 2) / TILE_SIZE })),
+      pins: this.mapPins.pins,
+      trackedPin: this.mapPins.tracked,
     };
   }
 
@@ -799,6 +855,8 @@ export class Game {
       chests,
       chest,
       stationRange: range,
+      pinned: this.pinnedRecipe,
+      pickaxeTier: this.inventory.bestPickaxeTier(),
     };
   }
 
@@ -968,6 +1026,28 @@ export class Game {
     for (const id of this.flareLights) if (!burning.has(id)) lightMap.removeMovingLight(`flare${id}`);
     this.flareLights.clear();
     for (const id of burning) this.flareLights.add(id);
+  }
+
+  /**
+   * Quick torch: place a carried torch at the cursor, or next to the player when the cursor spot
+   * can't take one (see quickTorchSpot), without changing the selected item. Says why when it can't.
+   */
+  private quickTorch(): void {
+    const { world, player, inventory, toasts } = this;
+    if (inventory.count('torch') === 0) {
+      toasts.show('No torches to place. Craft them from wood and coal.', 3);
+      return;
+    }
+    const [cx, cy] = this.cursorTile();
+    const spot = quickTorchSpot(world, player, cx, cy);
+    if (!spot) {
+      toasts.show('Nowhere to put a torch here: it needs a wall, floor or ceiling next to it', 3);
+      return;
+    }
+    const [tx, ty] = spot;
+    world.setTile(tx, ty, Tile.Torch);
+    inventory.remove('torch', 1);
+    sfx.place(tileDef(Tile.Torch).material, this.pan(tx));
   }
 
   /** Throw one of the held flares from the player toward tile (tx, ty)'s centre. */
@@ -1324,6 +1404,7 @@ export class Game {
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)} (established ${this.lightMap.established(tx, ty)}, safe from ${DREAD_SAFE_LIGHT})   ${this.safety}   dread ${Math.round(this.dread.level * 100)}%`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
       `${difficultyName(this.difficulty)}   HP ${this.health.hp}/${player.stats.maxHealth}   protected ${protectedFor.toFixed(1)} s   fall ${fall}   bed ${this.activeBed() ? `(${this.bed!.tx}, ${this.bed!.ty})` : 'none'}   satchels ${this.satchels.length}`,
+      `Goal ${this.pinnedRecipe ?? 'none'}   map pins ${this.mapPins.pins.length} (tracked ${this.mapPins.trackedPin?.name ?? 'none'})`,
       `Cave-ins ${this.caveIns.isEnabled ? 'on' : 'off (Cozy)'}   shaking ${this.caveIns.warnings.size}   falling ${this.caveIns.falling.length}   rechecks queued ${this.tileUpdates.size}`,
       ...overlayHelpLines(),
       ...debugLines,

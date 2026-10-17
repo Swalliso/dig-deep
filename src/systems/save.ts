@@ -15,6 +15,7 @@ import type { BedSpot, Satchel } from './death';
 import { Health, type Difficulty, type SavedHealth } from './health';
 import { Inventory, type ItemStack, type Slots } from './inventory';
 import { ITEMS, itemDef, type ItemId } from './items';
+import type { MapPins, SavedMapPins } from './mapPins';
 
 /**
  * Bump whenever the save format, the world size or world generation changes. (Adding an
@@ -76,6 +77,10 @@ export interface SaveData {
   dread?: SavedDread;
   /** Flares still burning, with the seconds they have left (Phase 13). */
   flares?: SavedFlare[];
+  /** The pinned recipe (the next goal), by the item it makes, or null for none (guidance slice). */
+  pinnedRecipe?: ItemId | null;
+  /** The player's map pins and which one is tracked (guidance slice). */
+  mapPins?: SavedMapPins;
 }
 
 /**
@@ -147,7 +152,7 @@ export function decodeRle(rle: Uint8Array, length: number): Uint8Array {
 
 /**
  * Player state beyond the player and the inventory: health, difficulty, bed, satchels (Phase
- * 11b), cave-ins (12), dread and flares (13).
+ * 11b), cave-ins (12), dread and flares (13), and the pinned recipe and map pins (guidance slice).
  */
 export interface SurvivalState {
   health: Health;
@@ -159,6 +164,9 @@ export interface SurvivalState {
   /** Phase 13. */
   dread?: Dread;
   flares?: readonly Flare[];
+  /** Guidance slice. */
+  pinnedRecipe?: ItemId | null;
+  mapPins?: MapPins;
 }
 
 export function createSave(
@@ -194,7 +202,19 @@ export function createSave(
  */
 export type SavedState = Pick<
   SaveData,
-  'player' | 'inventory' | 'drops' | 'tileEntities' | 'difficulty' | 'health' | 'bed' | 'satchels' | 'caveIns' | 'dread' | 'flares'
+  | 'player'
+  | 'inventory'
+  | 'drops'
+  | 'tileEntities'
+  | 'difficulty'
+  | 'health'
+  | 'bed'
+  | 'satchels'
+  | 'caveIns'
+  | 'dread'
+  | 'flares'
+  | 'pinnedRecipe'
+  | 'mapPins'
 >;
 
 export function savedState(
@@ -223,6 +243,8 @@ export function savedState(
     ...(survival?.caveIns && { caveIns: survival.caveIns.saved() }),
     ...(survival?.dread && { dread: survival.dread.saved() }),
     ...(survival?.flares && { flares: savedFlares(survival.flares) }),
+    ...(survival?.pinnedRecipe !== undefined && { pinnedRecipe: survival.pinnedRecipe }),
+    ...(survival?.mapPins && { mapPins: survival.mapPins.saved() }),
   };
 }
 
@@ -380,7 +402,8 @@ export function checkSave(raw: unknown): SaveStatus {
     (save.explored === undefined || Array.isArray(save.explored)) &&
     (save.satchels === undefined || Array.isArray(save.satchels)) &&
     (save.caveIns === undefined || (typeof save.caveIns === 'object' && save.caveIns !== null)) &&
-    (save.flares === undefined || Array.isArray(save.flares));
+    (save.flares === undefined || Array.isArray(save.flares)) &&
+    (save.mapPins === undefined || (typeof save.mapPins === 'object' && save.mapPins !== null));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 

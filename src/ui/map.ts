@@ -1,10 +1,27 @@
-import { MAP_FOG_COLOR, MAP_PAN_SPEED, MAP_ZOOM_START, MAP_ZOOMS, MINIMAP_HEIGHT, MINIMAP_WIDTH, TILE_SIZE } from '../config';
+import * as sfx from '../audio/sfx';
+import {
+  MAP_FOG_COLOR,
+  MAP_PAN_SPEED,
+  MAP_PIN_HIT,
+  MAP_PIN_MAX,
+  MAP_PIN_NAME_MAX,
+  MAP_ZOOM_START,
+  MAP_ZOOMS,
+  MINIMAP_HEIGHT,
+  MINIMAP_WIDTH,
+  TILE_SIZE,
+} from '../config';
+import { startTyping, stopTyping, typedText } from '../input';
 import type { MapImage } from '../render/mapImage';
-import { mapHelpText } from './controls';
+import type { MapPin, MapPins } from '../systems/mapPins';
+import type { ExploredMap } from '../world/explored';
+import { mapHelpText, pinEditorHelp } from './controls';
 import { shadowText } from './hud';
 
 // The full-screen map (M) and the corner minimap (N), both drawn from the MapImage. Sizes are
-// in UI units: `u` screen pixels each, the game's pixel scale.
+// in UI units: `u` screen pixels each, the game's pixel scale. On the full map, right-click adds
+// a pin (or picks one) and opens the pin editor along the bottom: type a name, track the pin on
+// the HUD, or delete it.
 
 /** Things marked on the map. */
 export interface MapMarkers {
@@ -17,6 +34,9 @@ export interface MapMarkers {
   bed: { tx: number; ty: number } | null;
   /** Satchels left where the player died (tile coordinates, fractional). Drawn as diamonds. */
   satchels: { tx: number; ty: number }[];
+  /** The player's map pins, and the index of the tracked one (or null). */
+  pins: readonly MapPin[];
+  trackedPin: number | null;
 }
 
 /** One update step of input for the open map. */
@@ -31,22 +51,70 @@ export interface MapInput {
   /** -1, 0 or 1 per axis, from WASD or the arrow keys. */
   panX: number;
   panY: number;
+  /** The left button went down this step (a click on the pin editor, or the start of a drag). */
+  clicked: boolean;
+  /** The pin button (right-click) went down this step. */
+  pin: boolean;
+  /** While a pin name is being typed: keep it (Enter), or stop without renaming (Esc). */
+  confirm: boolean;
+  cancel: boolean;
 }
+
+/** The pins the map adds to and edits, and the explored tiles they must be on. */
+export interface PinContext {
+  pins: MapPins;
+  explored: ExploredMap;
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+type EditorButton = 'track' | 'delete' | 'done';
+
+/** The pin editor box and its buttons, screen px. */
+interface EditorLayout {
+  box: Rect;
+  buttons: { id: EditorButton; rect: Rect }[];
+}
+
+const EDITOR_W = 170;
+const EDITOR_H = 40;
+const EDITOR_BUTTONS: { id: EditorButton; w: number }[] = [
+  { id: 'track', w: 64 },
+  { id: 'delete', w: 34 },
+  { id: 'done', w: 30 },
+];
+
+const hit = (r: Rect, x: number, y: number): boolean => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 
 const PLAYER_COLOR = '#ffe066';
 const SPAWN_COLOR = '#7cd65a';
 const CHEST_COLOR = '#d08a3c';
 const BED_COLOR = '#ff7eb6';
 const SATCHEL_COLOR = '#c792ff';
+export const PIN_COLOR = '#5ad1e6';
+/** The tracked pin, on the map, the minimap and the HUD. */
+export const TRACKED_PIN_COLOR = '#ffffff';
+/** How long a note on the map (why a pin couldn't be added) stays up, in ms (real time: the map is a menu). */
+const NOTICE_MS = 2500;
 
 export class FullMap {
   open = false;
+  /** Index of the pin being edited (its name is being typed), or null. */
+  editing: number | null = null;
   /** Tile coordinates (fractional) at the centre of the screen. */
   private cx = 0;
   private cy = 0;
   private zoom = MAP_ZOOM_START;
   /** Pointer position at the last step of a drag, or null when not dragging. */
   private dragFrom: { x: number; y: number } | null = null;
+  /** The left button went down on the pin editor, so holding it doesn't drag the map. */
+  private pressOnEditor = false;
+  private notice: { text: string; until: number } | null = null;
 
   /** Open the map centred on the player (world px). */
   show(playerX: number, playerY: number): void {
@@ -55,10 +123,37 @@ export class FullMap {
     this.cy = playerY / TILE_SIZE;
     this.zoom = MAP_ZOOM_START;
     this.dragFrom = null;
+    this.notice = null;
   }
 
-  /** Pan and zoom for one update step. (width, height) is the canvas size; u the pixel scale. */
-  update(dt: number, input: MapInput, width: number, height: number, u: number, worldWidth: number, worldHeight: number): void {
+  /** Is a pin name being typed? Esc then stops the typing rather than closing the map. */
+  get isEditing(): boolean {
+    return this.editing !== null;
+  }
+
+  /** Close the map, keeping any pin name being typed. */
+  hide(pins: MapPins): void {
+    this.stopEditing(pins, true);
+    this.open = false;
+  }
+
+  /** Stop editing a pin: `keep` renames it to what was typed (nothing typed keeps its name). */
+  stopEditing(pins: MapPins, keep: boolean): void {
+    if (this.editing === null) return;
+    const name = typedText();
+    if (keep && name !== null) pins.rename(this.editing, name);
+    this.editing = null;
+    stopTyping();
+  }
+
+  /**
+   * One update step: pins (right-click adds or picks one; the editor takes typing and clicks),
+   * then pan and zoom. (width, height) is the canvas size; u the pixel scale.
+   */
+  update(dt: number, input: MapInput, width: number, height: number, u: number, worldWidth: number, worldHeight: number, context: PinContext): void {
+    if (input.clicked) this.pressOnEditor = this.editing !== null && hit(this.editorLayout(width, height, u).box, input.mouseX, input.mouseY);
+    if (!input.dragging) this.pressOnEditor = false;
+    this.updatePins(input, width, height, u, context);
     // Zoom about the pointer: the tile under it stays put.
     if (input.wheel !== 0) {
       const before = this.pxPerTile(u);
@@ -70,7 +165,7 @@ export class FullMap {
       this.cy += my - (input.mouseY - height / 2) / after;
     }
     const scale = this.pxPerTile(u);
-    if (input.dragging) {
+    if (input.dragging && !this.pressOnEditor) {
       if (this.dragFrom) {
         this.cx -= (input.mouseX - this.dragFrom.x) / scale;
         this.cy -= (input.mouseY - this.dragFrom.y) / scale;
@@ -83,6 +178,102 @@ export class FullMap {
     this.cy += (input.panY * MAP_PAN_SPEED * u * dt) / scale;
     this.cx = Math.max(0, Math.min(worldWidth, this.cx));
     this.cy = Math.max(0, Math.min(worldHeight, this.cy));
+  }
+
+  /** Right-click adds a pin or opens one in the editor; the editor's buttons and keys. */
+  private updatePins(input: MapInput, width: number, height: number, u: number, { pins, explored }: PinContext): void {
+    if (this.editing !== null && this.editing >= pins.pins.length) this.stopEditing(pins, false);
+    if (this.editing !== null) {
+      if (input.confirm || input.cancel) {
+        this.stopEditing(pins, input.confirm);
+        sfx.uiClick();
+        return;
+      }
+      if (input.clicked) {
+        const layout = this.editorLayout(width, height, u);
+        const button = layout.buttons.find((b) => hit(b.rect, input.mouseX, input.mouseY));
+        if (button) {
+          this.pressEditorButton(button.id, pins);
+          sfx.uiClick();
+          return;
+        }
+        // A click elsewhere on the map keeps the name and closes the editor.
+        if (!hit(layout.box, input.mouseX, input.mouseY)) this.stopEditing(pins, true);
+      }
+    }
+    if (!input.pin) return;
+    if (this.editing !== null && hit(this.editorLayout(width, height, u).box, input.mouseX, input.mouseY)) return;
+    const picked = this.pinAt(pins.pins, input.mouseX, input.mouseY, width, height, u);
+    this.stopEditing(pins, true);
+    if (picked !== null) {
+      this.edit(picked);
+      sfx.uiClick();
+      return;
+    }
+    const scale = this.pxPerTile(u);
+    const tx = Math.floor(this.cx + (input.mouseX - width / 2) / scale);
+    const ty = Math.floor(this.cy + (input.mouseY - height / 2) / scale);
+    const added = pins.add(tx, ty, explored);
+    if (added === 'unexplored') {
+      this.say("You can only pin places you've explored");
+    } else if (added === 'full') {
+      this.say(`You have ${MAP_PIN_MAX} pins already: delete one first`);
+    } else {
+      this.edit(added);
+      sfx.uiClick();
+    }
+  }
+
+  /** Open the editor on pin `index`. Typing starts empty: the first key replaces the old name. */
+  private edit(index: number): void {
+    this.editing = index;
+    startTyping('', MAP_PIN_NAME_MAX);
+  }
+
+  private pressEditorButton(id: EditorButton, pins: MapPins): void {
+    const index = this.editing!;
+    if (id === 'track') {
+      pins.setTracked(index, pins.tracked !== index);
+    } else if (id === 'delete') {
+      this.stopEditing(pins, false);
+      pins.remove(index);
+    } else {
+      this.stopEditing(pins, true);
+    }
+  }
+
+  private say(text: string): void {
+    this.notice = { text, until: performance.now() + NOTICE_MS };
+  }
+
+  /** The pin whose marker is nearest screen point (x, y), within MAP_PIN_HIT, or null. */
+  private pinAt(pins: readonly MapPin[], x: number, y: number, width: number, height: number, u: number): number | null {
+    const scale = this.pxPerTile(u);
+    let best: number | null = null;
+    let bestDistance = MAP_PIN_HIT * u + scale / 2;
+    pins.forEach((pin, i) => {
+      // Measured to the pin's head, a little above the pinned tile's centre (see drawPin).
+      const px = width / 2 + (pin.tx + 0.5 - this.cx) * scale;
+      const py = height / 2 + (pin.ty + 0.5 - this.cy) * scale - 4 * u;
+      const distance = Math.min(Math.hypot(x - px, y - py), Math.hypot(x - px, y - py - 4 * u));
+      if (distance <= bestDistance) {
+        best = i;
+        bestDistance = distance;
+      }
+    });
+    return best;
+  }
+
+  private editorLayout(width: number, height: number, u: number): EditorLayout {
+    const box: Rect = { x: Math.round(width / 2 - (EDITOR_W * u) / 2), y: Math.round(height - (EDITOR_H + 24) * u), w: EDITOR_W * u, h: EDITOR_H * u };
+    const buttons: EditorLayout['buttons'] = [];
+    let x = box.x + 5 * u;
+    for (const { id, w } of EDITOR_BUTTONS) {
+      const left = id === 'done' ? box.x + box.w - (w + 5) * u : x;
+      buttons.push({ id, rect: { x: left, y: box.y + 16 * u, w: w * u, h: 11 * u } });
+      x += (w + 3) * u;
+    }
+    return { box, buttons };
   }
 
   draw(ctx: CanvasRenderingContext2D, image: MapImage, markers: MapMarkers, u: number): void {
@@ -114,6 +305,11 @@ export class FullMap {
     if (markers.bed) marker(ctx, sx(markers.bed.tx + 1), sy(markers.bed.ty + 0.5), size, BED_COLOR, u);
     for (const satchel of markers.satchels) diamond(ctx, sx(satchel.tx), sy(satchel.ty), size * 1.4, SATCHEL_COLOR, u);
     marker(ctx, sx(markers.playerX / TILE_SIZE), sy(markers.playerY / TILE_SIZE), size * 1.4, PLAYER_COLOR, u);
+    // Pins on top, with the one being edited showing what's typed.
+    markers.pins.forEach((pin, i) => {
+      const name = i === this.editing ? typedText() || pin.name : pin.name;
+      drawPin(ctx, sx(pin.tx + 0.5), sy(pin.ty + 0.5), name, i === markers.trackedPin, i === this.editing, u);
+    });
 
     ctx.font = `${8 * u}px monospace`;
     ctx.textAlign = 'center';
@@ -121,8 +317,45 @@ export class FullMap {
     shadowText(ctx, 'Map', width / 2, 8 * u, '#fff', u);
     ctx.font = `${5 * u}px monospace`;
     shadowText(ctx, mapHelpText(), width / 2, 19 * u, '#b8b8c8', u);
+    if (this.notice && performance.now() < this.notice.until) shadowText(ctx, this.notice.text, width / 2, 28 * u, '#ffb0a0', u);
+    const editing = this.editing === null ? undefined : markers.pins[this.editing];
+    if (editing) this.drawEditor(ctx, editing, this.editing === markers.trackedPin, u);
     drawLegend(ctx, width / 2, height - 12 * u, u, markers);
     ctx.restore();
+  }
+
+  /** The pin editor: the name being typed, the Track / Delete / Done buttons and the keys. */
+  private drawEditor(ctx: CanvasRenderingContext2D, pin: MapPin, tracked: boolean, u: number): void {
+    const { width, height } = ctx.canvas;
+    const { box, buttons } = this.editorLayout(width, height, u);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.fillRect(box.x - u, box.y - u, box.w + 2 * u, box.h + 2 * u);
+    ctx.fillStyle = 'rgba(18, 18, 26, 0.95)';
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = `${6 * u}px monospace`;
+    const typed = typedText() ?? '';
+    const label = 'Pin: ';
+    shadowText(ctx, label, box.x + 5 * u, box.y + 5 * u, '#b8b8c8', u);
+    const nameX = box.x + 5 * u + ctx.measureText(label).width;
+    // Nothing typed yet: the current name shows grey, and typing replaces it.
+    shadowText(ctx, typed || pin.name, nameX, box.y + 5 * u, typed ? '#fff' : '#8a8a8a', u);
+    if (Math.floor(performance.now() / 500) % 2 === 0) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(Math.round(nameX + ctx.measureText(typed).width), box.y + 4 * u, u, 7 * u);
+    }
+    const labels: Record<EditorButton, string> = { track: tracked ? 'Tracked ✓' : 'Track on HUD', delete: 'Delete', done: 'Done' };
+    ctx.font = `${5 * u}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const { id, rect } of buttons) {
+      ctx.fillStyle = id === 'track' && tracked ? 'rgba(90, 209, 230, 0.45)' : id === 'delete' ? 'rgba(208, 96, 60, 0.45)' : 'rgba(255, 255, 255, 0.15)';
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      shadowText(ctx, labels[id], rect.x + rect.w / 2, rect.y + rect.h / 2 + u / 2, '#fff', u);
+    }
+    ctx.textBaseline = 'top';
+    shadowText(ctx, pinEditorHelp(), box.x + box.w / 2, box.y + 30 * u, '#8a8a9a', u);
   }
 
   private pxPerTile(u: number): number {
@@ -162,6 +395,44 @@ function marker(ctx: CanvasRenderingContext2D, x: number, y: number, size: numbe
   ctx.fillRect(left, top, s, s);
 }
 
+/** A round pin head centred on (x, y) screen px, radius r, with a dark outline. */
+function pinHead(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, u: number): void {
+  const edge = Math.max(1, Math.round(u / 2));
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(Math.round(x), Math.round(y), r + edge, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(Math.round(x), Math.round(y), r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/**
+ * A map pin standing on (x, y) screen px (the pinned tile's centre): a stalk with a round head,
+ * and its name beside it. The tracked pin is white; the one being edited has a yellow ring.
+ */
+function drawPin(ctx: CanvasRenderingContext2D, x: number, y: number, name: string, tracked: boolean, editing: boolean, u: number): void {
+  const color = tracked ? TRACKED_PIN_COLOR : PIN_COLOR;
+  const headY = y - 4 * u;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(Math.round(x - u), Math.round(headY), 2 * u, 5 * u);
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x - u / 2), Math.round(headY), u, 4 * u);
+  if (editing) {
+    ctx.strokeStyle = '#ffe066';
+    ctx.lineWidth = u;
+    ctx.beginPath();
+    ctx.arc(Math.round(x), Math.round(headY), 5 * u, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  pinHead(ctx, x, headY, 2.5 * u, color, u);
+  ctx.font = `${5 * u}px monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  shadowText(ctx, name, Math.round(x + 5 * u), Math.round(headY), color, u);
+}
+
 function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: number, markers: MapMarkers): void {
   const items: [string, string][] = [
     [PLAYER_COLOR, 'You'],
@@ -170,6 +441,8 @@ function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: num
   ];
   if (markers.bed) items.push([BED_COLOR, 'Bed']);
   if (markers.satchels.length > 0) items.push([SATCHEL_COLOR, 'Satchel']);
+  if (markers.pins.some((_, i) => i !== markers.trackedPin)) items.push([PIN_COLOR, 'Pin']);
+  if (markers.trackedPin !== null) items.push([TRACKED_PIN_COLOR, 'Tracked pin']);
   ctx.font = `${5 * u}px monospace`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
@@ -178,6 +451,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: num
   let x = cx - (widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1)) / 2;
   items.forEach(([color, label], i) => {
     if (color === SATCHEL_COLOR) diamond(ctx, x + 2 * u, y, 4 * u, color, u);
+    else if (color === PIN_COLOR || color === TRACKED_PIN_COLOR) pinHead(ctx, x + 2 * u, y, 2 * u, color, u);
     else marker(ctx, x + 2 * u, y, 3 * u, color, u);
     shadowText(ctx, label, x + 6 * u, y, '#d6d6d6', u);
     x += widths[i] + gap;
@@ -223,6 +497,9 @@ export function drawMinimap(ctx: CanvasRenderingContext2D, image: MapImage, mark
   for (const satchel of markers.satchels) {
     diamond(ctx, x0 + (satchel.tx - left) * u, y0 + (satchel.ty - top) * u, 3 * u, SATCHEL_COLOR, u);
   }
+  markers.pins.forEach((pin, i) => {
+    pinHead(ctx, at(pin.tx, left, x0), at(pin.ty, top, y0), 1.5 * u, i === markers.trackedPin ? TRACKED_PIN_COLOR : PIN_COLOR, u);
+  });
   marker(ctx, x0 + (markers.playerX / TILE_SIZE - left) * u, y0 + (markers.playerY / TILE_SIZE - top) * u, 3 * u, PLAYER_COLOR, u);
   ctx.restore();
 }

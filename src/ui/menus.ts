@@ -9,10 +9,12 @@ import {
   missingIngredients,
   RECIPE_GROUPS,
   RECIPES,
+  STATION_NAMES,
   type Recipe,
   type RecipeGroup,
   type Station,
 } from '../systems/crafting';
+import { goalStatus, nextPickaxe, pickaxeNote, recipeFor } from '../systems/goal';
 import { clickSlotIn, type Inventory, type ItemStack } from '../systems/inventory';
 import { itemDef, type ItemId } from '../systems/items';
 import { DIFFICULTIES, difficultyName, type Difficulty } from '../systems/health';
@@ -20,7 +22,7 @@ import { readBackup } from '../systems/backup';
 import { SAVE_VERSION, type SaveData, type WorldMeta } from '../systems/save';
 import type { PixelScale, Settings } from '../systems/settings';
 import { tileDef } from '../world/tiles';
-import { CONTROLS, keyList, mainKey } from './controls';
+import { CONTROLS, keyList, mainKey, pinRecipeHint, pinRecipeTip } from './controls';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 
 // Inventory + crafting panel (opened with E or Tab, or by right-clicking a chest). Sizes are in
@@ -34,11 +36,17 @@ import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 //   +-----------------------+  | Tools ...                          |
 //   +-----------------------+  |                                    |
 //   | Chest  [Loot][Dep][QS]|  |                                    |
-//   | 2 rows                |  | Near: Workbench, 1 chest           |
+//   | 2 rows                |  |                                    |
+//   +-----------------------+  |                                    |
+//   +-----------------------+  |                                    |
+//   | Next goal     [Unpin] |  |                                    |
+//   | pinned recipe         |  |                                    |
+//   | next pickaxe + ore    |  | Near: Workbench, 1 chest           |
 //   +-----------------------+  +------------------------------------+
 //
-// The chest panel only shows while a chest is open. Recipes sit in two columns, or one long
-// column when that lets everything be drawn bigger (tall, narrow windows).
+// The chest panel only shows while a chest is open (the goal box moves up into its place when
+// it's closed). Recipes sit in two columns, or one long column when that lets everything be
+// drawn bigger (tall, narrow windows).
 
 interface Rect {
   x: number;
@@ -66,6 +74,10 @@ interface Layout {
   recipes: { recipe: Recipe; rect: Rect }[];
   /** Top of the "Near:" line at the bottom of the crafting panel. */
   footerY: number;
+  /** The next-goal box, its Unpin button and its next-pickaxe line (click to pin that pickaxe). */
+  goal: Rect;
+  unpin: Rect;
+  suggestion: Rect;
 }
 
 const COLS = 10;
@@ -85,10 +97,10 @@ const RECIPE_GAP = 4; // between the two recipe columns
 const GROUP_H = 9; // a group's heading above its recipes
 const FOOTER = 9;
 const PANEL_GAP = 8;
+const GOAL_H = PAD * 2 + TITLE + 18 + 16; // title, the pinned recipe (icon and two lines), the next pickaxe (two lines)
 /** Monospace text at 5 units is about this many units per character (sizes the buttons). */
 const CHAR_W = 3;
 
-const STATION_NAMES: Record<Station, string> = { workbench: 'Workbench', furnace: 'Furnace' };
 const GROUP_NAMES: Record<RecipeGroup, string> = { blocks: 'Blocks', tools: 'Tools', materials: 'Materials', stations: 'Stations' };
 const BUTTONS: { id: ChestButton; label: string; tip: string[] }[] = [
   { id: 'loot', label: 'Loot all', tip: ['Take everything out of the chest.'] },
@@ -108,6 +120,8 @@ const WHITE = '#fff';
 const LIGHT = '#d6d6d6';
 const GREY = '#8a8a8a';
 const RED = '#ff6b6b';
+const GREEN = '#a8f0b0';
+const PIN = '#ffe066';
 
 /** Height of a recipe list (headings plus rows) with `cols` recipes per row. */
 function listHeight(recipes: readonly Recipe[], cols: number): number {
@@ -119,14 +133,14 @@ function listHeight(recipes: readonly Recipe[], cols: number): number {
   return h;
 }
 
-function computeLayout(width: number, height: number, scale: number, shown: readonly Recipe[]): Layout {
+function computeLayout(width: number, height: number, scale: number, shown: readonly Recipe[], chestOpen: boolean): Layout {
   const gridW = COLS * SLOT + (COLS - 1) * SLOT_GAP;
   const gridH = ROWS * SLOT + (ROWS - 1) * SLOT_GAP + HOTBAR_GAP;
   const chestGridH = CHEST_ROWS * SLOT + (CHEST_ROWS - 1) * SLOT_GAP;
   const leftW = gridW + PAD * 2;
   const invH = PAD * 2 + INV_HEADER + gridH;
   const chestH = PAD * 2 + CHEST_HEADER + chestGridH;
-  const leftH = invH + PANEL_GAP + chestH;
+  const leftH = invH + PANEL_GAP + chestH + PANEL_GAP + GOAL_H;
 
   // Sized for the full recipe list, so filtering doesn't move anything.
   const fit = (cols: number) => {
@@ -167,6 +181,9 @@ function computeLayout(width: number, height: number, scale: number, shown: read
     bx -= BUTTON_GAP;
   }
 
+  const goalY = chestOpen ? chestY + chestH + PANEL_GAP : chestY;
+  const unpinW = 'Unpin'.length * CHAR_W + 6;
+
   const craftX = leftW + PANEL_GAP;
   const groups: Layout['groups'] = [];
   const recipes: Layout['recipes'] = [];
@@ -197,6 +214,9 @@ function computeLayout(width: number, height: number, scale: number, shown: read
     groups,
     recipes,
     footerY: y0 + (craftH - PAD - FOOTER + 3) * u,
+    goal: at(0, goalY, leftW, GOAL_H),
+    unpin: at(leftW - PAD - unpinW, goalY + PAD - 1, unpinW, BUTTON_H),
+    suggestion: at(PAD, goalY + PAD + TITLE + 18, leftW - PAD * 2, 8),
   };
 }
 
@@ -213,6 +233,10 @@ export interface PanelState {
   stationRange: number;
   /** The chest opened with right-click, if any. */
   chest: Chest | null;
+  /** The pinned recipe (the next goal), by the item it makes, or null. */
+  pinned: ItemId | null;
+  /** The best pickaxe tier carried, for the next-pickaxe suggestion. */
+  pickaxeTier: number;
 }
 
 /** What a left click in the panel did. */
@@ -221,7 +245,9 @@ export type PanelClick =
   | { kind: 'crafted'; recipe: Recipe; batches: number }
   | { kind: 'cantCraft' }
   | { kind: 'button'; moved: number }
-  | { kind: 'filter' };
+  | { kind: 'filter' }
+  /** Pin a recipe as the goal (by the item it makes), or unpin it (null). */
+  | { kind: 'pin'; item: ItemId | null };
 
 export class InventoryPanel {
   open = false;
@@ -232,7 +258,17 @@ export class InventoryPanel {
   covers(canvas: HTMLCanvasElement, scale: number, mx: number, my: number, state: PanelState): boolean {
     if (!this.open) return false;
     const layout = this.layout(canvas.width, canvas.height, scale, state);
-    return hit(layout.inventory, mx, my) || hit(layout.crafting, mx, my) || (state.chest !== null && hit(layout.chest, mx, my));
+    return (
+      hit(layout.inventory, mx, my) || hit(layout.crafting, mx, my) || hit(layout.goal, mx, my) || (state.chest !== null && hit(layout.chest, mx, my))
+    );
+  }
+
+  /** The pin button (right-click) at canvas pixel (mx, my): the recipe there, pinned, or unpinned if it already was. */
+  pinClick(canvas: HTMLCanvasElement, scale: number, mx: number, my: number, state: PanelState): PanelClick | null {
+    const layout = this.layout(canvas.width, canvas.height, scale, state);
+    const row = layout.recipes.find((r) => hit(r.rect, mx, my));
+    if (!row) return null;
+    return { kind: 'pin', item: state.pinned === row.recipe.output ? null : row.recipe.output };
   }
 
   /** Left click at canvas pixel (mx, my) while the panel is open. Null if it missed everything. */
@@ -268,6 +304,9 @@ export class InventoryPanel {
       this.craftableOnly = !this.craftableOnly;
       return { kind: 'filter' };
     }
+    if (state.pinned && hit(layout.unpin, mx, my)) return { kind: 'pin', item: null };
+    const next = nextPickaxe(state.pickaxeTier);
+    if (next && hit(layout.suggestion, mx, my)) return { kind: 'pin', item: next.recipe.output };
     const row = layout.recipes.find((r) => hit(r.rect, mx, my));
     if (!row) return null;
     const batches = craftTimes(inventory, row.recipe, state.stations, state.chests, shift ? CRAFT_MANY : 1);
@@ -334,6 +373,8 @@ export class InventoryPanel {
       if (over) tip = recipeTip(recipe, state);
       drawRecipe(ctx, itemAtlas, rect, u, recipe, state, over);
     }
+    const goalTip = drawGoalBox(ctx, itemAtlas, layout, state, mx, my);
+    if (goalTip) tip = goalTip;
     const near = [...[...state.stations].map((s) => STATION_NAMES[s])];
     if (state.chests.length > 0) near.push(`${state.chests.length} chest${state.chests.length > 1 ? 's' : ''}`);
     ctx.font = `${5 * u}px monospace`;
@@ -348,7 +389,7 @@ export class InventoryPanel {
 
   private layout(width: number, height: number, scale: number, state: PanelState): Layout {
     const shown = this.craftableOnly ? RECIPES.filter((r) => canCraft(state.inventory, r, state.stations, state.chests)) : RECIPES;
-    return computeLayout(width, height, scale, shown);
+    return computeLayout(width, height, scale, shown, state.chest !== null);
   }
 }
 
@@ -404,6 +445,77 @@ function drawTrashCan(ctx: CanvasRenderingContext2D, r: Rect, u: number): void {
   at(11, 9, 1, 6);
 }
 
+/**
+ * The next-goal box: the pinned recipe with how many of each ingredient there are (carried plus
+ * nearby chests) and its station, then the next pickaxe to aim for and where its ore is found.
+ * Returns a tooltip if the mouse is over its Unpin button or the next-pickaxe line.
+ */
+function drawGoalBox(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement, layout: Layout, state: PanelState, mx: number, my: number): TipLine[] | null {
+  const { u, goal } = layout;
+  let tip: TipLine[] | null = null;
+  drawPanel(ctx, goal, u);
+  panelTitle(ctx, 'Next goal', goal, u);
+  const left = goal.x + PAD * u;
+  let y = goal.y + (PAD + TITLE) * u;
+  const pinned = state.pinned ? recipeFor(state.pinned) : null;
+  if (pinned) {
+    const overUnpin = hit(layout.unpin, mx, my);
+    drawButton(ctx, layout.unpin, 'Unpin', overUnpin, u);
+    if (overUnpin) tip = [{ text: 'Unpin', color: WHITE, big: true }, { text: 'Clear the goal from the HUD.', color: LIGHT }];
+    const status = goalStatus(pinned, state.inventory, state.stations, state.chests);
+    drawStack(ctx, itemAtlas, { item: pinned.output, count: pinned.count }, left, y, 16, u);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = `${6 * u}px monospace`;
+    const station = pinned.station ? ` @ ${STATION_NAMES[pinned.station]}` : ' (by hand)';
+    shadowText(ctx, `${itemDef(pinned.output).name}${station}`, left + 19 * u, y + u, status.ready ? GREEN : WHITE, u);
+    const pieces: [string, string][] = [];
+    status.ingredients.forEach(({ item, need, have }, i) => {
+      if (i > 0) pieces.push(['  ', GREY]);
+      pieces.push([`${itemDef(item).name} ${Math.min(have, need)}/${need}`, have >= need ? LIGHT : RED]);
+    });
+    if (status.ready) pieces.push(['  ready to craft', GREEN]);
+    else if (!status.stationNear) pieces.push([`  no ${STATION_NAMES[pinned.station!].toLowerCase()} near`, RED]);
+    ctx.font = `${5 * u}px monospace`;
+    let x = left + 19 * u;
+    for (const [text, color] of pieces) {
+      shadowText(ctx, text, x, y + 9 * u, color, u);
+      x += ctx.measureText(text).width;
+    }
+  } else {
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = `${5 * u}px monospace`;
+    shadowText(ctx, 'Nothing pinned.', left, y + 2 * u, GREY, u);
+    shadowText(ctx, pinRecipeHint(), left, y + 9 * u, GREY, u);
+  }
+  y += 18 * u;
+  const next = nextPickaxe(state.pickaxeTier);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = `${5 * u}px monospace`;
+  if (next) {
+    const over = hit(layout.suggestion, mx, my);
+    const isPinned = state.pinned === next.recipe.output;
+    if (over) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.fillRect(layout.suggestion.x - u, layout.suggestion.y, layout.suggestion.w + 2 * u, layout.suggestion.h);
+    }
+    shadowText(ctx, `Next pickaxe: ${itemDef(next.recipe.output).name}${isPinned ? ' (pinned)' : ''}`, left, y + u, over ? WHITE : PIN, u);
+    shadowText(ctx, pickaxeNote(next), left, y + 9 * u, LIGHT, u);
+    if (over) {
+      tip = [
+        { text: itemDef(next.recipe.output).name, color: WHITE, big: true },
+        { text: 'The next pickaxe up from your best one.', color: LIGHT },
+        { text: isPinned ? 'It is your goal.' : 'Click to pin it as your goal.', color: GREY },
+      ];
+    }
+  } else {
+    shadowText(ctx, 'You have the best pickaxe there is.', left, y + u, LIGHT, u);
+  }
+  return tip;
+}
+
 /** One recipe row: bright if craftable; otherwise grey with what's missing in red. */
 function drawRecipe(
   ctx: CanvasRenderingContext2D,
@@ -418,6 +530,15 @@ function drawRecipe(
   const ok = canCraft(inventory, recipe, stations, chests);
   ctx.fillStyle = ok ? (hovered ? 'rgba(255, 255, 255, 0.24)' : 'rgba(255, 255, 255, 0.1)') : hovered ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.3)';
   ctx.fillRect(r.x, r.y, r.w, r.h);
+  if (state.pinned === recipe.output) {
+    // The pinned recipe: a yellow frame and a little pin in its top-right corner.
+    ctx.strokeStyle = PIN;
+    ctx.lineWidth = u;
+    ctx.strokeRect(r.x + u / 2, r.y + u / 2, r.w - u, r.h - u);
+    ctx.fillStyle = PIN;
+    ctx.fillRect(r.x + r.w - 6 * u, r.y + 2 * u, 3 * u, 3 * u);
+    ctx.fillRect(r.x + r.w - 5 * u, r.y + 5 * u, u, 2 * u);
+  }
   ctx.globalAlpha = ok ? 1 : 0.55;
   drawStack(ctx, itemAtlas, { item: recipe.output, count: recipe.count }, r.x + u, r.y + u, 16, u);
   ctx.globalAlpha = 1;
@@ -510,6 +631,7 @@ function recipeTip(recipe: Recipe, state: PanelState): TipLine[] {
     lines.push({ text: `${count} ${itemDef(item).name}: ${have}`, color: carried + stored >= count ? LIGHT : RED });
   }
   lines.push({ text: `Click: craft 1   ${mainKey('modifier')}-click: craft ${CRAFT_MANY}`, color: GREY });
+  lines.push({ text: pinRecipeTip(state.pinned === recipe.output), color: GREY });
   return lines;
 }
 
