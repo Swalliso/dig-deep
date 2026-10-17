@@ -1,25 +1,30 @@
 # Dig Deep – Roadmap after the MVP
 
-All 7 phases of `SPEC.md` are done and live. Phases 8–10 are implemented on `develop`;
-**Arc 2, starting with Phase 11a, is the current focus**. This plan continues the same way: one
-phase at a time, each phase ends playable, and each has acceptance criteria to check before
-moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
+All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13 is on
+`develop` (the dev site). **Arc 3 is next**, starting with a short guidance slice and then Phase
+14a. This plan continues the same way: one phase at a time, each phase ends playable, and each
+has acceptance criteria to check before moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
 targets; release status is separate from implementation status.
 
 Each phase is built on its own feature branch off `develop`. Finished phases go to the dev site
 first and reach the live site only when a batch is released. See "Branches and deploys" in
 `README.md`.
 
-## Where the game stands after Phase 10
+## Where the game stands after Phase 13
 
 - Five pickaxe tiers, procedural sound, mining feedback, torch lighting and tree felling.
 - Chests, crafting from nearby storage, tooltips and drag-building.
 - Ladders, platforms, doors, an explored map and minimap, and multiple named sandbox worlds.
-- Worlds are each 1000×600 tiles. No health, hazards or explicit progression goals yet.
+- Health, fall damage, beds, satchels on death, and Cozy or Normal worlds.
+- Gravel that caves in, and beams, crossbeams and platforms to hold it up.
+- Dread in the dark, the lantern and flares; only established light heals.
+- Worlds are each 1000×600 tiles.
 
-The loop runs out at the gold pickaxe, around 250–480 m down, with nothing new beyond it.
-Ladders provide a way back up; deeper expeditions still need stronger reasons to prepare,
-explore side passages, build safe routes and return home.
+Arc 2 added three ways to get hurt, but the rewards haven't grown with it. Ore only feeds the
+pickaxes (plus 2 iron bars for the lantern), gold's only use is the gold pickaxe, and there's
+still no goal past it, around 250–480 m down. Trees don't regrow, while torches, beams and planks
+all use wood. Arc 3 has to land its rewards (materials with uses, a way home, gear, discoveries
+and a goal at the bottom) as early as its new rules.
 
 ## Direction
 
@@ -36,7 +41,9 @@ explore side passages, build safe routes and return home.
   on minute to minute, strata are the floors, and a lift is the exit.
 - **The expedition loop**: prepare → explore → take a calculated risk → gain something useful
   → return and improve the next trip. Each new hazard needs a readable cue, an affordable
-  countermeasure, a chance to react and a reward worth the effort.
+  countermeasure, a chance to react and a reward worth the effort. Where it fits, the
+  countermeasure is something you build (supports for gravel, light for the dark, insulation for
+  heat), so building underground keeps paying off.
 - **Keep complexity useful.** Introduce one major rule at a time. Protected routes and bases
   should visibly repay the effort of building them. Sandbox goals stay optional; expedition
   deadlines belong to Descent. Add upkeep or extra resource meters only when a simpler
@@ -84,8 +91,8 @@ phase that needs it, and that phase says so.
 | Input actions (`src/input.ts`) | 11a | Logical actions (move left, jump, climb, map, quick stack…) bound to keys in one table, instead of key codes spread through `game.ts`. The F3 help, the Controls screen, tooltips and hints read their key names from it, so the remapping screen in the companion work only edits the table. |
 | PlayerStats (`src/systems/stats.ts`) | 11b | Player stats computed from the base values in config, plus equipment and boons. Replaces direct reads of `REACH`, `STATION_RANGE`, `DROP_PULL_RANGE` and the run/jump constants. 11b uses it for max health and safe fall height. |
 | Active tile updates (`src/world/tileUpdates.ts`) | 12 | A queue of tiles to recheck, fed by neighbours of changed tiles and worked through with a per-step budget, like the lighting's dirty box. Runs falling blocks, torch burnout and liquids. Never touches the whole world in one frame. |
-| Generation profiles | 12, extended in 14 | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14 adds strata, and Descent floors are smaller profiles. |
-| World compatibility | 12, reviewed at 14 and 16 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. |
+| Generation profiles | 12, extended in 14a | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14a adds strata, and Descent floors are smaller profiles. |
+| World compatibility | 12, reviewed at 14a and 17 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. |
 | Run rules and random streams | 18 | Record the seed, rules/generation version and eligible content pools. Derive separate generation, loot and boon streams from the seed and stable floor identifiers; keep cosmetics independent. Persist the state needed to resume without rerolling content. |
 
 Notes:
@@ -93,6 +100,9 @@ Notes:
 - Tile ids are stored as `Uint8`; keep existing ids stable when adding new tiles.
 - `PlayerControls.climb` already powers ladders and debug fly mode (W/S or ↑/↓; jump flies up).
 - Every phase adds debug shortcuts in `src/debug.ts` for anything slow to reach by playing.
+- `game.ts` runs each step's world systems (cave-ins, dread, drops) itself. The first phase that
+  adds many things updating every step (creatures, machines) moves those systems into their own
+  update list first, and says so.
 
 ## Arc 1 – Feel and quality of life (no new danger)
 
@@ -157,20 +167,21 @@ Notes:
 
 ### Companion work: guidance and polish
 
-The table is planned companion work, with target windows for small slices; it does not require
-every row to ship with Phase 11a or 11b. Finish recovery, pause and save requirements first. Larger
-polish items such as remapping, UI scaling and animation may move without blocking a phase.
-Readable hazard cues and persistence are required when their feature ships, and crafting
-navigation must precede a large recipe expansion. These additions do not renumber phases.
+The table is planned companion work, with target windows for small slices. Most rows aimed at
+Phases 11–13 slipped: the pinned recipe and map pins now ship together as the guidance slice
+before Phase 14a (see Arc 3), and the rest are retargeted below. Larger polish items such as
+remapping, UI scaling and animation may move without blocking a phase. Readable hazard cues and
+persistence are required when their feature ships, and crafting navigation must precede a large
+recipe expansion. These additions do not renumber phases.
 
 | Enhancement | Target | Scope and acceptance |
 | --- | --- | --- |
-| Optional next goal | 11–12 | Pin one recipe, show ingredient counts and the required station, and suggest the next pickaxe upgrade. Counts include nearby crafting storage. Add brief ore-depth guidance; no separate quest system. The pin survives reload and can be cleared. |
-| Introduction prompts | 11–13 | Short, dismissible hints for the first crafting station, bed, dangerous fall, unstable ceiling and dark cave. Teach each hazard in a forgiving encounter; hints can be reopened from help. |
-| Player map pins | 12 | A few named pins for veins, alternate routes and places to revisit. Save them per world, respect fog of war, and allow one selected pin to show direction and distance without forcing the map open. |
-| Action feedback | 11–13 | Visible mining swing, a held lantern when it arrives, hovered tile names, and specific tier hints such as "Requires copper pickaxe". Invalid building explains the reason; support previews arrive in Phase 12. |
-| Accessible controls and display | 11–13 | Remappable actions (a screen over 11a's action table) with reset-to-default and conflict feedback; independent UI/text scaling; reduced-flash setting (in 11b); visual equivalents for sound warnings. Persist preferences per device and update displayed key hints. Introduce visual hazard cues with each hazard. |
-| Crafting grows with content | By 15 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. |
+| Optional next goal | Guidance slice | Pin one recipe, show ingredient counts and the required station, and suggest the next pickaxe upgrade. Counts include nearby crafting storage. Add brief ore-depth guidance; no separate quest system. The pin survives reload and can be cleared. |
+| Introduction prompts | With each hazard | Short, dismissible hints for the first crafting station, bed, dangerous fall, unstable ceiling and dark cave. Teach each hazard in a forgiving encounter; hints can be reopened from help. Shipped so far: the ladder-grab hint (11b), the loose-gravel and support hints (12) and the dread hint (13). Still to do: station and bed hints, and reopening hints from help. |
+| Player map pins | Guidance slice | A few named pins for veins, alternate routes and places to revisit. Save them per world, respect fog of war, and allow one selected pin to show direction and distance without forcing the map open. |
+| Action feedback | During Arc 3 (flexible) | Visible mining swing, hovered tile names, and specific tier hints such as "Requires copper pickaxe" (today's hint just says "Need better pickaxe"). Invalid building explains the reason. Shipped: support previews (12) and the lantern drawn in the player's hand (13). |
+| Accessible controls and display | During Arc 3 (flexible) | Remappable actions (a screen over 11a's action table) with reset-to-default and conflict feedback; independent UI/text scaling; visual equivalents for sound warnings. Persist preferences per device and update displayed key hints. Introduce visual hazard cues with each hazard. Shipped: the reduced-flash setting (11b). |
+| Crafting grows with content | By 16 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. |
 
 ### Phase 11a: Session foundations and save safety
 
@@ -303,7 +314,7 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
   - The light map gets moving light sources, each relit in its own small patch when it moves
     to another tile (or a tile in its patch changes), kept apart from the established light.
   - A **lantern** (2 iron bars + a torch, at a workbench) lights a 6-tile radius while it's the
-    selected item. A helmet version comes in Phase 15.
+    selected item. A helmet version comes in Phase 16.
 - **Light design gate (resolved after the prototype)**: carried light (the lantern, flares,
   later the helmet) stops dread from rising and drains it, but health only regenerates in
   established light: the sky, torches and glowing tiles. Travel is safe with a lantern, while
@@ -311,7 +322,7 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
   a lit route). Holding the lantern costs nothing while mining, since mining uses the best
   carried pickaxe; that's intended under these rules. No fuel or other meter for now: a later
   balance pass may make things harder (for example lantern fuel refilled with coal or wood),
-  see "Optional enhancements". The helmet (Phase 15) and the Descent starting lantern follow
+  see "Optional enhancements". The helmet (Phase 16) and the Descent starting lantern follow
   the same rule: carried light, no healing.
 - **Flare**: thrown at the cursor (left mouse with one in hand), sticks to the first solid tile
   it hits (falling again if that tile is mined), and lights an 11-tile radius for 30 s, dimming
@@ -319,7 +330,7 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 - **Natural light**: glowing mushrooms (glowshrooms) and glow crystals exist as tiles that are
   established light sources and can be mined and placed. Each tints the lit tiles around it
   with its own soft, slowly pulsing color (teal, violet); the color is only drawn, so the light
-  rules don't change. Pulled forward from Phase 14 to keep that phase smaller. Strata place them in worlds (Phase 14),
+  rules don't change. Pulled forward from Phase 14 to keep that phase smaller. Strata place them in worlds (Phase 14a),
   so not every cave is pitch black; until then they come from the debug kit.
 - **Readable safety**: the HUD line under the dread meter says whether the player is safe,
   accumulating dread or recovering, and why (too dark, lantern light that doesn't heal, lit
@@ -333,43 +344,134 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
       glowing tiles or the sky, so a lit route home or a lit base is where you recover.
 - [ ] A muted, reduced-effects playtest can identify darkness danger and reach safety in time.
 
-## Arc 3 – The deep (strata, gear, structures, lifts)
+## Arc 3 – The deep (strata, lifts, gear, structures)
 
-### Phase 14: Strata
+Reordered after the Phase 13 review: a short guidance slice comes first, Strata is split in two,
+and lifts and the camp come straight after it, since Arc 2 made the trip home matter. Rewards
+(materials with uses, a way home, gear, discoveries and the Heart of the Deep) should land as
+early as the new rules.
+
+### Guidance slice (before Phase 14a)
+
+Companion work, not a numbered phase, on its own `feature/guidance-slice` branch. Arc 3 adds new
+ores, deeper strata and many recipes, so players first get help finding their next goal and
+getting back to places, and placing torches gets quicker now that dread makes them a constant.
+
+- **Pinned recipe (next goal)**: pin one recipe from the crafting panel. The HUD shows its
+  ingredient counts (including nearby crafting storage) and the station it needs, and the panel
+  suggests the next pickaxe upgrade with a short note on where its ore is found. No quest
+  system. The pin can be cleared.
+- **Player map pins**: a few named pins placed from the full map, for veins, alternate routes
+  and places to revisit. They respect fog of war. One selected pin can show its direction and
+  distance on the HUD without the map open.
+- **Quick torch**: one action places a carried torch at the cursor (or near the player when the
+  cursor spot can't take one) without changing the selected item. It's an action in the table,
+  so its key hints, and later remapping, follow. (Promoted from "Quick light action".)
+- Saves: the pinned recipe and map pins are saved per world as optional fields in
+  `savedState()`, so no `SAVE_VERSION` bump.
+
+- [ ] A pinned recipe shows what's missing and where to craft it, and still does after a reload.
+- [ ] Map pins can be added, named, selected and removed; the selected pin's direction shows
+      without the map open, and pins survive a reload.
+- [ ] Quick torch places a torch without changing the selected item, and says why when it can't
+      (no torch, nowhere to put it).
+
+### Phase 14a: Strata – the world
+
+Phase 14 is split in two, like Phase 11, so each half stays small enough to test by hand: 14a
+builds the strata and what you find in them, and 14b adds each stratum's rule. Both keep the
+number 14.
 
 - Extends the generation profiles (from Phase 12) with strata in a new profile, redoes the ore
   depth bands per stratum, and applies the world-compatibility policy: worlds made before keep
   their own profile.
-- Strata at Sandbox depths (the world bottom is about 477 m):
+- Strata at Sandbox depths (the world bottom is about 477 m). Their rules arrive in 14b:
 
-| Stratum | Depth | Ores | Rule |
+| Stratum | Depth | Ores | Rule (14b) |
 | --- | --- | --- | --- |
 | Topsoil | 0–15 m | – | Safe |
-| Stone Caverns | 15–110 m | Coal, copper | Gravel pockets; cave-ins start here |
+| Stone Caverns | 15–110 m | Coal, copper | Gravel pockets; cave-ins start here (Phase 12) |
 | Fungal Hollows | 110–230 m | Iron | Glowshrooms are the main light; damp air shrinks torch radius |
 | Geode Depths | 230–350 m (deepstone) | Gold, gems | Huge glowing crystal caverns; floatstone lowers gravity in open caverns |
-| Magma Layer | 350 m–bedrock | Emberite (tier 5) | Heat builds away from cooled areas; lava pools that don't flow (they hurt and give light) |
+| Magma Layer | 350 m–bedrock | Emberite (tier 5) | Hot zones near lava and hot rock; lava pools that don't flow (they hurt and give light) |
 
 - Each stratum gets its own backdrop tint and parallax background set (layers like the
-  surface's `SURFACE_BACKGROUND`, built by `render/parallax.ts`), and a banner when you enter it
-  ("Fungal Hollows — 110 m").
-  F3 shows the current stratum.
+  surface's `SURFACE_BACKGROUND`, built by `render/parallax.ts`), a banner when you enter it
+  ("Fungal Hollows — 110 m") and a simple ambient sound (a drone, drips, a low rumble) made with
+  the existing synth. F3 shows the current stratum. Ambient music stays in Arc 5.
+- Glowshrooms and glow crystals (Phase 13's tiles) grow in their strata, so not every cave is
+  pitch black.
 - A tier 5 pickaxe (Emberite), so gold no longer mines everything.
+- **Every material has a use when it ships**: each stratum's stone gives a building block
+  (bricks or similar), gold gets a use beyond its pickaxe, and gems get an interim use until
+  Phase 16's accessories need them. Mining into a new stratum should always pay something.
+- **Renewable wood** (promoted from "Renewable supplies"): trees don't regrow, and torches, beams
+  and planks all use wood, so long-lived worlds run out. Add saplings (replanting where a tree
+  was felled), a wood substitute from the Fungal Hollows (mushroom stems), or both. Keep growth
+  simple, with no farming system.
 - **Progression checks**: every new ore can be reached and mined using the preceding tier.
-  Each stratum introduces its rule in a forgiving area before combining it with earlier
-  hazards. Magma has reachable cooled refuges and a usable survival route before the Phase 15
-  heat ward exists; no accessory is a hidden prerequisite for entering its own crafting layer.
-- Optional capstone: a sealed **Heart of the Deep** chamber above the bedrock. Opening it is the
-  Sandbox's ending.
 - Debug: T teleports to the top of the next stratum.
 
-- [ ] Each stratum looks and plays differently at its depth, and the same seed gives the same
-  world.
+- [ ] Each stratum looks and sounds different at its depth, and the same seed gives the same
+      world.
 - [ ] Generation stays under 2 s, and the generation tests cover strata bands and ore placement.
-- [ ] Fresh-world progression reaches every upgrade without circular tool requirements. Each
-      stratum has a learnable first encounter and a practical route back to established safety.
+- [ ] Fresh-world progression reaches every upgrade without circular tool requirements, and every
+      new material has a use.
+- [ ] A world can keep making torches and planks after its original trees are gone.
 
-### Phase 15: Gear and tools
+### Phase 14b: Strata – the rules
+
+- Each stratum's rule is introduced in a forgiving area before it's combined with earlier
+  hazards. Each has a readable cue and, where it fits, a building answer:
+  - **Fungal Hollows – damp**: torches light a smaller radius. Glowshrooms aren't affected and can
+    be mined and replanted, so a lit route through the Hollows is grown rather than torched.
+  - **Geode Depths – floatstone**: lower gravity in open crystal caverns. It ties to none of the
+    hooks, so it's the first cut if this phase runs long.
+  - **Magma Layer – heat**: tiles near lava and hot rock are hot zones. Staying in one hurts after a
+    short grace, shown in the safety line under the dread meter: heat is a zone, not a new meter.
+    Insulating blocks (a crafted brick) keep heat out, so a sealed room is a cool refuge. Lava
+    pools don't flow (flowing liquids are Arc 5); they hurt on contact and give light.
+- **Heart of the Deep**: a sealed chamber above the bedrock. Opening it is the Sandbox's goal,
+  with a completion moment, and building carries on afterwards. It's required in this phase,
+  though players can ignore it (Sandbox goals stay optional).
+- Magma has reachable cool refuges and a usable survival route before Phase 16's heat ward
+  exists; no accessory is a hidden prerequisite for entering its own crafting layer.
+- Cozy worlds: heat and lava don't hurt, and damp only changes light.
+- Debug: a key that jumps to the Heart of the Deep.
+
+- [ ] Each rule warns before it can hurt (with audio, shake and flashes off), and its stratum
+      offers a countermeasure.
+- [ ] Each stratum has a learnable first encounter and a practical route back to established
+      safety.
+- [ ] The Heart of the Deep can be reached and opened in a fresh Normal world without debug keys.
+
+### Phase 15: Lifts and the camp
+
+Moved ahead of gear and structures: a death deep down now means a long climb back to the
+satchel, and lifts and the camp are what make the deeper strata practical.
+
+- **Lifts**:
+  - **Lift rail** (iron) is placed as a vertical column, with **lift stops** beside it.
+  - A **lift cage** rides the rail. Right-click a stop to call the cage or to pick a stop to
+    ride to.
+  - While riding, the player is attached to the cage, so no moving-platform physics are needed.
+  - It speeds up to about 50 tiles/s (ladders climb at about 9), so a long ride is clearly
+    quicker than climbing. The rail column becomes the spine of your base.
+- **Camp kit**: one placeable 2×2 object that counts as a workbench, a furnace and a bed. Break
+  it to pack it up and set it up again deeper down. Keep it one object you can build around:
+  Descent may use it as the base you defend (see "Ideas to brainstorm").
+- No teleporting home. The homing flare from the first draft was cut, since it would bypass
+  the routes and lifts this phase makes worth building.
+- Lift stops and the camp show on the map.
+- Name stops, show their depths and indicate an obstructed or disconnected rail before a trip.
+  Camp relocation clearly confirms the new respawn point.
+
+- [ ] Can build a 300 m lift and ride it both ways.
+- [ ] The camp crafts like both stations and sets the respawn point.
+- [ ] Save/reload during travel or camp relocation leaves the player at a valid location with
+      one consistent camp and respawn point. The return route saves meaningful expedition time.
+
+### Phase 16: Gear and tools
 
 - **Accessories**: 4 accessory slots in the inventory panel, wired into PlayerStats.
 
@@ -381,14 +483,14 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 | Long-handled grip | Reach +1.5 |
 | Spring boots | Higher jump |
 | Padded boots | Safe fall height +8 |
-| Heat ward | Slows the Magma Layer's heat meter |
+| Heat ward | Hot zones hurt half as often |
 | Climbing claws | Wall slide and cling |
 
 - **Tools**:
   - **Bomb**: a 3×3 blast. It follows pickaxe tier rules, never breaks bedrock, and hurts you.
   - **Rope coil**: throw it down a shaft and it unrolls a 20-tile rope ladder.
   - **Drill**: tier 5+. Mines continuously and fast, burning coal as fuel.
-- Gems from the Geode Depths go into accessory recipes.
+- Gems from the Geode Depths go into accessory recipes (alongside their interim use from 14a).
 - Show equipment effects and tradeoffs in the inventory, including the resulting stat values.
   Avoid mandatory accessories that consume a slot just to make basic exploration viable.
 - Show drill fuel and rope length before use. Expand crafting navigation from the companion
@@ -398,7 +500,7 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 - [ ] Equipment choices are understandable without F3; removing gear never deletes inventory
       overflow or leaves the player trapped by an unexplained change in movement or reach.
 
-### Phase 16: Structures and loot
+### Phase 17: Structures and loot
 
 - Seeded structures placed per stratum:
   - **Abandoned mineshafts**: plank corridors with beams, ladders and a chest.
@@ -419,27 +521,6 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 - [ ] Structures and their chests survive saving and reloading.
 - [ ] A normal expedition can discover and benefit from a structure without a debug teleport;
       collected pages and discovered markers survive reload.
-
-### Phase 17: Lifts and the camp
-
-- **Lifts**:
-  - **Lift rail** (iron) is placed as a vertical column, with **lift stops** beside it.
-  - A **lift cage** rides the rail. Right-click a stop to call the cage or to pick a stop to
-    ride to.
-  - While riding, the player is attached to the cage, so no moving-platform physics are needed.
-  - About 20 tiles/s. The rail column becomes the spine of your base.
-- **Camp kit**: one placeable 2×2 object that counts as a workbench, a furnace and a bed. Break
-  it to pack it up and set it up again deeper down.
-- **Homing flare** (consumable): teleports you to your camp.
-- Lift stops and the camp show on the map.
-- Name stops, show their depths and indicate an obstructed or disconnected rail before a trip.
-  Camp relocation clearly confirms the new respawn point. A failed or blocked homing-flare
-  destination does not consume the flare or place the player inside terrain.
-
-- [ ] Can build a 300 m lift and ride it both ways.
-- [ ] The camp crafts like both stations and sets the respawn point.
-- [ ] Save/reload during travel or camp relocation leaves the player at a valid location with
-      one consistent camp and respawn point. The return route saves meaningful expedition time.
 
 ## Arc 4 – Descent mode (roguelike)
 
@@ -515,9 +596,11 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 
 ### Phase 18: Run skeleton
 
+- Before starting, settle the camp-defense idea in "Ideas to brainstorm". If it's adopted, the
+  pressure prototype below tries a version without creatures first.
 - Mode select on the title screen, and the floor profiles.
-- Use simple arrival/exit gates for the skeleton; use the full lifts if Phase 17 is complete.
-  Start with "reach the exit" as the objective. The starting boon choice waits for Phase 19.
+- Arrive and leave by Phase 15's lifts (simple gates are fine for a first pass). Start with
+  "reach the exit" as the objective. The starting boon choice waits for Phase 19.
   Phase 13's light rules are settled, so the starting lantern is included.
 - Moving between floors, the run summary on death, and a save slot for resuming a run.
 - Establish the floor supply guarantees and versioned run rules. Save floor time, objectives,
@@ -587,8 +670,10 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
   - "Gloomlings" live only in unlit tiles and flee from light.
   - Burrowers chew through tunnels.
   - The player's tools against them are torches and flares.
+  - Descent may need them sooner, as the attackers in the camp-defense idea (see "Ideas to
+    brainstorm").
 - **Extras**:
-  - Procedural ambient music per stratum.
+  - Procedural ambient music per stratum (14a adds a simple ambient sound per stratum).
   - A day/night cycle on the surface.
   - Background walls.
   - Gamepad and touch controls.
@@ -602,14 +687,9 @@ phase with acceptance criteria when playtests show it solves a real problem.
 - **Inventory control**: split stacks, choose an exact craft amount, sort storage and name
   chests. Favorite/lock essential tools and supplies so quick stack, deposit and trash respect
   the player's loadout. Start with the action causing the most sorting friction.
-- **Quick light action**: temporarily select or place a carried torch, then return to the
-  previous selection. Keep this compatible with remapped controls and the final light rules.
-- **Renewable supplies**: replantable saplings or a stratum-appropriate wood substitute for
-  long-lived sandbox worlds. Keep growth simple before considering a farming system.
 - **Personal milestones**: optional records for deepest point, first ore discoveries, safe
   routes built and recovered expeditions. Tie them to the journal or cosmetic keepsakes, with
-  no required daily chores. Finding the Heart can show a completion moment and allow continued
-  sandbox building afterward.
+  no required daily chores. (The Heart of the Deep's completion moment is part of 14b.)
 - **Building comfort**: clearer placement ghosts for doors, camp and lift pieces; preview
   invalid footprints and safe dismantling. Consider decorative variants after functional
   underground building feels useful.
@@ -631,24 +711,60 @@ phase with acceptance criteria when playtests show it solves a real problem.
   predict, how often do gravel pockets and rich ceilings appear, and does Cozy (no cave-ins at
   all) still feel right next to dread and later hazards.
 
+### Ideas to brainstorm (not planned)
+
+Bigger ideas from the Phase 13 review. Neither has phases yet: each needs a brainstorm before it
+can become one. They're written down here so the reasoning isn't lost.
+
+- **Camp defense (Dome Keeper-style), Descent first.** Dome Keeper's loop is a visible clock, a
+  home you must get back to, and the push-your-luck question of how far to dig before the wave.
+  Descent already has the clock (tremors), the push-your-luck (looting after the objective as
+  the floor gets worse) and the exit lift; what it lacks is a home to defend. Phase 15's camp
+  could be that home: set up on arrival, walled in, lit and shored up, and you get back inside
+  before the surge. The Sandbox base stays a relaxed home, since expedition deadlines belong to
+  Descent. Defending it could come later as an opt-in, once Descent proves the idea. Open
+  questions:
+  - What does the player do during a wave without weapons? Dome Keeper's defense is action
+    (aiming a laser), and ours risks feeling passive. Thrown flares could be the "weapon".
+  - One clock, not two: the surge should ride the tremor clock rather than add another timer.
+  - What attacks? Creatures of the dark would be the biggest new system (keep them local and
+    rule-based, with no world-wide pathfinding). An environmental "dark tide" that eats light
+    outside a sealed, lit camp is much cheaper.
+  - How do camp upgrades between floors relate to boons?
+
+  Decide before Phase 18. Its pressure prototype is the place to try a version without
+  creatures first.
+- **Automation (Sandbox).** The reference is Sandustry, where every pixel is a material that
+  flows and reacts, moved by conveyors, filters, pumps and lifts in production chains. A full
+  falling-sand simulation would mean a new world engine, so the version that fits Dig Deep is
+  tile-sized, built from pieces that exist or are planned:
+  - gravel that falls (Phase 12) and flowing liquids (Arc 5) as the material physics
+  - dropped items already fall, so chutes are cheap and lifting goods costs (lifts, Phase 15)
+  - auto-drills that mine out finite veins, so exploring and shoring up new veins stays central
+  - something to use up what it produces, such as big Sandbox projects rather than a research
+    tree
+  - machines off-screen catch up on elapsed time rather than updating every step
+
+  Revisit once lifts and liquids exist.
+
 ## Order
 
 Work through the phases in number order, with the companion polish in small slices:
 
-1. Phase 11a: consistent pause behavior, save reliability, backups and the input action table.
-2. Phase 11b: health, falls and safe recovery; start goal clarity.
-3. Phase 12: readable, affordable supports and rewarding hazard encounters, with generation
-   profiles keeping older worlds intact; add map pins.
-4. Phase 13: portable light versus established safety, resolved: carried light holds dread off,
-   only established light heals.
-5. Phases 14–17: distinct strata, understandable equipment choices, useful discoveries and a
-   reliable way home. Expand crafting navigation before the recipe list grows.
-6. Phase 18: validate a complete floor and the pressure loop before expanding boons in 19 and
-   objectives/mutators in 20. Meta progression and standardized dailies follow in 21.
+1. Done: Phases 11a and 11b (pausing, saves, health and recovery), 12 (cave-ins and supports,
+   with generation profiles keeping older worlds intact) and 13 (the dark: carried light holds
+   dread off, only established light heals).
+2. The guidance slice: pinned recipe, map pins and quick torch.
+3. Phases 14a and 14b: distinct strata whose materials all have uses and renewable wood, then
+   each stratum's rule and the Heart of the Deep.
+4. Phases 15–17: a reliable way home first (lifts and the camp), then understandable equipment
+   choices and useful discoveries. Expand crafting navigation before the recipe list grows.
+5. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
+   before expanding boons in 19 and objectives/mutators in 20. Meta progression and
+   standardized dailies follow in 21.
+6. Ideas to brainstorm: camp defense before Phase 18; automation once lifts and liquids exist.
 
-For an early Descent skeleton, Phase 18 needs Phase 11's session/health foundations, Phase 12's
-generation profiles (with Phase 14's strata for the floor themes) plus its own supply
-guarantees and simple gates. Its pressure
-prototype also needs Phase 12's falling blocks. Full darkness uses Phase 13, complete lift/camp
-behavior uses Phase 17, and starting boons arrive in Phase 19. Defer these explicitly when
-building the smaller skeleton; do not assume they already exist.
+Phase 18 builds on Phase 11's session and health foundations, Phase 12's generation profiles
+and falling blocks (its pressure prototype needs them), Phase 13's darkness, Phase 14's strata
+for the floor themes and Phase 15's lifts and camp, plus its own supply guarantees. Starting
+boons arrive in Phase 19; defer them explicitly in the skeleton rather than assume they exist.
