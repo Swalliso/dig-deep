@@ -55,7 +55,8 @@ and pick **Normal** or **Cozy**).
   - **Flares** (a torch and 2 coal make 2, at a workbench): with one in hand, left mouse throws
     it at the cursor. It sticks where it lands and lights about 11 tiles around for 30 s, for
     scouting ahead. Like the lantern's, its light keeps dread away but doesn't heal.
-  - Glowshrooms and glow crystals don't grow in worlds yet (strata will place them); for now
+  - Glowshrooms glow teal and glow crystals violet, tinting the cave around them.
+    Glowshrooms and glow crystals don't grow in worlds yet (strata will place them); for now
     they're only in the debug kit.
 - **Chests** (8 planks at a workbench) hold 20 stacks. Right-click one, or press E near one,
   to open it next to your inventory: **Loot all**, **Deposit all** (your bag, not the hotbar) and **Quick stack**

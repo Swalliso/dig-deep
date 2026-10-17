@@ -197,6 +197,12 @@ export const TORCH_LIGHT = 16; // brightness at a torch's own tile
 // Phase 14; until then they come from the debug kit.
 export const GLOWSHROOM_LIGHT = 10; // 5-tile radius
 export const GLOW_CRYSTAL_LIGHT = 12; // 6-tile radius
+// Glowing tiles also tint the lit tiles around them with their own color (TileDef.glowColor),
+// drawn over the darkness. It's only drawn: the light map, dread and healing ignore color.
+export const GLOW_TINT_RADIUS = 6; // tiles
+export const GLOW_TINT_STRENGTH = 0.45; // how much of the color is added right at the source
+export const GLOW_PULSE = 0.2; // a slow pulse, ± this fraction of the strength (off with Reduced flashes)
+export const GLOW_PULSE_SPEED = 1.3; // radians per second
 export const LIGHT_FALLOFF_AIR = 2; // lost per tile through air and other non-solid tiles (16 / 2 = 8-tile torch radius)
 export const LIGHT_FALLOFF_SOLID = 4; // lost per tile into solid blocks, so lit walls fade into the rock
 // Light also spreads diagonally, costing a bit more (≈ √2 ×), which rounds a torch's glow

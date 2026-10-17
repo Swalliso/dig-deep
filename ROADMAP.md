@@ -317,7 +317,9 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
   it hits (falling again if that tile is mined), and lights an 11-tile radius for 30 s, dimming
   at the end, for scouting. Its light is carried light. Made from a torch and 2 coal (2 flares).
 - **Natural light**: glowing mushrooms (glowshrooms) and glow crystals exist as tiles that are
-  established light sources and can be mined and placed. Strata place them in worlds (Phase 14),
+  established light sources and can be mined and placed. Each tints the lit tiles around it
+  with its own soft, slowly pulsing color (teal, violet); the color is only drawn, so the light
+  rules don't change. Pulled forward from Phase 14 to keep that phase smaller. Strata place them in worlds (Phase 14),
   so not every cave is pitch black; until then they come from the debug kit.
 - **Readable safety**: the HUD line under the dread meter says whether the player is safe,
   accumulating dread or recovering, and why (too dark, lantern light that doesn't heal, lit

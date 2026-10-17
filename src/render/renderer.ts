@@ -2,6 +2,10 @@ import {
   CHUNK_CACHE_LIMIT,
   CHUNK_SIZE,
   DROP_SIZE,
+  GLOW_PULSE,
+  GLOW_PULSE_SPEED,
+  GLOW_TINT_RADIUS,
+  GLOW_TINT_STRENGTH,
   HINT_DURATION,
   LIGHT_MAX,
   PLAYER_WIDTH,
@@ -24,7 +28,7 @@ import type { Hint } from '../systems/mining';
 import type { PixelScale } from '../systems/settings';
 import type { GenProgress } from '../world/generate';
 import { playerGlow, type LightMap } from '../world/lighting';
-import { ORE_TILES, Tile, TILE_COUNT } from '../world/tiles';
+import { ORE_TILES, Tile, TILE_COUNT, tileDef } from '../world/tiles';
 import type { World } from '../world/world';
 import { oreSparkle, type BreakFlash } from './juice';
 import { buildBackground, parallaxX, parallaxY, type BackgroundLayer } from './parallax';
@@ -32,6 +36,13 @@ import type { Particles } from './particles';
 import { buildBackdropTile, buildCrackAtlas, buildItemAtlas, buildTileAtlas } from './textures';
 
 const CHUNK_PX = CHUNK_SIZE * TILE_SIZE;
+/** Per tile id: the color a glowing tile tints its surroundings, or null. */
+const GLOW_RGB: ([number, number, number] | null)[] = Array.from({ length: TILE_COUNT }, (_, id) => {
+  const hex = tileDef(id).glowColor;
+  if (!hex) return null;
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+});
 const IS_ORE = new Uint8Array(TILE_COUNT);
 for (const ore of ORE_TILES) IS_ORE[ore] = 1;
 
@@ -73,6 +84,11 @@ export class Renderer {
   private readonly lightCanvas: HTMLCanvasElement;
   private readonly lightCtx: CanvasRenderingContext2D;
   private lightImage: ImageData | null = null;
+  /** One pixel per visible tile holding the colored glow added to it; scaled up smoothly. */
+  private readonly glowCanvas: HTMLCanvasElement;
+  private readonly glowCtx: CanvasRenderingContext2D;
+  private glowImage: ImageData | null = null;
+  private glowSums = new Float32Array(0);
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -87,6 +103,10 @@ export class Renderer {
     const lightCtx = this.lightCanvas.getContext('2d');
     if (!lightCtx) throw new Error('Canvas 2D not supported');
     this.lightCtx = lightCtx;
+    this.glowCanvas = document.createElement('canvas');
+    const glowCtx = this.glowCanvas.getContext('2d');
+    if (!glowCtx) throw new Error('Canvas 2D not supported');
+    this.glowCtx = glowCtx;
     this.resize();
   }
 
@@ -223,6 +243,69 @@ export class Renderer {
     this.lightCtx.putImageData(this.lightImage, 0, 0);
     this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(this.lightCanvas, tx0 * TILE_SIZE - camX, ty0 * TILE_SIZE - camY, tw * TILE_SIZE, th * TILE_SIZE);
+  }
+
+  /**
+   * Colored glow around glowing tiles (glowshrooms, crystals), added over the darkness: each
+   * one tints the lit tiles within GLOW_TINT_RADIUS with its color, fading with distance and
+   * pulsing slowly unless `pulse` is false (Reduced flashes). Unlit tiles get none, so it
+   * doesn't shine through rock. Draw after drawLight.
+   */
+  drawGlowTint(world: World, lightMap: LightMap, time: number, pulse: boolean, camX: number, camY: number): void {
+    const R = GLOW_TINT_RADIUS;
+    // The visible tiles, plus one on each side so the smooth scaling has neighbours at the edges.
+    const tx0 = Math.floor(camX / TILE_SIZE) - 1;
+    const ty0 = Math.floor(camY / TILE_SIZE) - 1;
+    const tw = Math.ceil(this.viewWidth / TILE_SIZE) + 3;
+    const th = Math.ceil(this.viewHeight / TILE_SIZE) + 3;
+    if (this.glowSums.length !== tw * th * 3) this.glowSums = new Float32Array(tw * th * 3);
+    const sums = this.glowSums;
+    sums.fill(0);
+    let any = false;
+    // Sources up to R tiles off screen still tint what's on screen.
+    for (let sy = ty0 - R; sy < ty0 + th + R; sy++) {
+      for (let sx = tx0 - R; sx < tx0 + tw + R; sx++) {
+        const color = GLOW_RGB[world.getTile(sx, sy)];
+        if (!color) continue;
+        any = true;
+        const phase = ((sx * 73856093) ^ (sy * 19349663)) & 1023;
+        const strength = GLOW_TINT_STRENGTH * (pulse ? 1 + GLOW_PULSE * Math.sin(time * GLOW_PULSE_SPEED + phase) : 1);
+        for (let y = Math.max(ty0, sy - R); y <= Math.min(ty0 + th - 1, sy + R); y++) {
+          for (let x = Math.max(tx0, sx - R); x <= Math.min(tx0 + tw - 1, sx + R); x++) {
+            const d = Math.hypot(x - sx, y - sy);
+            if (d >= R || lightMap.level(x, y) === 0) continue;
+            const w = strength * (1 - d / R) * (1 - d / R);
+            const i = ((y - ty0) * tw + (x - tx0)) * 3;
+            // The brightest glow per channel, not the sum, so a cluster doesn't saturate and two
+            // colors next to each other still blend.
+            sums[i] = Math.max(sums[i], color[0] * w);
+            sums[i + 1] = Math.max(sums[i + 1], color[1] * w);
+            sums[i + 2] = Math.max(sums[i + 2], color[2] * w);
+          }
+        }
+      }
+    }
+    if (!any) return;
+    if (!this.glowImage || this.glowImage.width !== tw || this.glowImage.height !== th) {
+      this.glowCanvas.width = tw;
+      this.glowCanvas.height = th;
+      this.glowImage = this.glowCtx.createImageData(tw, th);
+    }
+    const data = this.glowImage.data;
+    for (let p = 0; p < tw * th; p++) {
+      data[p * 4] = sums[p * 3];
+      data[p * 4 + 1] = sums[p * 3 + 1];
+      data[p * 4 + 2] = sums[p * 3 + 2];
+      data[p * 4 + 3] = 255;
+    }
+    this.glowCtx.putImageData(this.glowImage, 0, 0);
+    const { ctx } = this;
+    ctx.save();
+    // Added on top, so black adds nothing; smoothing turns the tile grid into a soft glow.
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.glowCanvas, tx0 * TILE_SIZE - camX, ty0 * TILE_SIZE - camY, tw * TILE_SIZE, th * TILE_SIZE);
+    ctx.restore();
   }
 
   /**

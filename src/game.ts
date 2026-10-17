@@ -595,6 +595,7 @@ export class Game {
     if (!this.deathScreen) renderer.drawPlayer(player, px, py, camX, camY, this.playerAlpha(), inventory.selectedStack?.item === 'lantern');
     renderer.drawParticles(this.particles, camX, camY);
     if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
+    renderer.drawGlowTint(this.world, this.lightMap, this.clock.time, !reduced, camX, camY);
     if (!reduced) renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.clock.time, camX, camY, glowX, glowY);
     renderer.drawFlashes(this.flashes, camX, camY);
     this.drawDreadVignette();

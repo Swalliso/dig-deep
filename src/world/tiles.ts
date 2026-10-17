@@ -75,6 +75,8 @@ export interface TileDef {
   support?: 'post' | 'span';
   /** Light sources (torches, glowing tiles): the light level at the tile itself. */
   light?: number;
+  /** Glowing tiles: the color they tint the lit tiles around them (drawn only). */
+  glowColor?: string;
 }
 
 const defs: TileDef[] = [
@@ -110,8 +112,8 @@ const defs: TileDef[] = [
   { id: Tile.Beam, name: 'Beam', hardness: 0.25, minTier: 0, color: '#9c7240', drop: 'beam', solid: false, material: 'wood', support: 'post' },
   { id: Tile.Crossbeam, name: 'Crossbeam', hardness: 0.25, minTier: 0, color: '#9c7240', drop: 'crossbeam', solid: false, material: 'wood', support: 'span' },
   // Natural light: a mushroom you can walk through, and a crystal set in the rock.
-  { id: Tile.Glowshroom, name: 'Glowshroom', hardness: 0.1, minTier: 0, color: '#5fe0c8', drop: 'glowshroom', solid: false, material: 'plant', light: GLOWSHROOM_LIGHT },
-  { id: Tile.GlowCrystal, name: 'Glow crystal', hardness: 1.5, minTier: 2, color: '#b58cff', drop: 'glow_crystal', solid: true, material: 'ore', light: GLOW_CRYSTAL_LIGHT },
+  { id: Tile.Glowshroom, name: 'Glowshroom', hardness: 0.1, minTier: 0, color: '#5fe0c8', drop: 'glowshroom', solid: false, material: 'plant', light: GLOWSHROOM_LIGHT, glowColor: '#2ee6c4' },
+  { id: Tile.GlowCrystal, name: 'Glow crystal', hardness: 1.5, minTier: 2, color: '#b58cff', drop: 'glow_crystal', solid: true, material: 'ore', light: GLOW_CRYSTAL_LIGHT, glowColor: '#a66bff' },
 ];
 
 /** Indexed by tile id. */

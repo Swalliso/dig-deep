@@ -197,7 +197,8 @@ src/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
     renderer.ts      sky, parallax background, underground backdrop, cached chunk canvases,
-                     light overlay, entities, ore glints, break flashes
+                     light overlay, colored glow around glowing tiles, entities, ore glints,
+                     break flashes
     parallax.ts      background layers (clouds, mountains, hills) built per world from its seed
                      as repeating strips; scroll math (layer sets in config.ts)
     particles.ts     cosmetic break particles and landing dust (Math.random is fine here)
@@ -259,7 +260,8 @@ they drop.
   sources are tiles with `TileDef.light`. Moving lights (`setMovingLight`: the held lantern,
   flares) are kept apart from that established light, each in a small patch relit only when it
   moves to another tile or a tile in its patch changes; `level()` is the max of both and
-  `established()` leaves moving lights out. Tests check incremental relighting (with moving
+  `established()` leaves moving lights out. Light has no color: glowing tiles' colored glow
+  (`TileDef.glowColor`) is drawn on top by the renderer only. Tests check incremental relighting (with moving
   lights) against a full recompute; keep them passing when touching lighting.
 - **Saves**: a save is the seed plus only the chunks changed since generation (the rest is
   regenerated), so **bump `SAVE_VERSION` in `systems/save.ts` whenever world generation, tile
