@@ -1,13 +1,15 @@
-import { CHEST_SLOTS, MAX_STACK } from '../config';
+import { BEAM_MAX_HEIGHT, CHEST_SLOTS, MAX_STACK, SPAN_MAX, SUPPORT_REACH } from '../config';
 import { Tile, type TileId } from '../world/tiles';
 
 /** A tile texture, or a shape drawn in code with a material color. */
-export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door'; color: string };
+export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed'; color: string };
 
 export interface ItemDef {
   name: string;
   /** One short line for tooltips: what it's for. */
   description: string;
+  /** More tooltip lines: how it works and its limits. */
+  details?: string[];
   /** Tools don't stack (1). */
   maxStack: number;
   /** Tile placed by left-clicking an empty spot with this item selected, or null if it can't be placed. */
@@ -68,9 +70,36 @@ export const ITEMS = {
   gold_pickaxe: pickaxe('Gold pickaxe', 4, '#f2c94c', 'The fastest pickaxe.'),
   chest: block('Chest', Tile.Chest, `Holds ${CHEST_SLOTS} stacks. Crafting uses what is in nearby chests.`),
   ladder: block('Ladder', Tile.Ladder, 'Hold W or S on it to climb. You can stand on its top.'),
-  platform: block('Platform', Tile.Platform, 'Jump up through it. S + jump drops down through.'),
+  platform: block('Platform', Tile.Platform, 'Jump up through it. S drops down through (hold S to keep dropping).'),
+  gravel: {
+    ...block('Gravel', Tile.Gravel, 'Loose rock. Falls when nothing holds it up from below.'),
+    details: [
+      'Rests only on the tile right under it.',
+      'Beams, crossbeams and platforms hold it up, diagonally too.',
+    ],
+  },
+  beam: {
+    ...block('Beam', Tile.Beam, 'A post you can walk through. Holds up gravel above it.'),
+    details: [
+      'Stands on solid ground or on another beam.',
+      `Its top holds the tile above and ${SUPPORT_REACH} to each side, diagonally.`,
+      `Holds things up to ${BEAM_MAX_HEIGHT} beams high.`,
+      'Take out the bottom and the beams above it break.',
+    ],
+  },
+  crossbeam: {
+    ...block('Crossbeam', Tile.Crossbeam, 'A walk-through beam that holds up gravel above it.'),
+    details: [
+      `Holds what's above its row, and ${SUPPORT_REACH} past each end, diagonally.`,
+      `Works up to ${SPAN_MAX} tiles from where the row rests: a wall or beam`,
+      'at its end, a beam or ground under it, or solid rock right above it.',
+      'Platforms hold gravel the same way.',
+    ],
+  },
   // Placed as the bottom half; building.ts adds the top half above it.
   door: { ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'), icon: { shape: 'door', color: '#8f6236' } },
+  // Placed as the left half; building.ts adds the right half beside it.
+  bed: { ...block('Bed', Tile.BedLeft, 'Two tiles wide. Right-click it to respawn there.'), icon: { shape: 'bed', color: '#b84a4a' } },
 } satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

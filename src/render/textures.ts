@@ -276,6 +276,89 @@ function doorOpen(img: ImageData, top: boolean): void {
   }
 }
 
+const BED_WOOD: RGB = [122, 82, 48];
+const SHEET: RGB = [232, 228, 218];
+
+/**
+ * One half of a bed, which is two tiles wide and stands on the floor: a wooden frame with a
+ * headboard on the left half (with the pillow) and a footboard on the right (under the blanket).
+ */
+function bed(img: ImageData, rng: Rng, left: boolean): void {
+  const blanket = rgb(tileDef(Tile.BedLeft).color);
+  const post = left ? 1 : 13;
+  for (let y = left ? 3 : 7; y < S; y++) {
+    put(img, post, y, BED_WOOD, 1.1);
+    put(img, post + 1, y, BED_WOOD, 0.8);
+  }
+  for (let x = 0; x < S; x++) {
+    if (x === post || x === post + 1) continue;
+    put(img, x, 12, BED_WOOD, 1);
+    put(img, x, 13, BED_WOOD, 0.75);
+  }
+  // Mattress, then the blanket over it from the middle of the left half to the footboard.
+  for (let x = left ? 3 : 0; x < (left ? S : 13); x++) {
+    for (let y = 9; y < 12; y++) put(img, x, y, SHEET, y === 11 ? 0.85 : 1);
+    if (!left || x >= 9) {
+      for (let y = 8; y < 12; y++) put(img, x, y, blanket, y === 8 ? 1.2 : rng() < 0.1 ? 0.9 : 1);
+    }
+  }
+  if (left) {
+    for (let x = 3; x < 8; x++) for (let y = 6; y < 9; y++) put(img, x, y, SHEET, y === 6 ? 1.05 : y === 8 ? 0.8 : 0.95);
+  }
+}
+
+/**
+ * Gravel: rounded pebbles of several shades, each with a light top and a dark edge, packed with
+ * dark gaps between them. Lighter and lumpier than stone, so loose ground reads at a glance.
+ */
+function gravel(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Gravel).color);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) put(img, x, y, c, 0.45 + rng() * 0.08);
+  // Pebbles on a jittered 4 px grid, each 3 or 4 px across with clipped corners.
+  for (let gy = 0; gy < S; gy += 4) {
+    for (let gx = 0; gx < S; gx += 4) {
+      const size = rng() < 0.5 ? 3 : 4;
+      const ox = gx + randInt(rng, 0, 4 - size + (size === 3 ? 1 : 0));
+      const oy = gy + randInt(rng, 0, 4 - size + (size === 3 ? 1 : 0));
+      const tone = 0.85 + rng() * 0.35;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const corner = (x === 0 || x === size - 1) && (y === 0 || y === size - 1);
+          if (corner || ox + x >= S || oy + y >= S) continue;
+          const shade = y === 0 || (x === 0 && y === 1) ? 1.2 : y === size - 1 || x === size - 1 ? 0.78 : 1;
+          put(img, ox + x, oy + y, c, tone * shade);
+        }
+      }
+    }
+  }
+}
+
+/** Beam: a vertical post of rough wood, 6 px wide, with a dark edge and grain lines. */
+function beam(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Beam).color);
+  for (let y = 0; y < S; y++) {
+    for (let x = 5; x < 11; x++) {
+      const edge = x === 5 ? 1.18 : x === 10 ? 0.62 : x === 8 ? 0.86 : 1;
+      put(img, x, y, c, edge * (rng() < 0.12 ? 0.88 : 1));
+    }
+  }
+  // Iron bands near the top and bottom.
+  for (const y of [1, 14]) for (let x = 5; x < 11; x++) put(img, x, y, [70, 70, 76], x === 5 ? 1.3 : 1);
+}
+
+/** Crossbeam: a thick horizontal beam along the top of the tile, with two angled braces under it. */
+function crossbeam(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Crossbeam).color);
+  for (let y = 0; y < 5; y++) {
+    for (let x = 0; x < S; x++) put(img, x, y, c, (y === 0 ? 1.2 : y === 4 ? 0.62 : 1) * (rng() < 0.12 ? 0.88 : 1));
+  }
+  for (let i = 0; i < 5; i++) {
+    put(img, 2 + i, 5 + i, c, 0.8);
+    put(img, 13 - i, 5 + i, c, 0.8);
+  }
+  for (const x of [3, 12]) put(img, x, 2, [70, 70, 76]); // pegs
+}
+
 function drawTile(img: ImageData, id: number, rng: Rng): void {
   switch (id) {
     case Tile.Grass: return grass(img, rng);
@@ -300,6 +383,11 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.DoorClosedBottom: return doorClosed(img, rng, false);
     case Tile.DoorOpenTop: return doorOpen(img, true);
     case Tile.DoorOpenBottom: return doorOpen(img, false);
+    case Tile.BedLeft: return bed(img, rng, true);
+    case Tile.BedRight: return bed(img, rng, false);
+    case Tile.Gravel: return gravel(img, rng);
+    case Tile.Beam: return beam(img, rng);
+    case Tile.Crossbeam: return crossbeam(img, rng);
   }
 }
 
@@ -345,6 +433,24 @@ function doorIcon(img: ImageData, color: string): void {
   put(img, 10, 9, [242, 201, 76]);
 }
 
+/** A whole bed, shrunk to fit one icon: headboard, pillow and blanket. */
+function bedIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  for (let y = 5; y < 14; y++) put(img, 1, y, BED_WOOD, 1.1);
+  for (let y = 8; y < 14; y++) put(img, 14, y, BED_WOOD, 1.1);
+  for (let x = 2; x < 14; x++) {
+    put(img, x, 11, BED_WOOD);
+    put(img, x, 9, SHEET, 0.9);
+    put(img, x, 10, SHEET, 0.8);
+  }
+  for (let x = 2; x < 5; x++) put(img, x, 8, SHEET);
+  for (let x = 6; x < 14; x++) {
+    put(img, x, 8, c, 1.2);
+    put(img, x, 9, c);
+    put(img, x, 10, c, 0.85);
+  }
+}
+
 /** Item icons: ITEM_IDS[i] lives at x = i * TILE_SIZE. Tile items reuse their tile texture. */
 export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement {
   const atlas = document.createElement('canvas');
@@ -361,6 +467,7 @@ export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement 
     const img = new ImageData(S, S);
     if (icon.shape === 'bar') barIcon(img, icon.color);
     else if (icon.shape === 'door') doorIcon(img, icon.color);
+    else if (icon.shape === 'bed') bedIcon(img, icon.color);
     else pickaxeIcon(img, icon.color);
     ctx.putImageData(img, i * S, 0);
   });

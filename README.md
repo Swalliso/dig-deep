@@ -9,7 +9,8 @@ Built with TypeScript, Vite and plain HTML5 Canvas: no game engine, no external 
 ## How to play
 
 **Continue** your most recent world from the title screen, pick another one under **Worlds**,
-or start a **New world** (give it a name and a seed, or leave the seed blank for a random one).
+or start a **New world** (give it a name and a seed, or leave the seed blank for a random one,
+and pick **Normal** or **Cozy**).
 
 | Action                             | Input                     |
 | ---------------------------------- | ------------------------- |
@@ -19,9 +20,9 @@ or start a **New world** (give it a name and a seed, or leave the seed blank for
 | Place the held block               | Left mouse on empty space |
 | Build a row                        | Hold left mouse and sweep |
 | Pick block onto hotbar             | Middle mouse              |
-| Open chest, open or close door     | Right-click it            |
+| Open chest, use door or bed        | Right-click it            |
 | Climb a ladder                     | W / S or ↑ / ↓ on it      |
-| Drop through a platform            | S + Space                 |
+| Drop through a platform            | S (hold to keep dropping) |
 | Map / minimap                      | M / N                     |
 | Select hotbar slot                 | 1–0 or mouse wheel        |
 | Drop selected stack                | Q                         |
@@ -49,18 +50,54 @@ or start a **New world** (give it a name and a seed, or leave the seed blank for
 - **Ladders** (3 planks make 4), **platforms** (1 plank makes 2) and **doors** (6 planks) are
   made at a workbench. Hold W or S on a ladder to climb; Space hops off and S + Space lets go.
   You can stand on top of a ladder, so a shaft with a ladder in it can be walked over. Jump up
-  through platforms, and press S + Space to drop down through one. Doors are two tiles tall
-  and need ground under them; right-click to open or close one.
+  through platforms, and press S to drop down through one (hold S to keep dropping through
+  the ones below). Doors are two tiles tall and need ground under them; right-click to open
+  or close one.
+- **Health** (Normal worlds): 10 HP, shown as 5 hearts in the top left. Falls of more than 12
+  tiles hurt; grab a ladder on the way down (hold W or S) and the fall ends safely, and walking
+  off a ledge into a ladder shaft catches you on the ladder. Health comes back slowly after 5 s
+  without damage. Right after a hit you can't be hurt again for a moment (the hearts get a light
+  outline and a bar under them).
+- **Beds** (10 planks and 4 wood at a workbench) are two tiles wide. Right-click one to respawn
+  there; it's marked on the map. When you die your bag goes into a **satchel** where you died
+  (your hotbar and every pickaxe stay with you). Satchels stay until you collect them, show on
+  the map and in the top-left corner, and keep whatever doesn't fit in your inventory. With no
+  bed, or a blocked one, you wake up near the world spawn.
+- **Gravel** (lumpy, light grey) is loose: it rests only on what's right under it. Dig that
+  out and the gravel shakes for a moment, with dust trickling down and an orange outline, then
+  falls, and it hurts if it lands on you. Gravel hanging from a cave ceiling (pebbles dangle
+  under it) stays put until you dig or build right next to it, then comes down column by
+  column. New worlds have gravel pockets, often in cave ceilings, and deeper ones sometimes
+  hide ore. **Beams** and **crossbeams** (1 plank makes 2 of either, no station needed) hold it
+  up, better than blocks do: a block holds only the tile right on it, but supports also hold
+  gravel diagonally above them, so a few of them shore a whole ceiling and leave it open. A beam
+  is a post you walk through. It goes on solid ground or on another beam, and its top holds the
+  tile above it and one to each side (10 beams high at most); take out the bottom and the beams
+  above it break. A crossbeam, or a platform, holds the tiles above its row and one past each
+  end, if the row rests within 4 tiles on a wall, a beam, the ground, or solid rock right above
+  it. Holding one shows which gravel it would hold up (green), with a
+  line of help the first time; the inventory tooltips have the details. Pointing at a beam that
+  holds gravel up warns you before you take it out. Worlds from before gravel existed don't get any.
+- **Cozy** worlds have no damage at all, and their gravel never falls. Worlds from before health existed are Cozy. Change it
+  any time from the pause menu.
 - **M** opens the map: drag or use WASD to pan, scroll to zoom. It only shows what you've
   seen: places you've had on screen in the light, and anything close to you in the dark. **N**
   toggles the minimap in the corner (it's in Settings too).
 - In the inventory, hover anything for a tooltip. The trash slot (top right) destroys a stack;
   you can take the last one back. **Craftable only** hides recipes you can't make yet.
+- The world stands still while the inventory, the map or the pause menu is open. Switching to
+  another window or tab pauses the game too; press **Resume** (or Esc) to carry on.
 - The game saves to your browser (IndexedDB) automatically: within a couple of seconds of any
   change, every 60 seconds, and when you pause. Each world has its own save; delete one from
-  the Worlds screen (it asks you to click twice).
+  the Worlds screen (it asks you to click twice). **Save & quit** only leaves once the save is
+  written: if it fails, the game stays open so you can try again or export a backup.
+- **Backups**: **Export** on the Worlds screen (or **Export backup** on the pause menu)
+  downloads a world as a `.json` file. **Import backup** on the Worlds screen checks the file,
+  then adds it as a new world, or replaces the world with the same seed if you click Replace
+  twice. Backups only import into the version of the game that saved them.
 - **Settings** (on the title screen and the pause menu) has the master and sound-effect
-  volumes, screen shake, pixel scale (auto, 2x or 3x), an FPS counter and the minimap. They're kept per
+  volumes, screen shake, reduced flashes (no break flash, ore glints or red hurt flash), pixel
+  scale (auto, 2x or 3x), an FPS counter and the minimap. They're kept per
   browser. Sound starts after your first click or key press, as browsers require.
 
 ## Development
@@ -79,8 +116,14 @@ npm run preview   # serve the built dist/ locally
 Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing shortcuts:
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
 3x3), **L** toggles lighting, **O** puts a patch of every ore at the cursor, **K** digs a
-100 m ladder shaft down from the cursor, and **V** reveals the whole map. The title screen also
-gets a button that marks your most recent world as an older version.
+100 m ladder shaft down from the cursor, **V** reveals the whole map, **H** toggles god mode
+(and heals), **J** deals 2 damage and **B** puts a 3 x 3 block of gravel at the cursor (it
+falls if nothing holds it up). The title screen also
+gets a button that marks your most recent world as an older version, and the pause menu a
+**Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't
+pause when its window loses focus, and the running game is on `window.digDeep` in the browser
+console (`screen`, `game`, `pausedBy`, `save()`, `backupText()`, `importBackup(text)`) for
+scripted checks.
 
 `SPEC.md` is the original design spec, `ROADMAP.md` plans what comes next, and `CLAUDE.md`
 describes the code layout and conventions. All tunable numbers (physics, mining, lighting,

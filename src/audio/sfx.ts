@@ -368,6 +368,53 @@ export function door(open: boolean, pan = 0): void {
   });
 }
 
+/** Gravel starting to shake: a low rumble with a patter of small stones. */
+export function rumble(pan = 0): void {
+  play({ volume: SFX_VOLUMES.rumble, pan, key: 'rumble' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'lowpass', freq: 220 * p, to: 140 * p, attack: 0.04, decay: 0.38, gain: 1 });
+    tone(v, { type: 'sawtooth', freq: 48 * p, to: 40 * p, attack: 0.05, decay: 0.32, gain: 0.12 });
+    for (let i = 0; i < 4; i++) {
+      noiseBurst(v, { filter: 'bandpass', freq: 2400 * p, q: 5, delay: 0.06 + i * 0.08, attack: 0.001, decay: 0.025, gain: 0.35 });
+    }
+  });
+}
+
+/** A falling block of gravel landed (or burst): a crunchy thud. */
+export function gravelLand(pan = 0): void {
+  play({ volume: SFX_VOLUMES.gravelLand, pan, key: 'gravelLand' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'bandpass', freq: 900 * p, to: 500 * p, q: 1.2, attack: 0.002, decay: 0.12, gain: 1 });
+    tone(v, { type: 'sine', freq: 95 * p, to: 50 * p, attack: 0.002, decay: 0.12, gain: 0.6 });
+  });
+}
+
+/** The player took damage: a dull thump with a short falling grunt. */
+export function hurt(): void {
+  play({ volume: SFX_VOLUMES.hurt, key: 'hurt' }, (v) => {
+    const p = jitter();
+    tone(v, { type: 'sine', freq: 140 * p, to: 50 * p, attack: 0.002, decay: 0.18, gain: 0.9 });
+    tone(v, { type: 'square', freq: 330 * p, to: 180 * p, attack: 0.01, decay: 0.12, gain: 0.12 });
+    noiseBurst(v, { filter: 'lowpass', freq: 900, to: 200, decay: 0.12, gain: 0.5 });
+  });
+}
+
+/** The player died: three falling notes. */
+export function death(): void {
+  play({ volume: SFX_VOLUMES.death, key: 'death' }, (v) => {
+    [392, 330, 247].forEach((f, i) => tone(v, { type: 'triangle', freq: f, delay: i * 0.18, attack: 0.01, decay: 0.3, gain: 0.6 }));
+    tone(v, { type: 'sine', freq: 98, delay: 0.36, attack: 0.02, decay: 0.6, gain: 0.5 });
+  });
+}
+
+/** The bed became the respawn point: a soft rising chime. */
+export function bedSet(): void {
+  play({ volume: SFX_VOLUMES.bed, key: 'bed' }, (v) => {
+    tone(v, { type: 'sine', freq: 523, attack: 0.02, decay: 0.3, gain: 0.5 });
+    tone(v, { type: 'sine', freq: 784, delay: 0.12, attack: 0.02, decay: 0.4, gain: 0.5 });
+  });
+}
+
 /** A menu button or an inventory slot was clicked. */
 export function uiClick(): void {
   play({ volume: SFX_VOLUMES.ui, key: 'ui' }, (v) => {

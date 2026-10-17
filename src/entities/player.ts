@@ -7,8 +7,8 @@ import {
   DEBUG_FLY_SPEED,
   GRAVITY,
   JUMP_BUFFER,
+  JUMP_CORNER_CORRECTION,
   JUMP_CUT,
-  JUMP_VELOCITY,
   LADDER_REGRAB_DELAY,
   MAX_FALL_SPEED,
   MAX_MOVE_STEP,
@@ -16,9 +16,9 @@ import {
   PLAYER_WIDTH,
   RUN_ACCEL,
   RUN_FRICTION,
-  RUN_SPEED,
   TILE_SIZE,
 } from '../config';
+import { computeStats, type PlayerStats } from '../systems/stats';
 import { isClimbable, isFloor, isOneWayFloor, isSolid, Tile, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
 
@@ -69,6 +69,23 @@ export class Player {
   climbing = false;
   /** Vertical distance climbed on ladders, drives the rung sounds. */
   climbDistance = 0;
+  /** Base stats plus gear and boons (see systems/stats.ts). */
+  stats: PlayerStats = computeStats();
+  /**
+   * While in the air (not climbing or flying): the highest point (smallest y, world px) since
+   * leaving the ground, so a fall is measured from the top of its arc. Null otherwise. Saved,
+   * so reloading halfway down a shaft doesn't reset the fall.
+   */
+  fallTop: number | null = null;
+  /** Tiles fallen if the latest update landed, else 0 (for fall damage). */
+  fallLanded = 0;
+  /** Caught on a ladder by walking into its shaft during the latest update. */
+  caughtByLadder = false;
+  /**
+   * Left the ground by walking off a ledge (not by jumping, dropping through a platform or
+   * letting go of a ladder). Walking off into a ladder column catches the player on it.
+   */
+  private walkedOff = false;
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
   /** Rising from a jump with the button still held (early release cuts the jump). */
@@ -79,6 +96,13 @@ export class Player {
   private heldWhenLetGo = 0;
   /** Row of the platform being dropped through (ignored as a floor until the feet pass it), or -1. */
   private dropRow = -1;
+  /** The up/down key held during the previous update, so a fresh S press can be told apart. */
+  private prevClimb = 0;
+  /**
+   * S has been held since it dropped the player through a platform: landing on another
+   * platform drops through that too, until S is let go.
+   */
+  private dropChain = false;
 
   /** Place the player standing on the tile row below (tx, ty). */
   constructor(tx: number, ty: number) {
@@ -94,6 +118,9 @@ export class Player {
     this.y = this.prevY = y;
     this.vx = 0;
     this.vy = 0;
+    this.climbing = false;
+    this.fallTop = null;
+    this.walkedOff = false;
   }
 
   get centerX(): number {
@@ -109,19 +136,29 @@ export class Player {
     this.prevY = this.y;
     this.jumped = false;
     this.landingSpeed = 0;
+    this.fallLanded = 0;
+    this.caughtByLadder = false;
+    const climb = controls.climb ?? 0;
+    const downPressed = climb > 0 && this.prevClimb <= 0;
+    this.prevClimb = climb;
+    if (climb <= 0) this.dropChain = false;
     if (this.flying) {
       this.fly(dt, world, controls);
+      this.fallTop = null;
+      this.walkedOff = false;
       return;
     }
 
     // Ladders: W/S on one grabs it, and S on the top of one climbs down into it. A jump press
     // while climbing hops off (Space), or lets go and drops with S held; a W press is a climb.
-    const climb = controls.climb ?? 0;
     this.regrabTimer -= dt;
     if (climb !== this.heldWhenLetGo) this.heldWhenLetGo = 0;
     const canGrab = climb !== 0 && climb !== this.heldWhenLetGo && this.regrabTimer <= 0;
-    if (!this.climbing && canGrab && (this.onLadder(world) || (climb > 0 && this.onLadderTop(world)))) {
+    // Walking off a ledge into a ladder shaft catches you on the ladder (jumping in doesn't).
+    const caught = !this.climbing && this.walkedOff && !this.grounded && this.onLadder(world);
+    if (!this.climbing && ((canGrab && (this.onLadder(world) || (climb > 0 && this.onLadderTop(world)))) || caught)) {
       this.climbing = true;
+      this.caughtByLadder = caught && !canGrab;
       this.vx = 0;
       // Line up with the ladder, so a one-tile shaft fits (the body may still be over the ground beside it).
       const centred = Math.floor(this.centerX / TILE_SIZE) * TILE_SIZE + (TILE_SIZE - W) / 2;
@@ -133,27 +170,34 @@ export class Player {
       if (climb > 0) {
         this.dropRow = Math.floor((this.y + H + 0.5) / TILE_SIZE);
       } else {
-        this.vy = -JUMP_VELOCITY;
+        this.vy = -this.stats.jumpVelocity;
         this.jumpHeld = true;
         this.jumped = true;
         hopped = true;
       }
     }
     if (this.climbing) {
+      this.dropChain = false;
       this.climbStep(dt, world, controls);
+      this.fallTop = this.climbing || this.grounded ? null : this.y;
+      this.walkedOff = false;
       return;
     }
 
     // Run: accelerate toward the target speed, or brake with friction.
     const control = this.grounded ? 1 : AIR_CONTROL;
     const rate = (controls.move !== 0 ? RUN_ACCEL : RUN_FRICTION) * control * dt;
-    this.vx = approach(this.vx, controls.move * RUN_SPEED, rate);
+    this.vx = approach(this.vx, controls.move * this.stats.runSpeed, rate);
     if (controls.move !== 0) this.facing = controls.move > 0 ? 1 : -1;
 
-    // S + jump on a platform drops down through it instead of jumping.
+    // Pressing S on a platform drops down through it (S + jump too, instead of jumping), and
+    // holding S keeps dropping through the platforms below. S held since before landing (from
+    // a ladder, say) doesn't drop.
     let dropping = false;
-    if (this.grounded && controls.jumpPressed && climb > 0 && this.onPlatformOnly(world)) {
+    const dropAsked = downPressed || this.dropChain || controls.jumpPressed;
+    if (this.grounded && climb > 0 && dropAsked && this.onPlatformOnly(world)) {
       dropping = true;
+      this.dropChain = true;
       this.dropRow = Math.floor((this.y + H + 0.5) / TILE_SIZE);
       this.grounded = false;
     }
@@ -162,7 +206,7 @@ export class Player {
     this.coyoteTimer = this.grounded ? COYOTE_TIME : dropping ? 0 : this.coyoteTimer - dt;
     this.jumpBufferTimer = controls.jumpPressed && !dropping && !hopped ? JUMP_BUFFER : this.jumpBufferTimer - dt;
     if (this.jumpBufferTimer > 0 && this.coyoteTimer > 0) {
-      this.vy = -JUMP_VELOCITY;
+      this.vy = -this.stats.jumpVelocity;
       this.jumpBufferTimer = 0;
       this.coyoteTimer = 0;
       this.grounded = false;
@@ -186,12 +230,31 @@ export class Player {
     const startX = this.x;
     for (let i = 0; i < steps; i++) {
       if (this.vx !== 0) this.moveX(dx / steps, world, wasGrounded);
-      if (this.vy !== 0) this.moveY(dy / steps, world, false);
+      if (this.vy !== 0) this.moveY(dy / steps, world, false, true);
     }
     // Once the feet are past the top of the platform being dropped through, it's a floor again.
     if (this.dropRow >= 0 && (this.grounded || this.y + H > this.dropRow * TILE_SIZE + 0.5)) this.dropRow = -1;
     if (this.grounded) this.walkDistance += Math.abs(this.x - startX);
     if (this.grounded && !wasGrounded) this.landingSpeed = fallSpeed;
+    this.trackFall(wasGrounded, dropping || this.jumped);
+  }
+
+  /**
+   * Measure falls: remember the top of the arc while airborne, and on landing set fallLanded to
+   * the tiles fallen. Also notes whether the player walked off a ledge (see walkedOff).
+   */
+  private trackFall(wasGrounded: boolean, leftOnPurpose: boolean): void {
+    if (this.grounded) {
+      if (this.fallTop !== null) this.fallLanded = Math.max(0, (this.y - this.fallTop) / TILE_SIZE);
+      this.fallTop = null;
+      this.walkedOff = false;
+      return;
+    }
+    if (leftOnPurpose) this.walkedOff = false;
+    else if (wasGrounded) this.walkedOff = true;
+    // The fall starts where the player was before this step if they were on the ground.
+    const top = this.fallTop ?? (wasGrounded ? this.prevY : this.y);
+    this.fallTop = Math.min(top, this.y, this.prevY);
   }
 
   /** The floor tile under the player's feet (under its centre if possible), or Air in the air. */
@@ -256,7 +319,7 @@ export class Player {
     const startY = this.y;
     for (let i = 0; i < steps; i++) {
       if (dx !== 0) this.moveX(dx / steps, world, false);
-      if (dy !== 0) this.moveY(dy / steps, world, true);
+      if (dy !== 0) this.moveY(dy / steps, world, true, false);
     }
     this.climbDistance += Math.abs(this.y - startY);
     const standing = climb >= 0 && !overlapsSolid(world, this.x, this.y) && overlapsSolid(world, this.x, this.y + 1);
@@ -271,6 +334,7 @@ export class Player {
   setFlying(on: boolean, world: World): void {
     this.flying = on;
     this.climbing = false;
+    this.fallTop = null;
     this.vx = 0;
     this.vy = 0;
     if (on) return;
@@ -318,9 +382,10 @@ export class Player {
   /**
    * Move down or up by dy, stopping at solid tiles. Moving down also lands on one-way floors
    * (platforms, ladder tops) that the feet started above, unless `ignoreOneWay` (climbing) or
-   * it's the platform being dropped through.
+   * it's the platform being dropped through. Moving up with `cornerCorrect`, a head that only
+   * clips a ceiling edge on one side slides past it (see cornerCorrection).
    */
-  private moveY(dy: number, world: World, ignoreOneWay: boolean): void {
+  private moveY(dy: number, world: World, ignoreOneWay: boolean, cornerCorrect: boolean): void {
     const feetBefore = this.y + H;
     this.y += dy;
     const row = dy > 0 ? Math.floor((this.y + H - EPS) / TILE_SIZE) : Math.floor(this.y / TILE_SIZE);
@@ -332,12 +397,30 @@ export class Player {
       if (dy > 0) {
         this.y = row * TILE_SIZE - H;
         this.grounded = true;
+      } else if (cornerCorrect && this.cornerCorrection(world, row, col0, col1)) {
+        return;
       } else {
         this.y = (row + 1) * TILE_SIZE;
       }
       this.vy = 0;
       return;
     }
+  }
+
+  /**
+   * Jump corner correction: if the head (rising into `row`) overlaps a solid tile on one side
+   * only, by at most JUMP_CORNER_CORRECTION px, shift sideways out of it and keep rising.
+   * Returns false (no shift) for a head-on hit or if the shifted box would touch anything solid.
+   */
+  private cornerCorrection(world: World, row: number, col0: number, col1: number): boolean {
+    if (col0 === col1) return false;
+    const left = isSolid(world.getTile(col0, row));
+    const right = isSolid(world.getTile(col1, row));
+    if (left === right) return false;
+    const x = left ? (col0 + 1) * TILE_SIZE : col1 * TILE_SIZE - W;
+    if (Math.abs(x - this.x) > JUMP_CORNER_CORRECTION || overlapsSolid(world, x, this.y)) return false;
+    this.x = x;
+    return true;
   }
 }
 

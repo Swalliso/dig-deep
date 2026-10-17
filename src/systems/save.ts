@@ -1,12 +1,16 @@
 import { delMany, get, getMany, keys, set, setMany } from 'idb-keyval';
 import { storageKey } from '../channel';
-import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE } from '../config';
+import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE, WORLD_HEIGHT, WORLD_WIDTH } from '../config';
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
 import { ExploredMap } from '../world/explored';
+import { CLASSIC_PROFILE, findProfile, type GenProfile, type ProfileRef } from '../world/generate';
 import { TileEntities } from '../world/tileEntities';
-import { Tile } from '../world/tiles';
+import { Tile, TILE_COUNT } from '../world/tiles';
 import type { World } from '../world/world';
+import type { CaveIns, SavedCaveIns } from './caveIns';
+import type { BedSpot, Satchel } from './death';
+import { Health, type Difficulty, type SavedHealth } from './health';
 import { Inventory, type ItemStack, type Slots } from './inventory';
 import { ITEMS, itemDef, type ItemId } from './items';
 
@@ -30,19 +34,42 @@ export interface SaveData {
   /** The world's name in the world list. Missing in older saves. */
   name?: string;
   seed: number;
+  /**
+   * The generation profile the world was made with (see generate.ts). Missing in saves from before
+   * Phase 12, which are classic worlds.
+   */
+  profile?: ProfileRef;
   /** Date.now() when saved. */
   savedAt: number;
+  /** Seconds of play in this world (the session clock). Missing in older saves. */
+  playTime?: number;
   /** Only chunks changed since generation (the rest regenerate from the seed), RLE-compressed. */
   chunks: { index: number; data: Uint8Array }[];
-  /** Player top-left in world px. */
-  player: { x: number; y: number };
+  /**
+   * Player top-left in world px, and the top of the fall in progress (see Player.fallTop) so a
+   * reload mid-fall still lands as hard. fallTop is missing in older saves.
+   */
+  player: { x: number; y: number; fallTop?: number | null };
   inventory: { slots: (ItemStack | null)[]; selected: number };
-  /** Items lying on the ground (top-left in world px). Missing in older saves. */
+  /**
+   * Items lying on the ground (top-left in world px). A stack held on the mouse that didn't fit
+   * in the inventory is saved here too, at the player. Missing in older saves.
+   */
   drops?: SavedDrop[];
   /** Per-tile data such as chest contents. Missing in older saves. */
   tileEntities?: SavedTileEntity[];
   /** Tiles seen so far (the map), per chunk: 1 byte per tile, RLE-compressed. Missing in older saves. */
   explored?: { index: number; data: Uint8Array }[];
+  /** Missing in saves from before Phase 11b, which load as Cozy. */
+  difficulty?: Difficulty;
+  /** HP and the hurt-protection and regeneration times (on the session clock). Missing means full. */
+  health?: SavedHealth;
+  /** Where the player respawns, by the bed's left tile, or null for no bed. */
+  bed?: BedSpot | null;
+  /** Bags left where the player died. */
+  satchels?: Satchel[];
+  /** Shaking gravel, falling blocks and tiles waiting for a recheck (Phase 12). */
+  caveIns?: SavedCaveIns;
 }
 
 /**
@@ -57,6 +84,8 @@ export interface WorldMeta {
   savedAt: number;
   /** The save's SAVE_VERSION; a world from another version can't be loaded. */
   version: number;
+  /** Missing for worlds saved before Phase 11b (they're Cozy). */
+  difficulty?: Difficulty;
 }
 
 /** A tile entity and where it is. Only chests so far. */
@@ -110,30 +139,76 @@ export function decodeRle(rle: Uint8Array, length: number): Uint8Array {
 
 // --- Building and applying saves (pure, so they can be unit-tested). ---
 
+/** Player state beyond the player and the inventory (Phase 11b): health, difficulty, bed, satchels. */
+export interface SurvivalState {
+  health: Health;
+  difficulty: Difficulty;
+  bed: BedSpot | null;
+  satchels: readonly Satchel[];
+  /** Phase 12. */
+  caveIns?: CaveIns;
+}
+
 export function createSave(
   world: World,
   player: Player,
   inventory: Inventory,
   drops: readonly ItemDrop[],
   entities?: TileEntities,
-  extra: { explored?: ExploredMap; name?: string } = {},
+  extra: { explored?: ExploredMap; name?: string; playTime?: number; survival?: SurvivalState } = {},
 ): SaveData {
   return {
     version: SAVE_VERSION,
     name: extra.name,
     seed: world.seed,
+    profile: { ...world.profile },
     savedAt: Date.now(),
+    playTime: extra.playTime ?? 0,
     chunks: [...world.changedChunks]
       .sort((a, b) => a - b)
       .map((index) => ({ index, data: encodeRle(world.chunks[index]) })),
-    player: { x: player.x, y: player.y },
-    // Anything held on the mouse goes back in the save as if it had been put away.
-    inventory: { slots: savedSlots(inventory), selected: inventory.selected },
-    drops: drops.map((d) => ({ item: d.item, count: d.count, x: d.x, y: d.y })),
-    tileEntities: entities ? savedTileEntities(entities) : [],
+    ...savedState(player, inventory, drops, entities, extra.survival),
     explored: extra.explored
       ? [...extra.explored.chunks.entries()].sort(([a], [b]) => a - b).map(([index, data]) => ({ index, data: encodeRle(data) }))
       : [],
+  };
+}
+
+/**
+ * The part of a save that isn't tiles, the map, the play time or the save's own details. It's
+ * cheap to build, so autosave compares it (with the world's and the map's revision numbers) to
+ * tell whether there's anything new to save. Saved state belongs here, so its changes are
+ * always noticed; a test checks createSave adds nothing else.
+ */
+export type SavedState = Pick<
+  SaveData,
+  'player' | 'inventory' | 'drops' | 'tileEntities' | 'difficulty' | 'health' | 'bed' | 'satchels' | 'caveIns'
+>;
+
+export function savedState(
+  player: Player,
+  inventory: Inventory,
+  drops: readonly ItemDrop[],
+  entities?: TileEntities,
+  survival?: SurvivalState,
+): SavedState {
+  const { slots, overflow } = savedSlots(inventory);
+  const saved: SavedDrop[] = drops.map((d) => ({ item: d.item, count: d.count, x: d.x, y: d.y }));
+  // The rest of a stack held on the mouse that didn't fit in the inventory: saved lying at the
+  // player, so saving never loses it.
+  if (overflow) saved.push({ ...overflow, x: player.centerX - DROP_SIZE / 2, y: player.centerY - DROP_SIZE / 2 });
+  return {
+    player: { x: player.x, y: player.y, fallTop: player.fallTop },
+    inventory: { slots, selected: inventory.selected },
+    drops: saved,
+    tileEntities: entities ? savedTileEntities(entities) : [],
+    ...(survival && {
+      difficulty: survival.difficulty,
+      health: survival.health.saved(),
+      bed: survival.bed && { ...survival.bed },
+      satchels: survival.satchels.map((s) => ({ x: s.x, y: s.y, stacks: s.stacks.map((st) => ({ ...st })) })),
+    }),
+    ...(survival?.caveIns && { caveIns: survival.caveIns.saved() }),
   };
 }
 
@@ -142,11 +217,16 @@ export function savedTileEntities(entities: TileEntities): SavedTileEntity[] {
   return entities.entries().map(({ tx, ty, entity }) => ({ tx, ty, kind: entity.kind, slots: entity.slots.map((s) => s && { ...s }) }));
 }
 
-function savedSlots(inventory: Inventory): (ItemStack | null)[] {
+/**
+ * The inventory as saved, with anything held on the mouse put away as if the panel had been
+ * closed. `overflow` is what of the held stack didn't fit, or null. The live inventory is untouched.
+ */
+function savedSlots(inventory: Inventory): { slots: (ItemStack | null)[]; overflow: ItemStack | null } {
   const copy = new Inventory();
   inventory.slots.forEach((s, i) => (copy.slots[i] = s && { ...s }));
-  if (inventory.cursor) copy.add(inventory.cursor.item, inventory.cursor.count);
-  return copy.slots;
+  const held = inventory.cursor;
+  const left = held ? copy.add(held.item, held.count) : 0;
+  return { slots: copy.slots, overflow: held && left > 0 ? { item: held.item, count: left } : null };
 }
 
 /** Put the saved chunks back into a world freshly generated from the save's seed. */
@@ -169,6 +249,33 @@ function restoreSlots(saved: readonly unknown[], slots: Slots): void {
     if (i >= slots.length || !s || !(s.item in ITEMS) || !(s.count > 0)) return;
     slots[i] = { item: s.item, count: Math.min(Math.floor(s.count), itemDef(s.item as ItemId).maxStack) };
   });
+}
+
+/** The generation profile to regenerate a save's world with. Saves from before Phase 12 are classic. */
+export function restoreProfile(save: SaveData): GenProfile {
+  return save.profile ? (findProfile(save.profile) ?? CLASSIC_PROFILE) : CLASSIC_PROFILE;
+}
+
+/** Seconds played in the world, or 0 for a save from before play time was saved. */
+export function restorePlayTime(save: SaveData): number {
+  const time = save.playTime;
+  return typeof time === 'number' && Number.isFinite(time) && time > 0 ? time : 0;
+}
+
+/** The world's difficulty. Worlds saved before Phase 11b had none, and become Cozy. */
+export function restoreDifficulty(save: SaveData): Difficulty {
+  return save.difficulty === 'normal' ? 'normal' : 'cozy';
+}
+
+/** Health from a save (full health if it has none). */
+export function restoreHealth(save: SaveData, maxHp: number): Health {
+  return Health.fromSave(save.health, maxHp);
+}
+
+/** The top of the fall the player was in when saved, or null. */
+export function restoreFallTop(save: SaveData): number | null {
+  const top = save.player.fallTop;
+  return typeof top === 'number' && Number.isFinite(top) ? top : null;
 }
 
 /** Rebuild the inventory, skipping anything that no longer exists. */
@@ -243,6 +350,10 @@ export function checkSave(raw: unknown): SaveStatus {
   if (save.version !== SAVE_VERSION) {
     return typeof save.version === 'number' ? { kind: 'outdated', version: save.version } : { kind: 'broken' };
   }
+  // A generation profile this version doesn't know can only come from a newer version.
+  const profile = save.profile;
+  if (profile !== undefined && !(profile && typeof profile.name === 'string' && typeof profile.version === 'number')) return { kind: 'broken' };
+  if (profile && !findProfile(profile)) return { kind: 'outdated', version: SAVE_VERSION + 1 };
   const valid =
     typeof save.seed === 'number' &&
     Array.isArray(save.chunks) &&
@@ -252,8 +363,44 @@ export function checkSave(raw: unknown): SaveStatus {
     Array.isArray(save.inventory?.slots) &&
     (save.drops === undefined || Array.isArray(save.drops)) &&
     (save.tileEntities === undefined || Array.isArray(save.tileEntities)) &&
-    (save.explored === undefined || Array.isArray(save.explored));
+    (save.explored === undefined || Array.isArray(save.explored)) &&
+    (save.satchels === undefined || Array.isArray(save.satchels)) &&
+    (save.caveIns === undefined || (typeof save.caveIns === 'object' && save.caveIns !== null));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
+}
+
+/**
+ * Look through a save that passed checkSave for anything that would stop it loading: damaged
+ * tile or map data, chunks outside the world or listed twice, unknown tiles, or a seed or player
+ * position that isn't a number. Returns what's wrong, or null if nothing is. Backups are checked
+ * with this before they're imported. (Unknown items and the like are just skipped on load.)
+ */
+export function findSaveProblem(save: SaveData): string | null {
+  if (!Number.isSafeInteger(save.seed)) return 'its seed is not a whole number';
+  if (!Number.isFinite(save.player.x) || !Number.isFinite(save.player.y)) return 'the player position is not a number';
+  const chunkCount = Math.ceil(WORLD_WIDTH / CHUNK_SIZE) * Math.ceil(WORLD_HEIGHT / CHUNK_SIZE);
+  const layers: [string, { index: number; data: Uint8Array }[]][] = [
+    ['tile', save.chunks],
+    ['map', save.explored ?? []],
+  ];
+  for (const [what, chunks] of layers) {
+    const seen = new Set<number>();
+    for (const chunk of chunks) {
+      if (!chunk || !(chunk.data instanceof Uint8Array)) return `some ${what} data is missing`;
+      if (!Number.isInteger(chunk.index) || chunk.index < 0 || chunk.index >= chunkCount || seen.has(chunk.index)) {
+        return `some ${what} data is outside the world`;
+      }
+      seen.add(chunk.index);
+      let data: Uint8Array;
+      try {
+        data = decodeRle(chunk.data, CHUNK_SIZE * CHUNK_SIZE);
+      } catch {
+        return `some ${what} data is damaged`;
+      }
+      if (what === 'tile' && data.some((id) => id >= TILE_COUNT)) return 'it has tiles this version does not know';
+    }
+  }
+  return null;
 }
 
 // --- World slots ---
@@ -283,6 +430,7 @@ export function metaFromSave(id: string, save: Partial<SaveData> | undefined): W
     seed: typeof save?.seed === 'number' ? save.seed : 0,
     savedAt: typeof save?.savedAt === 'number' ? save.savedAt : 0,
     version: typeof save?.version === 'number' ? save.version : -1,
+    ...(save?.difficulty === 'normal' || save?.difficulty === 'cozy' ? { difficulty: save.difficulty } : {}),
   };
 }
 

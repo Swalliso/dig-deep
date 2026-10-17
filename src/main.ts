@@ -8,10 +8,12 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from './config';
-import { DEBUG } from './debug';
+import { DEBUG, debugState } from './debug';
 import { Game, type FrameStats } from './game';
-import { consumeWheel, endInputStep, initInput, wasPressed } from './input';
+import { actionPressed, consumeWheel, endInputStep, initInput } from './input';
 import { Renderer } from './render/renderer';
+import { backupFileName, backupText } from './systems/backup';
+import type { PauseReason } from './systems/clock';
 import {
   applySavedChunks,
   createSave,
@@ -20,19 +22,28 @@ import {
   markWorldOutdated,
   nextWorldId,
   readWorld,
+  restoreDifficulty,
   restoreDrops,
   restoreExplored,
+  restoreFallTop,
+  restoreHealth,
   restoreInventory,
+  restorePlayTime,
+  restoreProfile,
   restoreTileEntities,
-  savedTileEntities,
+  savedState,
   SAVE_VERSION,
   writeWorld,
   type SaveData,
+  type SurvivalState,
   type WorldMeta,
 } from './systems/save';
+import { restoreBed, restoreSatchels } from './systems/death';
+import type { Difficulty } from './systems/health';
+import { computeStats } from './systems/stats';
 import { loadSettings, saveSettings } from './systems/settings';
-import { Menus, type SettingsHooks } from './ui/menus';
-import { generateWorldSteps, parseSeed, type GenProgress } from './world/generate';
+import { downloadText, Menus, type SettingsHooks, type TitleOptions } from './ui/menus';
+import { generateWorldSteps, NEW_WORLD_PROFILE, parseSeed, type GenProgress } from './world/generate';
 import { World } from './world/world';
 
 // Boot and the main loop: title screen → generating/loading → playing ⇄ paused.
@@ -54,9 +65,37 @@ type Screen =
       status: GenProgress;
       save: SaveData | null;
       slot: Slot;
+      /** A new world's difficulty (a save brings its own). */
+      difficulty: Difficulty;
     }
   | { kind: 'playing'; game: Game }
-  | { kind: 'paused'; game: Game };
+  /** The pause menu, opened with Esc or because the window lost focus. */
+  | { kind: 'paused'; game: Game; reason: 'menu' | 'focus' };
+
+/** `window.digDeep` in debug mode, for scripted checks from the browser console. */
+interface DebugHook {
+  readonly screen: Screen['kind'];
+  /** The game being played or paused, or null. */
+  readonly game: Game | null;
+  /** What's pausing the world (the pause menu, focus loss, the panel or the map), or null. */
+  readonly pausedBy: PauseReason | null;
+  /** Date.now() of the last successful save, or 0. */
+  readonly lastSavedAt: number;
+  /** Debug switches (failSaves). */
+  readonly state: typeof debugState;
+  /** Save the current game now. */
+  save(): Promise<void>;
+  /** The backup file text Export backup would download for the current game, or null. */
+  backupText(): string | null;
+  /** Read backup text as if it was picked with Import backup (shows the Worlds or Import screen). */
+  importBackup(text: string): Promise<void>;
+}
+
+declare global {
+  interface Window {
+    digDeep?: DebugHook;
+  }
+}
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const settings = loadSettings();
@@ -89,31 +128,63 @@ let frameWorkMs = 0;
 
 window.addEventListener('resize', () => {
   renderer.resize();
-  if (screen.kind === 'playing' || screen.kind === 'paused') screen.game.resize();
+  const game = currentGame();
+  if (game) game.resize();
 });
+
+/** The game being played or paused, if any. */
+function currentGame(): Game | null {
+  return screen.kind === 'playing' || screen.kind === 'paused' ? screen.game : null;
+}
 
 // Hiding or leaving the page saves too (best effort), so a reload loses as little as possible.
 function saveIfInGame(): void {
-  if (screen.kind === 'playing' || screen.kind === 'paused') void saveGame(screen.game).catch(() => {});
+  const game = currentGame();
+  if (game) void saveGame(game).catch(() => {});
 }
 window.addEventListener('pagehide', saveIfInGame);
+// Losing focus or hiding the tab pauses (and saves); the player resumes from the pause menu.
+// Not in debug mode, so scripted checks keep running in a background preview pane.
+window.addEventListener('blur', () => pauseForFocus());
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') saveIfInGame();
+  if (document.visibilityState === 'hidden' && !pauseForFocus()) saveIfInGame();
 });
+
+/** Pause because the window lost focus. Returns false if the game wasn't playing (or in debug mode). */
+function pauseForFocus(): boolean {
+  if (DEBUG || screen.kind !== 'playing') return false;
+  pause(screen.game, 'focus');
+  return true;
+}
 
 function applySettings(): void {
   saveSettings(settings);
   setVolumes(settings.masterVolume, settings.sfxVolume);
   renderer.setPixelScale(settings.pixelScale);
-  if (screen.kind === 'playing' || screen.kind === 'paused') screen.game.resize();
+  currentGame()?.resize();
+}
+
+/** Health, difficulty, bed, satchels and cave-ins: the game's saved state beyond the player and inventory. */
+function survival(game: Game): SurvivalState {
+  return { health: game.health, difficulty: game.difficulty, bed: game.bed, satchels: game.satchels, caveIns: game.caveIns };
+}
+
+/** The game as a save, right now. */
+function currentSave(game: Game, slot: Slot): SaveData {
+  return createSave(game.world, game.player, game.inventory, game.drops, game.tileEntities, {
+    explored: game.explored,
+    name: slot.name,
+    playTime: game.clock.time,
+    survival: survival(game),
+  });
 }
 
 async function saveGame(game: Game): Promise<void> {
   const slot = activeSlot;
   if (!slot) return;
+  if (debugState.failSaves) throw new Error('Debug: saves are set to fail');
   const snap = snapshot(game);
-  const save = createSave(game.world, game.player, game.inventory, game.drops, game.tileEntities, { explored: game.explored, name: slot.name });
-  await writeWorld(slot.id, save);
+  await writeWorld(slot.id, currentSave(game, slot));
   lastSavedAt = Date.now();
   savedSnapshot = snap;
 }
@@ -124,12 +195,16 @@ function autosave(game: Game): void {
   saveGame(game).catch(() => game.toasts.show('Could not save the game'));
 }
 
-/** Cheap summary of everything a save holds, to tell whether there's anything new to save. */
+/**
+ * Cheap summary of everything a save holds (except the play time), to tell whether there's
+ * anything new to save. The tiles and the map are covered by their revision numbers, and
+ * everything else by savedState(), so any state added to saves is noticed here too. Positions
+ * are rounded to whole pixels, so a still player or a resting item doesn't count as a change.
+ */
 function snapshot(game: Game): string {
-  const { world, player, inventory, drops } = game;
-  const ground = drops.map((d) => `${d.item}:${d.count}@${Math.round(d.x)},${Math.round(d.y)}`).join(';');
-  const chests = JSON.stringify(savedTileEntities(game.tileEntities));
-  return `${world.revision}|${game.explored.revision}|${Math.round(player.x)},${Math.round(player.y)}|${inventory.selected}|${JSON.stringify(inventory.slots)}|${ground}|${chests}`;
+  const state = savedState(game.player, game.inventory, game.drops, game.tileEntities, survival(game));
+  const rounded = JSON.stringify(state, (_key, value: unknown) => (typeof value === 'number' ? Math.round(value) : value));
+  return `${game.world.revision}|${game.explored.revision}|${rounded}`;
 }
 
 /** `note` is shown under the title (e.g. why a world couldn't be loaded). */
@@ -137,20 +212,48 @@ async function showTitle(note?: string): Promise<void> {
   screen = { kind: 'title' };
   const worlds = await listWorlds();
   if (screen.kind !== 'title') return;
-  menus.showTitle({
+  menus.showTitle(titleOptions(worlds, note));
+}
+
+function titleOptions(worlds: WorldMeta[], note?: string): TitleOptions {
+  return {
     worlds,
     seedText: urlSeed,
     note,
     onPlay: (world) => void playWorld(world),
-    onCreate: (name, seedText) =>
-      void listWorlds().then((current) => startLoading(parseSeed(seedText), null, { id: nextWorldId(current.map((w) => w.id)), name })),
+    onCreate: (name, seedText, difficulty) =>
+      void listWorlds().then((current) =>
+        startLoading(parseSeed(seedText), null, { id: nextWorldId(current.map((w) => w.id)), name }, difficulty),
+      ),
     onDelete: async (world) => {
       await deleteWorld(world.id).catch(() => {});
       return listWorlds();
     },
     onMarkOutdated: DEBUG ? (world) => void markWorldOutdated(world.id).then(() => showTitle()) : undefined,
+    onExport: exportStoredWorld,
+    onImport: importWorld,
     settings: settingsHooks,
-  });
+  };
+}
+
+/** Download a saved world's backup file. */
+async function exportStoredWorld(world: WorldMeta): Promise<void> {
+  const status = await readWorld(world.id);
+  if (status.kind !== 'ok') throw new Error(`"${world.name}" can't be read`);
+  downloadText(backupFileName(world.name), backupText({ ...status.save, name: world.name }));
+}
+
+/**
+ * Store an imported save: in a new slot (renamed if its name is taken), or in place of
+ * `replace`. Resolves to the name it got and every world afterwards.
+ */
+async function importWorld(save: SaveData, replace: WorldMeta | null): Promise<{ name: string; worlds: WorldMeta[] }> {
+  const worlds = await listWorlds();
+  const id = replace ? replace.id : nextWorldId(worlds.map((w) => w.id));
+  let name = save.name ?? `World ${id}`;
+  if (!replace && worlds.some((w) => w.name === name)) name = `${name} (imported)`;
+  await writeWorld(id, { ...save, name });
+  return { name, worlds: await listWorlds() };
 }
 
 /** Load a saved world, or go back to the title saying why it can't be. */
@@ -170,14 +273,18 @@ async function playWorld(world: WorldMeta): Promise<void> {
   void showTitle(`"${world.name}" ${why}, so it can't be loaded.`);
 }
 
-/** Generate the world from its seed (the loading screen shows progress), then apply the save if any. */
-function startLoading(seed: number, save: SaveData | null, slot: Slot): void {
+/**
+ * Generate the world from its seed (the loading screen shows progress), then apply the save if
+ * any. A saved world is generated with the profile it was made with (classic for worlds from
+ * before Phase 12); a new one with NEW_WORLD_PROFILE. `difficulty` is for a new world.
+ */
+function startLoading(seed: number, save: SaveData | null, slot: Slot, difficulty: Difficulty = 'normal'): void {
   menus.hide();
   const world = new World(WORLD_WIDTH, WORLD_HEIGHT, seed);
-  screen = { kind: 'loading', world, steps: generateWorldSteps(world), status: { label: 'Starting', progress: 0 }, save, slot };
+  screen = { kind: 'loading', world, steps: generateWorldSteps(world, save ? restoreProfile(save) : NEW_WORLD_PROFILE), status: { label: 'Starting', progress: 0 }, save, slot, difficulty };
 }
 
-function finishLoading(world: World, save: SaveData | null, slot: Slot): void {
+function finishLoading(world: World, save: SaveData | null, slot: Slot, difficulty: Difficulty): void {
   let game: Game;
   try {
     if (save) applySavedChunks(world, save);
@@ -188,12 +295,19 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot): void {
       save
         ? {
             player: save.player,
+            fallTop: restoreFallTop(save),
             inventory: restoreInventory(save),
             drops: restoreDrops(save, world),
             tileEntities: restoreTileEntities(save, world),
             explored: restoreExplored(save, world),
+            playTime: restorePlayTime(save),
+            difficulty: restoreDifficulty(save),
+            health: restoreHealth(save, computeStats().maxHealth),
+            bed: restoreBed(save.bed, world),
+            satchels: restoreSatchels(save.satchels, world),
+            caveIns: save.caveIns,
           }
-        : {},
+        : { difficulty },
     );
   } catch {
     void showTitle(`"${slot.name}" couldn't be loaded.`);
@@ -203,16 +317,27 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot): void {
   screen = { kind: 'playing', game };
   accumulator = 0;
   autosave(game); // a new world is saved straight away, so it's in the list after a reload
+  // Loading finished while the player was in another window: start paused.
+  if (!document.hasFocus()) pauseForFocus();
 }
 
-function pause(game: Game): void {
-  screen = { kind: 'paused', game };
+function pause(game: Game, reason: 'menu' | 'focus'): void {
+  screen = { kind: 'paused', game, reason };
   autosave(game);
   menus.showPause({
+    note: reason === 'focus' ? 'The game paused because its window lost focus.' : undefined,
     onResume: () => resume(game),
     onSave: () => saveGame(game),
-    onQuit: () => void saveGame(game).finally(() => showTitle()),
+    onQuit: () =>
+      saveGame(game).then(() => {
+        // Unless the player resumed while the save was being written.
+        if (screen.kind === 'paused' && screen.game === game) void showTitle();
+      }),
+    onQuitWithoutSaving: () => void showTitle(),
+    onExport: () => exportLive(game),
+    difficulty: { value: game.difficulty, set: (d) => game.setDifficulty(d) },
     settings: settingsHooks,
+    failSaves: DEBUG ? { on: debugState.failSaves, set: (on) => (debugState.failSaves = on) } : undefined,
   });
 }
 
@@ -220,6 +345,12 @@ function resume(game: Game): void {
   menus.hide();
   screen = { kind: 'playing', game };
   accumulator = 0;
+}
+
+/** Download a backup of the game as it is now, saved or not. */
+function exportLive(game: Game): void {
+  const slot = activeSlot;
+  if (slot) downloadText(backupFileName(slot.name), backupText(currentSave(game, slot)));
 }
 
 function stats(): FrameStats {
@@ -236,7 +367,7 @@ function frame(now: number): void {
   switch (screen.kind) {
     case 'title':
       // The HTML title screen covers everything. Esc backs out of Controls or Settings.
-      if (wasPressed('Escape')) menus.back();
+      if (actionPressed('pause')) menus.back();
       break;
     case 'loading':
       stepLoading(screen);
@@ -244,7 +375,7 @@ function frame(now: number): void {
     case 'paused':
       screen.game.render(1, stats());
       // Esc backs out of Settings, or resumes from the pause menu.
-      if (wasPressed('Escape') && !menus.back()) resume(screen.game);
+      if (actionPressed('pause') && !menus.back()) resume(screen.game);
       break;
     case 'playing':
       play(screen.game, dt);
@@ -268,9 +399,9 @@ function frame(now: number): void {
 
 function play(game: Game, dt: number): void {
   // Esc pauses, unless it's closing the inventory panel or the map (the game handles those).
-  if (wasPressed('Escape') && !game.capturesEscape) {
+  if (actionPressed('pause') && !game.capturesEscape) {
     endInputStep();
-    pause(game);
+    pause(game, 'menu');
     game.render(1, stats());
     return;
   }
@@ -283,6 +414,7 @@ function play(game: Game, dt: number): void {
   game.render(accumulator / STEP, stats());
 
   // Autosave every AUTOSAVE_INTERVAL, and save any changes within SAVE_CHANGES_AFTER seconds.
+  // These count while the panel or map is open too, so changes made there are saved.
   sinceAutosave += dt;
   sinceChangeCheck += dt;
   if (sinceAutosave >= AUTOSAVE_INTERVAL) {
@@ -299,12 +431,42 @@ function stepLoading(loading: Extract<Screen, { kind: 'loading' }>): void {
   while (performance.now() - start < GEN_FRAME_BUDGET_MS) {
     const next = loading.steps.next();
     if (next.done) {
-      finishLoading(loading.world, loading.save, loading.slot);
+      finishLoading(loading.world, loading.save, loading.slot, loading.difficulty);
       return;
     }
     loading.status = next.value;
   }
   renderer.drawLoading(loading.status);
+}
+
+if (DEBUG) {
+  window.digDeep = {
+    get screen() {
+      return screen.kind;
+    },
+    get game() {
+      return currentGame();
+    },
+    get pausedBy() {
+      return screen.kind === 'paused' ? screen.reason : screen.kind === 'playing' ? screen.game.pausedBy : null;
+    },
+    get lastSavedAt() {
+      return lastSavedAt;
+    },
+    state: debugState,
+    save: () => {
+      const game = currentGame();
+      return game ? saveGame(game) : Promise.resolve();
+    },
+    backupText: () => {
+      const game = currentGame();
+      return game && activeSlot ? backupText(currentSave(game, activeSlot)) : null;
+    },
+    importBackup: async (text) => {
+      if (screen.kind !== 'title') throw new Error('Backups are imported from the title screen');
+      menus.importBackup(text, titleOptions(await listWorlds()));
+    },
+  };
 }
 
 void showTitle();

@@ -192,6 +192,17 @@ describe('building', () => {
     expect(canPlace(world, player, PX + 1, FLOOR - 1, Tile.Dirt)).toBe(true);
   });
 
+  it('places beams only on the ground or on another beam (Phase 12)', () => {
+    const { world, player } = setup();
+    expect(canPlace(world, player, PX + 2, FLOOR - 1, Tile.Beam)).toBe(true); // on the ground
+    world.setTile(PX + 2, FLOOR - 1, Tile.Beam);
+    expect(canPlace(world, player, PX + 2, FLOOR - 2, Tile.Beam)).toBe(true); // on a beam
+    // Beside a block (which would hold a dirt block up) but with air under it: no.
+    world.setTile(PX + 3, FLOOR - 3, Tile.Stone);
+    expect(canPlace(world, player, PX + 4, FLOOR - 3, Tile.Dirt)).toBe(true);
+    expect(canPlace(world, player, PX + 4, FLOOR - 3, Tile.Beam)).toBe(false);
+  });
+
   it('fills every tile a fast sweep crosses, each one touching the last', () => {
     for (const [x0, y0, x1, y1] of [
       [0, 0, 5, 0],

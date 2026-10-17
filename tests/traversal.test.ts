@@ -159,15 +159,65 @@ describe('platforms', () => {
     expect(feet(player)).toBe(PLATFORM * TILE_SIZE);
   });
 
-  it('drop you through with S + jump, but not with S alone', () => {
+  it('drop you through when S is pressed, and with S + jump', () => {
     const world = platformWorld();
     const player = new Player(10, PLATFORM - 1);
     run(player, world, 2);
-    run(player, world, 30, DOWN);
-    expect(feet(player)).toBe(PLATFORM * TILE_SIZE);
-    run(player, world, 1, { ...DOWN, jumpPressed: true, jumpHeld: true });
+    run(player, world, 1, DOWN);
     run(player, world, 60);
     expect(feet(player)).toBe(FLOOR * TILE_SIZE);
+
+    const again = new Player(10, PLATFORM - 1);
+    run(again, world, 2);
+    run(again, world, 1, { ...DOWN, jumpPressed: true, jumpHeld: true });
+    run(again, world, 60);
+    expect(feet(again)).toBe(FLOOR * TILE_SIZE);
+  });
+
+  /** Platforms at rows 12, 18 and 24 over the floor. */
+  function stackWorld(): World {
+    const world = new World(30, 40, 0);
+    fill(world, 0, FLOOR, 29, 39, Tile.Stone);
+    for (const row of [12, 18, 24]) fill(world, 5, row, 15, row, Tile.Platform);
+    return world;
+  }
+
+  it('keep dropping you through the ones below while S is held', () => {
+    const world = stackWorld();
+    const player = new Player(10, 11);
+    run(player, world, 2);
+    run(player, world, 120, DOWN);
+    expect(feet(player)).toBe(FLOOR * TILE_SIZE);
+  });
+
+  it('stop the drop on the next platform once S is let go', () => {
+    const world = stackWorld();
+    const player = new Player(10, 11);
+    run(player, world, 2);
+    run(player, world, 1, DOWN);
+    run(player, world, 120);
+    expect(feet(player)).toBe(18 * TILE_SIZE);
+    expect(player.grounded).toBe(true);
+  });
+
+  it('hold you when you land on one with S already held', () => {
+    const world = platformWorld();
+    const player = new Player(10, 5);
+    run(player, world, 120, DOWN);
+    expect(feet(player)).toBe(PLATFORM * TILE_SIZE);
+    // A fresh press still drops.
+    run(player, world, 1);
+    run(player, world, 60, DOWN);
+    expect(feet(player)).toBe(FLOOR * TILE_SIZE);
+  });
+
+  it('do nothing with S on solid ground', () => {
+    const world = platformWorld();
+    const player = new Player(20, FLOOR - 1);
+    run(player, world, 2);
+    run(player, world, 30, DOWN);
+    expect(feet(player)).toBe(FLOOR * TILE_SIZE);
+    expect(player.grounded).toBe(true);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_HEIGHT, PLAYER_WIDTH, RUN_SPEED, TILE_SIZE } from '../src/config';
+import { JUMP_CORNER_CORRECTION, PLAYER_HEIGHT, PLAYER_WIDTH, RUN_SPEED, TILE_SIZE } from '../src/config';
 import { overlapsSolid, Player, type PlayerControls } from '../src/entities/player';
 import { createRng } from '../src/util/rng';
 import { generateWorld } from '../src/world/generate';
@@ -165,6 +165,94 @@ describe('player physics', () => {
         throw new Error(`player inside terrain at step ${i}: (${player.x}, ${player.y})`);
       }
     }
+  });
+});
+
+describe('jump corner correction', () => {
+  const SHAFT = 10; // column of the 1-tile shaft
+  const CEILING = FLOOR - 2; // first open row under the ceiling (2 tiles of headroom)
+
+  /** Flat world with a ceiling over the player, open only in a 1-tile shaft at column SHAFT. */
+  function shaftWorld(): World {
+    const world = flatWorld();
+    fill(world, 0, 0, 59, CEILING - 1, Tile.Stone);
+    fill(world, SHAFT, 0, SHAFT, CEILING - 1, Tile.Air);
+    return world;
+  }
+
+  /** Player standing under the shaft, `offset` px right of centred (negative: left). */
+  function playerUnderShaft(world: World, offset: number): Player {
+    const player = standingPlayer(world, SHAFT);
+    player.placeAt(SHAFT * TILE_SIZE + (TILE_SIZE - PLAYER_WIDTH) / 2 + offset, player.y);
+    return player;
+  }
+
+  it('slips a slightly off-centre jump into a 1-tile shaft', () => {
+    const centred = SHAFT * TILE_SIZE + (TILE_SIZE - PLAYER_WIDTH) / 2;
+    for (const offset of [-5, -3, 3, 5]) {
+      const world = shaftWorld();
+      const player = playerUnderShaft(world, offset);
+      const rise = jumpRise(player, world, 90);
+      // Rose well into the shaft (the ceiling alone would stop it after a few px).
+      expect(rise, `offset ${offset}`).toBeGreaterThan(2 * TILE_SIZE);
+      // Nudged just far enough to clear the edge, toward the shaft.
+      expect(Math.abs(player.x - centred), `offset ${offset}`).toBeLessThan(Math.abs(offset));
+    }
+  });
+
+  it('still stops a jump that hits the ceiling by more than the limit', () => {
+    // Overlap the ceiling on the right by one px more than the limit.
+    const offset = (TILE_SIZE - PLAYER_WIDTH) / 2 + JUMP_CORNER_CORRECTION + 1;
+    for (const sign of [-1, 1]) {
+      const world = shaftWorld();
+      const player = playerUnderShaft(world, sign * offset);
+      const startX = player.x;
+      let minY = player.y;
+      for (let i = 0; i < 60; i++) {
+        player.update(DT, world, { move: 0, jumpPressed: i === 0, jumpHeld: true });
+        minY = Math.min(minY, player.y);
+      }
+      expect(minY).toBe(CEILING * TILE_SIZE);
+      expect(player.x).toBe(startX);
+    }
+  });
+
+  it('stops a head-on jump into a solid ceiling', () => {
+    const world = flatWorld();
+    fill(world, 0, 0, 59, CEILING - 1, Tile.Stone);
+    const player = standingPlayer(world, SHAFT);
+    const startX = player.x;
+    run(player, world, 60, { move: 0, jumpPressed: true, jumpHeld: true });
+    expect(player.x).toBe(startX);
+    expect(player.y + PLAYER_HEIGHT).toBe(FLOOR_Y);
+  });
+
+  it('never nudges the player into a wall', () => {
+    // The shaft narrows to nothing a tile up and has a notch beside it, and the player jumps
+    // from every offset with every direction held.
+    for (let offset = -10; offset <= 10; offset++) {
+      for (const move of [-1, 0, 1]) {
+        const world = shaftWorld();
+        world.setTile(SHAFT, CEILING - 2, Tile.Stone);
+        world.setTile(SHAFT + 1, CEILING - 1, Tile.Air);
+        const player = playerUnderShaft(world, offset);
+        for (let i = 0; i < 90; i++) {
+          player.update(DT, world, { move, jumpPressed: i === 0, jumpHeld: true });
+          if (overlapsSolid(world, player.x, player.y)) {
+            throw new Error(`inside terrain: offset ${offset}, move ${move}, step ${i}`);
+          }
+        }
+      }
+    }
+  });
+
+  it('does not change how high a jump goes', () => {
+    const world = flatWorld();
+    const player = standingPlayer(world, 5);
+    const open = jumpRise(player, world, 90);
+    const shaft = shaftWorld();
+    const offCentre = playerUnderShaft(shaft, 4);
+    expect(jumpRise(offCentre, shaft, 90)).toBeCloseTo(open, 5);
   });
 });
 

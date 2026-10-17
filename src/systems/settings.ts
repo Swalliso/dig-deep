@@ -12,6 +12,11 @@ export interface Settings {
   /** 0..1 */
   sfxVolume: number;
   screenShake: boolean;
+  /**
+   * Reduced flashes: no break flash, no ore glints and no red flash when hurt; protection shows
+   * as a see-through player instead of blinking.
+   */
+  reducedFlashes: boolean;
   pixelScale: PixelScale;
   /** Small FPS counter in the corner (F3 shows it too). */
   showFps: boolean;
@@ -26,6 +31,7 @@ export function defaultSettings(): Settings {
     masterVolume: DEFAULT_MASTER_VOLUME,
     sfxVolume: DEFAULT_SFX_VOLUME,
     screenShake: true,
+    reducedFlashes: false,
     pixelScale: 'auto',
     showFps: false,
     showMinimap: true,
@@ -48,6 +54,7 @@ export function parseSettings(json: string | null): Settings {
   settings.masterVolume = volume(s.masterVolume, settings.masterVolume);
   settings.sfxVolume = volume(s.sfxVolume, settings.sfxVolume);
   if (typeof s.screenShake === 'boolean') settings.screenShake = s.screenShake;
+  if (typeof s.reducedFlashes === 'boolean') settings.reducedFlashes = s.reducedFlashes;
   if (s.pixelScale === 'auto' || s.pixelScale === 2 || s.pixelScale === 3) settings.pixelScale = s.pixelScale;
   if (typeof s.showFps === 'boolean') settings.showFps = s.showFps;
   if (typeof s.showMinimap === 'boolean') settings.showMinimap = s.showMinimap;

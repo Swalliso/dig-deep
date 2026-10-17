@@ -5,6 +5,7 @@ import type { World } from '../world/world';
 import { forEachTileInRange } from './crafting';
 import { addToSlots, type Inventory, type Slots } from './inventory';
 import type { ItemId } from './items';
+import { BASE_STATS } from './stats';
 
 /** A chest's contents (stored as the chest tile's entity). */
 export type Chest = ChestData;
@@ -26,10 +27,10 @@ export function chestAt(world: World, entities: TileEntities, tx: number, ty: nu
   return chest;
 }
 
-/** Chests with a tile centre within STATION_RANGE tiles of world point (x, y), nearest first. */
-export function nearbyChests(world: World, entities: TileEntities, x: number, y: number): Chest[] {
+/** Chests with a tile centre within `range` tiles (the player's station range) of world point (x, y), nearest first. */
+export function nearbyChests(world: World, entities: TileEntities, x: number, y: number, range = BASE_STATS.stationRange): Chest[] {
   const found: { chest: Chest; distance: number }[] = [];
-  forEachTileInRange(world, x, y, (tx, ty, tile, distance) => {
+  forEachTileInRange(world, x, y, range, (tx, ty, tile, distance) => {
     if (tile !== Tile.Chest) return;
     const chest = chestAt(world, entities, tx, ty);
     if (chest) found.push({ chest, distance });

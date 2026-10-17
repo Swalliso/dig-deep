@@ -87,6 +87,24 @@ export class Particles {
     }
   }
 
+  /** One speck of dust trickling down from under tile (tx, ty): shaking gravel's warning. */
+  trickle(tx: number, ty: number, color: string): void {
+    const life = 0.5 + Math.random() * 0.4;
+    this.list.push({
+      x: (tx + 0.15 + Math.random() * 0.7) * TILE_SIZE,
+      y: (ty + 1) * TILE_SIZE,
+      vx: (Math.random() - 0.5) * 6,
+      vy: 10 + Math.random() * 20,
+      life,
+      maxLife: life,
+      color: Math.random() < 0.5 ? shade(color, 1.2) : '#d8d2c8',
+      size: 1,
+      gravity: PARTICLE_GRAVITY * 0.25,
+      drag: 0,
+      fade: true,
+    });
+  }
+
   update(dt: number, world: World): void {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const p = this.list[i];

@@ -1,5 +1,6 @@
 import { PLAYER_HEIGHT, PLAYER_WIDTH, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
+import { beamFooting, worldGetter } from '../world/supports';
 import { isClimbable, isSolid, Tile, tileDef, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
 import type { Inventory } from './inventory';
@@ -8,11 +9,13 @@ import { inReach } from './mining';
 
 /**
  * Can `tile` be placed at (tx, ty)? The spot must be empty air within reach, next to a tile
- * that holds blocks up (no floating blocks), and a solid block can't overlap the player.
- * Doors have their own rule; see doorSpot.
+ * that holds blocks up (no floating blocks), and a solid block can't overlap the player. A beam
+ * also needs a beam or firm ground right under it (see beamFooting).
+ * Doors and beds have their own rules; see doorSpot and bedSpot.
  */
 export function canPlace(world: World, player: Player, tx: number, ty: number, tile: TileId): boolean {
   if (tile === Tile.DoorClosedBottom) return doorSpot(world, player, tx, ty) !== null;
+  if (tile === Tile.BedLeft) return bedSpot(world, player, tx, ty) !== null;
   if (!world.inBounds(tx, ty) || world.getTile(tx, ty) !== Tile.Air) return false;
   if (!inReach(player, tx, ty)) return false;
   const supported =
@@ -21,13 +24,18 @@ export function canPlace(world: World, player: Player, tx: number, ty: number, t
     holdsBlocks(world.getTile(tx, ty - 1)) ||
     holdsBlocks(world.getTile(tx, ty + 1));
   if (!supported) return false;
+  if (tile === Tile.Beam && !beamFooting(worldGetter(world), tx, ty)) return false;
   if (isSolid(tile) && overlapsPlayer(player, tx, ty)) return false;
   return true;
 }
 
-/** Blocks can be placed against solid tiles, and against ladders and platforms so those can be extended. */
+/**
+ * Blocks can be placed against solid tiles, and against ladders, platforms, beams and crossbeams
+ * so those can be extended.
+ */
 function holdsBlocks(tile: TileId): boolean {
-  return isSolid(tile) || isClimbable(tile) || tileDef(tile).oneWay === true;
+  const def = tileDef(tile);
+  return isSolid(tile) || isClimbable(tile) || def.oneWay === true || def.support !== undefined;
 }
 
 /**
@@ -51,6 +59,23 @@ export function doorSpot(world: World, player: Player, tx: number, ty: number): 
   return null;
 }
 
+/**
+ * Where a bed placed at the cursor tile (tx, ty) goes: the cursor can be on its left or its
+ * right tile. Returns the left tile, or null if it doesn't fit: both tiles must be empty, with
+ * solid ground under both, and the cursor tile in reach. (Beds don't block movement, so they
+ * may overlap the player.)
+ */
+export function bedSpot(world: World, player: Player, tx: number, ty: number): [number, number] | null {
+  if (!inReach(player, tx, ty)) return null;
+  for (const lx of [tx, tx - 1]) {
+    const fits = [lx, lx + 1].every(
+      (x) => world.inBounds(x, ty) && world.getTile(x, ty) === Tile.Air && isSolid(world.getTile(x, ty + 1)),
+    );
+    if (fits) return [lx, ty];
+  }
+  return null;
+}
+
 /** Place one of the selected hotbar item at (tx, ty). Returns true if a tile was placed. */
 export function tryPlace(world: World, player: Player, inventory: Inventory, tx: number, ty: number): boolean {
   const stack = inventory.selectedStack;
@@ -61,6 +86,10 @@ export function tryPlace(world: World, player: Player, inventory: Inventory, tx:
     const [bx, by] = doorSpot(world, player, tx, ty)!;
     world.setTile(bx, by - 1, Tile.DoorClosedTop);
     world.setTile(bx, by, Tile.DoorClosedBottom);
+  } else if (tile === Tile.BedLeft) {
+    const [lx, ly] = bedSpot(world, player, tx, ty)!;
+    world.setTile(lx, ly, Tile.BedLeft);
+    world.setTile(lx + 1, ly, Tile.BedRight);
   } else {
     world.setTile(tx, ty, tile);
   }

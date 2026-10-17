@@ -1,6 +1,6 @@
 import * as sfx from '../audio/sfx';
 import { BUILD_SHA, CHANNEL } from '../channel';
-import { BAG_SIZE, CHEST_SLOTS, CRAFT_MANY, DEPOSIT_ALL_HOTBAR, HOTBAR_SIZE, PICKAXES, STATION_RANGE } from '../config';
+import { BAG_SIZE, CHEST_SLOTS, CRAFT_MANY, DEPOSIT_ALL_HOTBAR, HOTBAR_SIZE, PICKAXES } from '../config';
 import { depositAll, lootAll, moveToChest, moveToInventory, quickStack, type Chest } from '../systems/chests';
 import {
   availableCount,
@@ -15,10 +15,12 @@ import {
 } from '../systems/crafting';
 import { clickSlotIn, type Inventory, type ItemStack } from '../systems/inventory';
 import { itemDef, type ItemId } from '../systems/items';
-import { SAVE_VERSION, type WorldMeta } from '../systems/save';
+import { DIFFICULTIES, difficultyName, type Difficulty } from '../systems/health';
+import { readBackup } from '../systems/backup';
+import { SAVE_VERSION, type SaveData, type WorldMeta } from '../systems/save';
 import type { PixelScale, Settings } from '../systems/settings';
 import { tileDef } from '../world/tiles';
-import { CONTROLS } from './controls';
+import { CONTROLS, keyList, mainKey } from './controls';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 
 // Inventory + crafting panel (opened with E or Tab, or by right-clicking a chest). Sizes are in
@@ -95,7 +97,7 @@ const BUTTONS: { id: ChestButton; label: string; tip: string[] }[] = [
     label: 'Deposit all',
     tip: [DEPOSIT_ALL_HOTBAR ? 'Put everything you carry in the chest.' : 'Put everything in your bag in the chest.', ...(DEPOSIT_ALL_HOTBAR ? [] : ['The hotbar stays with you.'])],
   },
-  { id: 'stack', label: 'Quick stack', tip: ['Put in only the items this chest already holds.', 'C: quick stack into every chest nearby.'] },
+  { id: 'stack', label: 'Quick stack', tip: ['Put in only the items this chest already holds.', `${keyList('quickStack')}: quick stack into every chest nearby.`] },
 ];
 const CHEST_ACTIONS: Record<ChestButton, (inventory: Inventory, chest: Chest) => number> = {
   loot: (inventory, chest) => lootAll(chest, inventory),
@@ -203,10 +205,12 @@ const hit = (r: Rect, x: number, y: number): boolean => x >= r.x && x < r.x + r.
 /** What the panel shows and works on. */
 export interface PanelState {
   inventory: Inventory;
-  /** Stations within STATION_RANGE. */
+  /** Stations within the player's station range. */
   stations: ReadonlySet<Station>;
-  /** Chests within STATION_RANGE; crafting can use what's in them. */
+  /** Chests within the player's station range; crafting can use what's in them. */
   chests: readonly Chest[];
+  /** The player's station range in tiles (for tooltips). */
+  stationRange: number;
   /** The chest opened with right-click, if any. */
   chest: Chest | null;
 }
@@ -460,12 +464,18 @@ function placesLine(item: ItemId): TipLine | null {
   return { text: `Places: ${def.name} (${def.solid ? 'solid block' : 'walk-through'})`, color: LIGHT };
 }
 
+/** An item's extra tooltip lines (how it works, its limits). */
+function detailLines(item: ItemId): TipLine[] {
+  return (itemDef(item).details ?? []).map((text) => ({ text, color: LIGHT }));
+}
+
 /** Name, what it does, what it places and where it's crafted. */
 function itemTip(item: ItemId): TipLine[] {
   const def = itemDef(item);
   const lines: TipLine[] = [
     { text: def.name, color: WHITE, big: true },
     { text: def.description, color: LIGHT },
+    ...detailLines(item),
   ];
   if (def.pickaxeTier !== undefined) lines.push({ text: `Mining speed ${PICKAXES[def.pickaxeTier].speed}x`, color: LIGHT });
   const places = placesLine(item);
@@ -482,13 +492,14 @@ function recipeTip(recipe: Recipe, state: PanelState): TipLine[] {
   const lines: TipLine[] = [
     { text: recipe.count > 1 ? `${def.name} x${recipe.count}` : def.name, color: WHITE, big: true },
     { text: def.description, color: LIGHT },
+    ...detailLines(recipe.output),
   ];
   if (def.pickaxeTier !== undefined) lines.push({ text: `Mining speed ${PICKAXES[def.pickaxeTier].speed}x`, color: LIGHT });
   const places = placesLine(recipe.output);
   if (places) lines.push(places);
   if (recipe.station) {
     const near = stations.has(recipe.station);
-    lines.push({ text: `Needs a ${STATION_NAMES[recipe.station]} within ${STATION_RANGE} tiles${near ? '' : ' (none near)'}`, color: near ? LIGHT : RED });
+    lines.push({ text: `Needs a ${STATION_NAMES[recipe.station]} within ${state.stationRange} tiles${near ? '' : ' (none near)'}`, color: near ? LIGHT : RED });
   } else {
     lines.push({ text: 'No station needed', color: LIGHT });
   }
@@ -498,7 +509,7 @@ function recipeTip(recipe: Recipe, state: PanelState): TipLine[] {
     const have = `have ${carried}${stored > 0 ? ` + ${stored} in chests` : ''}`;
     lines.push({ text: `${count} ${itemDef(item).name}: ${have}`, color: carried + stored >= count ? LIGHT : RED });
   }
-  lines.push({ text: `Click: craft 1   Shift-click: craft ${CRAFT_MANY}`, color: GREY });
+  lines.push({ text: `Click: craft 1   ${mainKey('modifier')}-click: craft ${CRAFT_MANY}`, color: GREY });
   return lines;
 }
 
@@ -565,21 +576,45 @@ export interface TitleOptions {
   /** A message to show under the title, e.g. that a world couldn't be loaded. */
   note?: string;
   onPlay: (world: WorldMeta) => void;
-  /** Start a new world with this name and seed text ('' means a random seed). */
-  onCreate: (name: string, seedText: string) => void;
+  /** Start a new world with this name, seed text ('' means a random seed) and difficulty. */
+  onCreate: (name: string, seedText: string, difficulty: Difficulty) => void;
   /** Delete a world (the screen has already asked to confirm); resolves to the worlds left. */
   onDelete: (world: WorldMeta) => Promise<WorldMeta[]>;
   /** Debug mode only: an extra button that marks the most recent world as an older version. */
   onMarkOutdated?: (world: WorldMeta) => void;
+  /** Download a world's backup file; rejects if its save can't be read. */
+  onExport: (world: WorldMeta) => Promise<void>;
+  /**
+   * Store an imported save as a new world, or in place of `replace` (the screen has already
+   * asked to confirm). Resolves to the name it was stored under and every world afterwards.
+   */
+  onImport: (save: SaveData, replace: WorldMeta | null) => Promise<{ name: string; worlds: WorldMeta[] }>;
   settings: SettingsHooks;
 }
 
 export interface PauseOptions {
+  /** Why the game paused, shown under the heading (e.g. the window lost focus). */
+  note?: string;
   onResume: () => void;
   /** Resolves once the save is written; rejects if it failed. */
   onSave: () => Promise<void>;
-  onQuit: () => void;
+  /** Save, then go to the title. Rejects if the save failed; the game then stays open. */
+  onQuit: () => Promise<void>;
+  /** Go to the title without saving (offered after a failed Save & quit). */
+  onQuitWithoutSaving: () => void;
+  /** Download a backup of the world as it is right now (works even when saving doesn't). */
+  onExport: () => void;
+  /** The world's difficulty, which can be changed here without regenerating the world. */
+  difficulty: { value: Difficulty; set: (difficulty: Difficulty) => void };
   settings: SettingsHooks;
+  /** Debug mode only: a switch that makes every save fail. */
+  failSaves?: { on: boolean; set: (on: boolean) => void };
+}
+
+/** A line under a screen's heading: news (good) or a problem. */
+interface Notice {
+  text: string;
+  good: boolean;
 }
 
 
@@ -622,7 +657,6 @@ export class Menus {
 
     const reopen = (): void => this.showTitle(options);
     const list = button(`Worlds (${worlds.length})`, () => this.showWorlds(options));
-    list.disabled = worlds.length === 0;
     const fresh = button('New world', () => this.showNewWorld(options));
     menu.append(
       list,
@@ -638,17 +672,27 @@ export class Menus {
     (resume.disabled ? fresh : resume).focus();
   }
 
-  /** Every world: click one to play it; Delete asks for a second click. */
-  showWorlds(options: TitleOptions): void {
+  /**
+   * Every world: click one to play it. Export downloads a backup and Delete asks for a second
+   * click. Import backup reads a backup file and asks how to add it.
+   */
+  showWorlds(options: TitleOptions, notice?: Notice): void {
     const menu = this.open('title');
     menu.classList.add('worlds');
     menu.append(el('h2', 'Worlds'));
+    if (notice) menu.append(el('p', notice.text, notice.good ? 'note good' : 'note'));
     const list = el('div', '', 'world-list');
+    if (options.worlds.length === 0) list.append(el('p', 'No worlds yet.', 'detail'));
     for (const world of options.worlds) {
       const row = el('div', '', 'world-row');
       const play = button(world.name, () => options.onPlay(world), 'play');
       play.append(el('span', worldDetail(world), 'detail'));
       play.disabled = world.version !== SAVE_VERSION;
+      const exportButton = button('Export', () => {
+        options.onExport(world).catch(() => (exportButton.textContent = 'Export failed'));
+      }, 'small');
+      exportButton.disabled = world.version !== SAVE_VERSION;
+      exportButton.setAttribute('aria-label', `Export ${world.name}`);
       let confirming = false;
       const remove = button('Delete', () => {
         if (!confirming) {
@@ -665,28 +709,96 @@ export class Menus {
         });
       }, 'small');
       remove.setAttribute('aria-label', `Delete ${world.name}`);
-      row.append(play, remove);
+      row.append(play, exportButton, remove);
       list.append(row);
     }
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = '.json,application/json';
+    picker.hidden = true;
+    picker.addEventListener('change', () => {
+      const file = picker.files?.[0];
+      if (!file) return;
+      file.text().then(
+        (text) => this.importBackup(text, options),
+        () => this.showWorlds(options, { text: "Couldn't read that file.", good: false }),
+      );
+    });
+    const importButton = button('Import backup…', () => picker.click());
     const back = button('Back', () => this.showTitle(options));
-    menu.append(list, back);
+    menu.append(list, importButton, picker, back);
     this.onBack = () => this.showTitle(options);
-    (list.querySelector('button:not(:disabled)') as HTMLButtonElement | null ?? back).focus();
+    (list.querySelector('button:not(:disabled)') as HTMLButtonElement | null ?? importButton).focus();
   }
 
-  /** Name and seed for a new world. */
+  /** A backup file's text: say why it can't be imported, or ask how to import it. */
+  importBackup(text: string, options: TitleOptions): void {
+    const read = readBackup(text);
+    if (read.kind === 'ok') this.showImport(options, read.save);
+    else this.showWorlds(options, { text: read.reason, good: false });
+  }
+
+  /**
+   * How to import a backup: as a new world, or in place of a world with the same seed (most
+   * likely the one it was exported from). Replacing asks for a second click.
+   */
+  private showImport(options: TitleOptions, save: SaveData): void {
+    const menu = this.open('title');
+    menu.classList.add('worlds');
+    const name = save.name ?? 'Imported world';
+    menu.append(el('h2', 'Import world'), el('p', `${name} · seed ${save.seed} · saved ${timeAgo(save.savedAt)}`, 'detail'));
+    const buttons: HTMLButtonElement[] = [];
+    const finish = (replace: WorldMeta | null): void => {
+      for (const b of buttons) b.disabled = true;
+      options.onImport(save, replace).then(
+        (done) => this.showWorlds({ ...options, worlds: done.worlds }, { text: `Imported "${done.name}".`, good: true }),
+        () => this.showWorlds(options, { text: "Couldn't import it: the browser wouldn't store it.", good: false }),
+      );
+    };
+    const add = button('Add as a new world', () => finish(null));
+    buttons.push(add);
+    menu.append(add);
+    const sameSeed = options.worlds.filter((w) => w.seed === save.seed);
+    if (sameSeed.length > 0) menu.append(el('p', 'Or replace a world with the same seed. Its current save is lost.', 'detail'));
+    for (const world of sameSeed) {
+      let confirming = false;
+      const replace = button(`Replace "${world.name}"`, () => {
+        if (!confirming) {
+          confirming = true;
+          replace.textContent = `Replace "${world.name}"? Click again`;
+          replace.classList.add('danger');
+          return;
+        }
+        finish(world);
+      });
+      replace.append(el('span', worldDetail(world), 'detail'));
+      buttons.push(replace);
+      menu.append(replace);
+    }
+    const cancel = button('Cancel', () => this.showWorlds(options));
+    buttons.push(cancel);
+    menu.append(cancel);
+    this.onBack = () => this.showWorlds(options);
+    add.focus();
+  }
+
+  /** Name, seed and difficulty for a new world. */
   showNewWorld(options: TitleOptions): void {
     const menu = this.open('title');
     menu.append(el('h2', 'New world'));
     const name = textField('world-name', 'Name', `World ${options.worlds.length + 1}`, '');
     const seed = textField('seed', 'Seed (number or any text)', 'random', options.seedText);
-    const create = button('Create world', () => options.onCreate(name.input.value.trim() || name.input.placeholder, seed.input.value));
+    let difficulty: Difficulty = 'normal';
+    const picker = difficultyPicker(difficulty, (d) => (difficulty = d));
+    const create = button('Create world', () =>
+      options.onCreate(name.input.value.trim() || name.input.placeholder, seed.input.value, difficulty),
+    );
     for (const field of [name.input, seed.input]) {
       field.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') create.click();
       });
     }
-    menu.append(name.label, name.input, seed.label, seed.input, create, button('Back', () => this.showTitle(options)));
+    menu.append(name.label, name.input, seed.label, seed.input, picker, create, button('Back', () => this.showTitle(options)));
     this.onBack = () => this.showTitle(options);
     name.input.focus();
   }
@@ -706,7 +818,7 @@ export class Menus {
     back.focus();
   }
 
-  /** Volumes, screen shake, pixel scale and the FPS counter. Every change applies and saves at once. */
+  /** Volumes, screen shake, reduced flashes, pixel scale, the FPS counter and the minimap. Every change applies and saves at once. */
   showSettings(hooks: SettingsHooks, kind: 'title' | 'pause', onBack: () => void): void {
     const { settings, onChange } = hooks;
     const menu = this.open(kind);
@@ -721,6 +833,10 @@ export class Menus {
     });
     const shake = toggle('set-shake', 'Screen shake', settings.screenShake, (on) => {
       settings.screenShake = on;
+      onChange();
+    });
+    const flashes = toggle('set-flashes', 'Reduced flashes', settings.reducedFlashes, (on) => {
+      settings.reducedFlashes = on;
       onChange();
     });
     const scales: [PixelScale, string][] = [
@@ -740,7 +856,7 @@ export class Menus {
       settings.showMinimap = on;
       onChange();
     });
-    menu.append(el('h2', 'Settings'), master.row, effects.row, shake, scale, fps, minimap, button('Back', onBack));
+    menu.append(el('h2', 'Settings'), master.row, effects.row, shake, flashes, scale, fps, minimap, button('Back', onBack));
     this.onBack = onBack;
     master.input.focus();
   }
@@ -748,6 +864,7 @@ export class Menus {
   showPause(options: PauseOptions): void {
     const menu = this.open('pause');
     menu.append(el('h2', 'Paused'));
+    if (options.note) menu.append(el('p', options.note, 'detail'));
     const resume = button('Resume', options.onResume);
     const save = button('Save', () => {
       save.disabled = true;
@@ -759,7 +876,43 @@ export class Menus {
         .finally(() => (save.disabled = false));
     });
     const settings = button('Settings', () => this.showSettings(options.settings, 'pause', () => this.showPause(options)));
-    menu.append(resume, save, settings, button('Quit to title', options.onQuit));
+    // Save & quit only leaves once the save is written. If it fails the game stays open, and
+    // the player can try again, export a backup, or quit without saving (two clicks).
+    const problem = el('p', '', 'note');
+    problem.hidden = true;
+    let quitAnyway: HTMLButtonElement | null = null;
+    const quit = button('Save & quit', () => {
+      quit.disabled = true;
+      quit.textContent = 'Saving…';
+      options.onQuit().catch(() => {
+        quit.disabled = false;
+        quit.textContent = 'Save & quit (try again)';
+        problem.textContent = "Couldn't save the world, so the game is still open. Try again, or export a backup first.";
+        problem.hidden = false;
+        if (quitAnyway) return;
+        let confirming = false;
+        const anyway = button('Quit without saving', () => {
+          if (!confirming) {
+            confirming = true;
+            anyway.textContent = 'Quit without saving? Click again';
+            anyway.classList.add('danger');
+            return;
+          }
+          options.onQuitWithoutSaving();
+        }, 'small');
+        quitAnyway = anyway;
+        menu.insertBefore(anyway, debugRow);
+      });
+    });
+    const difficulty = options.difficulty;
+    const picker = difficultyPicker(difficulty.value, (d) => {
+      difficulty.value = d;
+      difficulty.set(d);
+    });
+    menu.append(resume, save, button('Export backup', options.onExport), settings, picker, quit, problem);
+    const fail = options.failSaves;
+    const debugRow = fail ? toggle('set-fail-saves', 'Debug: saves fail', fail.on, (on) => fail.set(on)) : null;
+    if (debugRow) menu.append(debugRow);
     resume.focus();
   }
 
@@ -770,6 +923,18 @@ export class Menus {
     this.root.replaceChildren(menu);
     return menu;
   }
+}
+
+/** Offer `text` to the player as a file download. */
+export function downloadText(fileName: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text: string, className = ''): HTMLElementTagNameMap[K] {
@@ -866,13 +1031,35 @@ function choices<T>(label: string, options: [T, string][], value: T, onPick: (va
   return settingRow(label, group);
 }
 
+/** Normal / Cozy buttons with a line saying what the picked one means. */
+function difficultyPicker(value: Difficulty, onPick: (difficulty: Difficulty) => void): HTMLDivElement {
+  const box = el('div', '', 'difficulty');
+  const about = el('p', '', 'detail');
+  const describe = (d: Difficulty): void => {
+    about.textContent = DIFFICULTIES.find((x) => x.id === d)?.description ?? '';
+  };
+  const row = choices(
+    'World',
+    DIFFICULTIES.map((d): [Difficulty, string] => [d.id, d.name]),
+    value,
+    (d) => {
+      describe(d);
+      onPick(d);
+    },
+  );
+  describe(value);
+  box.append(row, about);
+  return box;
+}
+
 /** "seed 42 · saved 5 min ago", or why the world can't be loaded. */
 function worldDetail(world: WorldMeta): string {
   if (world.version !== SAVE_VERSION) {
     if (world.version < 0) return "this save can't be read";
     return `saved by ${world.version < SAVE_VERSION ? 'an older' : 'a newer'} version, can't be loaded`;
   }
-  return `seed ${world.seed} · saved ${timeAgo(world.savedAt)}`;
+  const difficulty = world.difficulty ? `${difficultyName(world.difficulty)} · ` : '';
+  return `${difficulty}seed ${world.seed} · saved ${timeAgo(world.savedAt)}`;
 }
 
 function timeAgo(time: number): string {

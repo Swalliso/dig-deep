@@ -1,9 +1,10 @@
-import { STATION_RANGE, TILE_SIZE } from '../config';
+import { TILE_SIZE } from '../config';
 import { Tile, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
 import type { Chest } from './chests';
 import { copySlots, type Inventory } from './inventory';
 import type { ItemId } from './items';
+import { BASE_STATS } from './stats';
 
 export type Station = 'workbench' | 'furnace';
 
@@ -53,38 +54,42 @@ export const RECIPES: readonly Recipe[] = [
   recipe('materials', 'gold_bar', 1, 'furnace', ['gold_ore', 3], ['coal', 1]),
   recipe('tools', 'gold_pickaxe', 1, 'workbench', ['gold_bar', 10], ['wood', 5]),
   recipe('stations', 'chest', 1, 'workbench', ['planks', 8]),
+  recipe('blocks', 'beam', 2, null, ['planks', 1]),
+  recipe('blocks', 'crossbeam', 2, null, ['planks', 1]),
   recipe('blocks', 'ladder', 4, 'workbench', ['planks', 3]),
   recipe('blocks', 'platform', 2, 'workbench', ['planks', 1]),
   recipe('blocks', 'door', 1, 'workbench', ['planks', 6]),
+  recipe('stations', 'bed', 1, 'workbench', ['planks', 10], ['wood', 4]),
 ];
 
 const STATION_TILES: Record<Station, number> = { workbench: Tile.Workbench, furnace: Tile.Furnace };
 
 /**
- * Visit every tile whose centre is within STATION_RANGE tiles of world point (x, y), row by
- * row from the top, with its distance in px.
+ * Visit every tile whose centre is within `range` tiles (the player's station range) of world
+ * point (x, y), row by row from the top, with its distance in px.
  */
 export function forEachTileInRange(
   world: World,
   x: number,
   y: number,
+  range: number,
   visit: (tx: number, ty: number, tile: TileId, distance: number) => void,
 ): void {
   const tx0 = Math.floor(x / TILE_SIZE);
   const ty0 = Math.floor(y / TILE_SIZE);
-  const range = STATION_RANGE * TILE_SIZE;
-  for (let ty = ty0 - STATION_RANGE - 1; ty <= ty0 + STATION_RANGE + 1; ty++) {
-    for (let tx = tx0 - STATION_RANGE - 1; tx <= tx0 + STATION_RANGE + 1; tx++) {
+  const tiles = Math.ceil(range);
+  for (let ty = ty0 - tiles - 1; ty <= ty0 + tiles + 1; ty++) {
+    for (let tx = tx0 - tiles - 1; tx <= tx0 + tiles + 1; tx++) {
       const distance = Math.hypot((tx + 0.5) * TILE_SIZE - x, (ty + 0.5) * TILE_SIZE - y);
-      if (distance <= range) visit(tx, ty, world.getTile(tx, ty), distance);
+      if (distance <= range * TILE_SIZE) visit(tx, ty, world.getTile(tx, ty), distance);
     }
   }
 }
 
-/** Stations with a tile centre within STATION_RANGE tiles of world point (x, y). */
-export function nearbyStations(world: World, x: number, y: number): Set<Station> {
+/** Stations with a tile centre within `range` tiles (the player's station range) of world point (x, y). */
+export function nearbyStations(world: World, x: number, y: number, range = BASE_STATS.stationRange): Set<Station> {
   const found = new Set<Station>();
-  forEachTileInRange(world, x, y, (_tx, _ty, tile) => {
+  forEachTileInRange(world, x, y, range, (_tx, _ty, tile) => {
     for (const station of ['workbench', 'furnace'] as const) if (tile === STATION_TILES[station]) found.add(station);
   });
   return found;

@@ -1,5 +1,6 @@
 import { MAP_FOG_COLOR, MAP_PAN_SPEED, MAP_ZOOM_START, MAP_ZOOMS, MINIMAP_HEIGHT, MINIMAP_WIDTH, TILE_SIZE } from '../config';
 import type { MapImage } from '../render/mapImage';
+import { mapHelpText } from './controls';
 import { shadowText } from './hud';
 
 // The full-screen map (M) and the corner minimap (N), both drawn from the MapImage. Sizes are
@@ -12,6 +13,10 @@ export interface MapMarkers {
   playerY: number;
   spawn: { tx: number; ty: number };
   chests: { tx: number; ty: number }[];
+  /** The bed the player respawns at (its left tile), if any. */
+  bed: { tx: number; ty: number } | null;
+  /** Satchels left where the player died (tile coordinates, fractional). Drawn as diamonds. */
+  satchels: { tx: number; ty: number }[];
 }
 
 /** One update step of input for the open map. */
@@ -31,6 +36,8 @@ export interface MapInput {
 const PLAYER_COLOR = '#ffe066';
 const SPAWN_COLOR = '#7cd65a';
 const CHEST_COLOR = '#d08a3c';
+const BED_COLOR = '#ff7eb6';
+const SATCHEL_COLOR = '#c792ff';
 
 export class FullMap {
   open = false;
@@ -104,6 +111,8 @@ export class FullMap {
     const size = Math.max(3 * u, scale);
     for (const chest of markers.chests) marker(ctx, sx(chest.tx + 0.5), sy(chest.ty + 0.5), size, CHEST_COLOR, u);
     marker(ctx, sx(markers.spawn.tx + 0.5), sy(markers.spawn.ty + 0.5), size, SPAWN_COLOR, u);
+    if (markers.bed) marker(ctx, sx(markers.bed.tx + 1), sy(markers.bed.ty + 0.5), size, BED_COLOR, u);
+    for (const satchel of markers.satchels) diamond(ctx, sx(satchel.tx), sy(satchel.ty), size * 1.4, SATCHEL_COLOR, u);
     marker(ctx, sx(markers.playerX / TILE_SIZE), sy(markers.playerY / TILE_SIZE), size * 1.4, PLAYER_COLOR, u);
 
     ctx.font = `${8 * u}px monospace`;
@@ -111,14 +120,34 @@ export class FullMap {
     ctx.textBaseline = 'top';
     shadowText(ctx, 'Map', width / 2, 8 * u, '#fff', u);
     ctx.font = `${5 * u}px monospace`;
-    shadowText(ctx, 'Drag or WASD to pan · Wheel to zoom · M or Esc to close', width / 2, 19 * u, '#b8b8c8', u);
-    drawLegend(ctx, width / 2, height - 12 * u, u);
+    shadowText(ctx, mapHelpText(), width / 2, 19 * u, '#b8b8c8', u);
+    drawLegend(ctx, width / 2, height - 12 * u, u, markers);
     ctx.restore();
   }
 
   private pxPerTile(u: number): number {
     return MAP_ZOOMS[this.zoom] * u;
   }
+}
+
+/** A diamond marker centred on (x, y) screen px, with a dark outline (satchels). */
+function diamond(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string, u: number): void {
+  const r = Math.round(size / 2);
+  const edge = Math.max(1, Math.round(u / 2));
+  const path = (radius: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(Math.round(x), Math.round(y) - radius);
+    ctx.lineTo(Math.round(x) + radius, Math.round(y));
+    ctx.lineTo(Math.round(x), Math.round(y) + radius);
+    ctx.lineTo(Math.round(x) - radius, Math.round(y));
+    ctx.closePath();
+  };
+  ctx.fillStyle = '#000';
+  path(r + 2 * edge);
+  ctx.fill();
+  ctx.fillStyle = color;
+  path(r);
+  ctx.fill();
 }
 
 /** A square marker centred on (x, y) screen px, with a dark outline. */
@@ -133,12 +162,14 @@ function marker(ctx: CanvasRenderingContext2D, x: number, y: number, size: numbe
   ctx.fillRect(left, top, s, s);
 }
 
-function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: number): void {
+function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: number, markers: MapMarkers): void {
   const items: [string, string][] = [
     [PLAYER_COLOR, 'You'],
     [SPAWN_COLOR, 'Spawn'],
     [CHEST_COLOR, 'Chest'],
   ];
+  if (markers.bed) items.push([BED_COLOR, 'Bed']);
+  if (markers.satchels.length > 0) items.push([SATCHEL_COLOR, 'Satchel']);
   ctx.font = `${5 * u}px monospace`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
@@ -146,7 +177,8 @@ function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: num
   const widths = items.map(([, label]) => 6 * u + ctx.measureText(label).width);
   let x = cx - (widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1)) / 2;
   items.forEach(([color, label], i) => {
-    marker(ctx, x + 2 * u, y, 3 * u, color, u);
+    if (color === SATCHEL_COLOR) diamond(ctx, x + 2 * u, y, 4 * u, color, u);
+    else marker(ctx, x + 2 * u, y, 3 * u, color, u);
     shadowText(ctx, label, x + 6 * u, y, '#d6d6d6', u);
     x += widths[i] + gap;
   });
@@ -187,6 +219,10 @@ export function drawMinimap(ctx: CanvasRenderingContext2D, image: MapImage, mark
   const at = (t: number, origin: number, screen: number): number => screen + (t + 0.5 - origin) * u;
   for (const chest of markers.chests) marker(ctx, at(chest.tx, left, x0), at(chest.ty, top, y0), 2 * u, CHEST_COLOR, u);
   marker(ctx, at(markers.spawn.tx, left, x0), at(markers.spawn.ty, top, y0), 2 * u, SPAWN_COLOR, u);
+  if (markers.bed) marker(ctx, at(markers.bed.tx + 0.5, left, x0), at(markers.bed.ty, top, y0), 2 * u, BED_COLOR, u);
+  for (const satchel of markers.satchels) {
+    diamond(ctx, x0 + (satchel.tx - left) * u, y0 + (satchel.ty - top) * u, 3 * u, SATCHEL_COLOR, u);
+  }
   marker(ctx, x0 + (markers.playerX / TILE_SIZE - left) * u, y0 + (markers.playerY / TILE_SIZE - top) * u, 3 * u, PLAYER_COLOR, u);
   ctx.restore();
 }

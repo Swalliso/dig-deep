@@ -54,6 +54,14 @@ These override the spec. Don't revert them.
   their own actions. Right-click only interacts (chests, doors, later beds and lift stops); it
   never digs or places. E or Tab also opens the nearest chest in reach. The spec had left mine
   and right place; a tester found right-click doing both placing and interacting confusing.
+- **Jump corner correction.** A jump whose head clips a ceiling edge on one side only, by at
+  most `JUMP_CORNER_CORRECTION` (6 px), slides sideways past it and keeps rising, so jumping
+  into a one-tile hole doesn't need perfect alignment. Only if the shifted box is clear; a
+  head-on hit still stops the jump, and jump height is unchanged. Not on ladders or in fly mode.
+- **S drops through platforms.** Pressing S while standing on a platform drops through it
+  (ROADMAP's Phase 10 had S + Space, which still works). Holding S keeps dropping through the
+  platforms below; letting go stops on the next one. S held since before landing (falling or
+  off a ladder) doesn't drop, so only a fresh press starts a drop.
 - **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
   pickaxe" hint (instead of a toast) were all reviewed and kept.
 - **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything
@@ -65,16 +73,23 @@ These override the spec. Don't revert them.
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
 **G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
-chests, and stacks of ladders, platforms and doors), **F**
+chests, two beds, and stacks of ladders, platforms, doors, gravel, beams and crossbeams), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
 (fullbright) for exploring, **O** puts a 4 x 2 patch of every ore at the cursor (for ore
-sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, and **V** reveals the
-whole map. Debug mode also opens the F3 overlay at start, and the title screen gets a button
-that marks the most recent world as an older version (to test the version-mismatch screen). All cheats live in
-`src/debug.ts`. When a new phase adds something slow to reach by playing, add
-a shortcut there and mention it in the phase's test steps.
+sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, **V** reveals the
+whole map, **H** toggles god mode (and heals), **J** deals 2 damage (to test falls, fly up
+with F and turn fly off) and **B** puts a 3 x 3 block of gravel at the cursor (in the open it
+shakes and falls at once; in rock it's a pocket to dig under). Debug mode also opens the F3 overlay at start, the title screen gets a button
+that marks the most recent world as an older version (to test the version-mismatch screen), and
+the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
+mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
+and `window.digDeep` exposes the running game for scripted browser checks (`screen`, `game`,
+`pausedBy`, `lastSavedAt`, `state`, `save()`, `backupText()`, `importBackup(text)`). All cheats
+live in `src/debug.ts`; their keys are the `debug*` actions in `src/input.ts`. When a new phase
+adds something slow to reach by playing, add a shortcut there and mention it in the phase's
+test steps.
 
 ## Stack
 
@@ -110,7 +125,8 @@ src/
                      HUD
   config.ts          every tunable number
   channel.ts         live vs dev-site build, storageKey() for every saved key
-  input.ts           keyboard + mouse state
+  input.ts           the action table (every key binding) and keyboard + mouse state, read
+                     through actionDown/actionPressed
   debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining)
   util/rng.ts        seeded PRNG (shared by world gen and textures)
   audio/
@@ -119,14 +135,21 @@ src/
   world/
     tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid, climbable,
                      one-way), floor checks
-    world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile
-    generate.ts      seeded terrain, caves, ores, trees, bedrock, spawn
+    world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile, the world's
+                     generation profile
+    generate.ts      generation profiles (frozen 'classic', 'gravel' for new worlds); seeded
+                     terrain, caves, ores, gravel pockets, trees, bedrock, spawn
+    supports.ts      loose tiles and what holds them up: firm ground, anchored beams (posts) and
+                     crossbeams/platforms (spans); the support preview
+    tileUpdates.ts   active tile updates: a queue of tiles to recheck after a change next to them,
+                     worked through with a per-step budget
     trees.ts         felling: cutting a trunk removes the tree above the cut
     lighting.ts      per-tile light: sky columns + torches, spread with falloff, incremental relight
     tileEntities.ts  per-tile data (chest contents), keyed by ty * width + tx, removed when the
                      tile changes
     doors.ts         doors: two tiles each (open and closed are separate tile ids), toggling,
                      finding the other half
+    beds.ts          beds: two tiles side by side (the respawn point), finding the other half
     explored.ts      which tiles the player has seen (the map's fog of war), per chunk
   entities/
     player.ts        movement, jump, tile collision, auto step-up, ladder climbing, one-way
@@ -139,12 +162,23 @@ src/
     mining.ts        reach + tier checks, break progress, crack stage, hints
     building.ts      placement rules (empty, in reach, supported, not on the player), door
                      placement, drag-build lines, middle-click pick
+    caveIns.ts       shaking and falling gravel: warnings, falling blocks, landing, damage, Cozy,
+                     saved state; beams that lose their footing break
+    hints.ts         one-time hints already seen (per device, localStorage)
+    clock.ts         the session clock (seconds of simulated play) and what can pause it
+    stats.ts         PlayerStats: base values from config plus gear/boon modifiers (reach,
+                     station range, drop pull, run/jump, max health, safe fall height)
+    health.ts        HP, hurt protection and regeneration (on the session clock), difficulty
+                     (Cozy/Normal), fall damage
+    death.ts         satchels (the bag left on death) and collecting them, the respawn point
+                     (bed, or a safe fallback near spawn)
     crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
                      then nearby chests)
     chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
     save.ts          save format (seed + changed chunks, RLE) + world slots in IndexedDB via
                      idb-keyval (each save stored with a small world-list entry)
-    settings.ts      player settings (volumes, screen shake, pixel scale, FPS counter) in
+    backup.ts        world backup files: export a save as JSON, check one before importing
+    settings.ts      player settings (volumes, screen shake, reduced flashes, pixel scale, FPS counter) in
                      localStorage
   render/
     camera.ts        camera position, clamping
@@ -158,11 +192,13 @@ src/
     mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
   ui/
     hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
+    vitals.ts        hearts, the protection bar, the way to a satchel, the death screen
+    controls.ts      the controls list for the Controls screen and every on-screen key hint
+                     (F3 help, map help, tooltips), built from the action table; a test keeps
+                     README.md's table matching it and every row short enough to fit
     menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
                      new world, controls, settings, pause (HTML in #ui)
     map.ts           full-screen map (M: pan, zoom, markers) and the corner minimap (N)
-    controls.ts      the controls list for the Controls screen (a test keeps README.md's table
-                     matching it and every row short enough to fit)
 tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 
@@ -186,6 +222,18 @@ they drop.
   Moving things (player, camera) keep `prevX`/`prevY`, and render interpolates between the
   last two update steps so motion stays smooth on high-refresh screens. Keyboard edge
   presses (`wasPressed`) are cleared after each update step.
+- **Pausing**: the inventory panel, the full map, the pause menu and losing window focus (or
+  hiding the tab) all pause the world. `Game.update` still handles input for the HUD, the
+  panel and the map every step, but only calls `simulate()` while neither is open, and main.ts
+  doesn't call `update` at all while the pause menu is up. Everything timed in the world
+  (physics, drops, mining damage and healing, ore glints, later hazards) takes its time from
+  the simulation step and `Game.clock` (`systems/clock.ts`), never from `Date.now()` or
+  `performance.now()`. Toasts and UI animations run on real time. Focus loss needs an explicit
+  resume, except in debug mode, where it doesn't pause.
+- **Input**: game code reads keys only through actions (`actionDown('jump')`,
+  `actionPressed('inventory')`) from the table in `input.ts`. Any text that names a key builds
+  it with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test
+  rebinds every action and checks no default key name is left in the hints.
 - **Physics**: player intent comes in as a plain `PlayerControls` object, so physics can be
   unit-tested without the DOM. Movement is split into steps of at most `MAX_MOVE_STEP` px,
   resolved X then Y, so nothing tunnels through tiles.
@@ -202,10 +250,23 @@ they drop.
   version" instead of loading wrong. Items lying on the ground are saved (as an optional
   `drops` field; adding optional fields like that needs no version bump). Chest contents are
   saved the same way, as an optional `tileEntities` field, and so are the map's explored tiles
-  (`explored`, per chunk, RLE). Particles, half-mined tile damage and the trash slot aren't
-  saved. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
+  (`explored`, per chunk, RLE), and so is the session clock (`playTime`). A stack held on the
+  mouse is saved as if put away; whatever doesn't fit is saved as a drop at the player, so
+  saving never loses it. Particles, half-mined tile damage and the trash slot aren't saved.
+  Autosave's change check compares `savedState()` (everything but tiles, map and play time)
+  plus the world's and map's revisions, so new saved state goes in `savedState()`; a test
+  enforces it. Cave-ins (shaking tiles, falling blocks, queued rechecks) are saved as an
+  optional `caveIns` field, so a reload mid-collapse loses and duplicates nothing. Save & quit only leaves once the write succeeds. Backups (`systems/backup.ts`)
+  are the save as JSON with Uint8Arrays as `{ "$bytes": base64 }`; imports must pass
+  `checkSave` and `findSaveProblem` before anything is written, and replacing a world needs a
+  second click. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
   `dig-deep:save` key so older saves carry over) plus a small `WorldMeta` entry written with it
-  in one transaction, so the title screen lists worlds without loading every save. Keeping
+  in one transaction, so the title screen lists worlds without loading every save. Each save
+  records its world's **generation profile** (`profile`: name and version; missing = classic)
+  and loading regenerates with it, so existing worlds never pick up new generation. A profile
+  must never change what it generates once released (a test pins classic's world hashes): new
+  generation goes in a new profile, and `NEW_WORLD_PROFILE` picks what new worlds get. A
+  profile this version doesn't know reads as a save from a newer version. Keeping
   old worlds working is nice but never a constraint (testers know breaking changes may come):
   when it would hold a feature back, bump `SAVE_VERSION` instead. See ROADMAP.md's "World
   compatibility" row.
