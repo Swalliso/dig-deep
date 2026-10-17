@@ -59,7 +59,8 @@ These override the spec. Don't revert them.
   (`primaryAction` in `systems/building.ts`): holding a block over an empty spot places it
   (hold to sweep), anything else digs with the best carried pickaxe, and held tools will get
   their own actions. Right-click only interacts (chests, doors, later beds and lift stops); it
-  never digs or places. E or Tab also opens the nearest chest in reach. The spec had left mine
+  never digs or places. In the crafting panel it pins a recipe, and on the full map it adds or
+  picks a map pin (the `pin` action). E or Tab also opens the nearest chest in reach. The spec had left mine
   and right place; a tester found right-click doing both placing and interacting confusing.
 - **Jump corner correction.** A jump whose head clips a ceiling edge on one side only, by at
   most `JUMP_CORNER_CORRECTION` (6 px), slides sideways past it and keeps rising, so jumping
@@ -135,7 +136,7 @@ src/
   config.ts          every tunable number
   channel.ts         live vs dev-site build, storageKey() for every saved key
   input.ts           the action table (every key binding) and keyboard + mouse state, read
-                     through actionDown/actionPressed
+                     through actionDown/actionPressed; typing mode (naming a map pin)
   debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining)
   util/rng.ts        seeded PRNG (shared by world gen and textures)
   audio/
@@ -172,7 +173,7 @@ src/
                      trash slot, pick block, best pickaxe, starting items
     mining.ts        reach + tier checks, break progress, crack stage, hints
     building.ts      placement rules (empty, in reach, supported, not on the player), door
-                     placement, drag-build lines, middle-click pick
+                     placement, drag-build lines, middle-click pick, quick torch's spot
     caveIns.ts       shaking and falling gravel: warnings, falling blocks, landing, damage, Cozy,
                      saved state; beams that lose their footing break
     hints.ts         one-time hints already seen (per device, localStorage)
@@ -187,6 +188,10 @@ src/
                      (bed, or a safe fallback near spawn)
     crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
                      then nearby chests)
+    goal.ts          the pinned recipe (next goal): its ingredient counts and station, where
+                     raw materials are found, the next pickaxe to suggest
+    mapPins.ts       the player's named map pins (explored tiles only, MAP_PIN_MAX) and the
+                     tracked one
     chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
     save.ts          save format (seed + changed chunks, RLE) + world slots in IndexedDB via
                      idb-keyval (each save stored with a small world-list entry)
@@ -212,7 +217,9 @@ src/
                      README.md's table matching it and every row short enough to fit
     menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
                      new world, controls, settings, pause (HTML in #ui)
-    map.ts           full-screen map (M: pan, zoom, markers) and the corner minimap (N)
+    map.ts           full-screen map (M: pan, zoom, markers, pins and the pin editor) and the
+                     corner minimap (N)
+    guidance.ts      the pinned recipe's lines on the HUD
 tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
 ```
 
@@ -247,7 +254,10 @@ they drop.
 - **Input**: game code reads keys only through actions (`actionDown('jump')`,
   `actionPressed('inventory')`) from the table in `input.ts`. Any text that names a key builds
   it with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test
-  rebinds every action and checks no default key name is left in the hints.
+  rebinds every action and checks no default key name is left in the hints. While a map pin's
+  name is being typed (`startTyping` in `input.ts`), key presses edit the text instead of
+  reaching the actions, except the `confirm` and `pause` keys, which end the typing; the game
+  ends typing whenever the map closes or the pause menu opens.
 - **Physics**: player intent comes in as a plain `PlayerControls` object, so physics can be
   unit-tested without the DOM. Movement is split into steps of at most `MAX_MOVE_STEP` px,
   resolved X then Y, so nothing tunnels through tiles.
@@ -269,7 +279,8 @@ they drop.
   version" instead of loading wrong. Items lying on the ground are saved (as an optional
   `drops` field; adding optional fields like that needs no version bump). Chest contents are
   saved the same way, as an optional `tileEntities` field, and so are the map's explored tiles
-  (`explored`, per chunk, RLE), and so is the session clock (`playTime`). A stack held on the
+  (`explored`, per chunk, RLE), and so is the session clock (`playTime`), and so are the pinned
+  recipe (`pinnedRecipe`, by the item it makes) and the map pins (`mapPins`). A stack held on the
   mouse is saved as if put away; whatever doesn't fit is saved as a drop at the player, so
   saving never loses it. Particles, half-mined tile damage and the trash slot aren't saved.
   Autosave's change check compares `savedState()` (everything but tiles, map and play time)

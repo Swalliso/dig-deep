@@ -8,6 +8,8 @@ import { BASE_STATS } from './stats';
 
 export type Station = 'workbench' | 'furnace';
 
+export const STATION_NAMES: Record<Station, string> = { workbench: 'Workbench', furnace: 'Furnace' };
+
 /** Where a recipe is listed in the crafting panel. */
 export type RecipeGroup = 'blocks' | 'tools' | 'materials' | 'stations';
 

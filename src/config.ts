@@ -327,6 +327,16 @@ export const MAP_PAN_SPEED = 300; // UI units per second when panning with WASD 
 // Minimap (corner, N toggles): its size in UI units, at one tile per UI unit.
 export const MINIMAP_WIDTH = 100;
 export const MINIMAP_HEIGHT = 64;
+// Map pins (right-click the full map): named marks on explored tiles. One can be tracked, which
+// shows its direction and distance on the HUD and on the minimap.
+export const MAP_PIN_MAX = 12;
+export const MAP_PIN_NAME_MAX = 18; // characters
+export const MAP_PIN_HIT = 6; // UI units: how close to a pin a right-click picks it rather than adding one
+
+// --- Quick torch (T) ---
+// Places a carried torch at the cursor, or when that spot can't take one, at the spot nearest
+// the player's centre within this many tiles.
+export const QUICK_TORCH_RADIUS = 2; // tiles
 
 // --- HUD ---
 export const TOAST_DURATION = 1.5; // s

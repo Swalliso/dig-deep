@@ -16,8 +16,9 @@ export interface ActionDef {
  * Every action and its keys: the one place key bindings live. The Controls screen, the F3 help,
  * tooltips and hints all read key names from here (see ui/controls.ts), so a remapping screen
  * only has to edit this table. Some actions share a key on purpose: W/↑ both jumps and climbs,
- * Space also respawns from the death screen, and the left mouse button uses the held item in
- * the world and clicks in menus.
+ * Space also respawns from the death screen, Enter also finishes typing a pin name, the left
+ * mouse button uses the held item in the world and clicks in menus, and the right one interacts
+ * in the world and pins things in the crafting panel and on the map.
  */
 const ACTION_DEFS = {
   moveLeft: { label: 'Move left', keys: ['KeyA', 'ArrowLeft'] },
@@ -27,6 +28,8 @@ const ACTION_DEFS = {
   climbDown: { label: 'Climb down, or drop through a platform', keys: ['KeyS', 'ArrowDown'] },
   use: { label: 'Dig, place the held block or throw a flare', keys: ['MouseLeft'] },
   interact: { label: 'Open a chest or door, or sleep in a bed', keys: ['MouseRight'] },
+  pin: { label: 'Pin a recipe (crafting panel) or add or edit a map pin (map)', keys: ['MouseRight'] },
+  quickTorch: { label: 'Quick torch: place a carried torch at the cursor or nearby', keys: ['KeyT'] },
   pickBlock: { label: 'Pick block onto the hotbar', keys: ['MouseMiddle'] },
   click: { label: 'Click in the inventory and drag the map', keys: ['MouseLeft'] },
   modifier: { label: 'Shift-click: move a stack or craft 10', keys: ['ShiftLeft', 'ShiftRight'] },
@@ -48,6 +51,7 @@ const ACTION_DEFS = {
   pause: { label: 'Pause, or close the inventory, map or a menu screen', keys: ['Escape'] },
   overlay: { label: 'Debug overlay (FPS)', keys: ['F3'] },
   respawn: { label: 'Respawn after dying', keys: ['Space', 'Enter'] },
+  confirm: { label: 'Finish typing a map pin name', keys: ['Enter'] },
   debugGive: { label: 'Debug: materials kit', keys: ['KeyG'], debug: true },
   debugFly: { label: 'Debug: fly mode', keys: ['KeyF'], debug: true },
   debugInstantMine: { label: 'Debug: instant mining', keys: ['KeyI'], debug: true },
@@ -131,12 +135,25 @@ export function initInput(canvas: HTMLCanvasElement): void {
     // Typing in a menu field (the seed, a volume slider) isn't game input, except Esc, which
     // backs out of menus.
     if (e.target instanceof HTMLInputElement && e.code !== 'Escape') return;
+    if (typing && !endsTyping(e.code)) {
+      // Keep the browser from acting on typed keys too (Space scrolling, Tab), but let Ctrl/Cmd
+      // shortcuts (paste) and the F keys (reload, dev tools) through.
+      if (!e.ctrlKey && !e.metaKey && !/^F\d/.test(e.code)) e.preventDefault();
+      typeKey(typing, e);
+      return;
+    }
     if (!e.repeat) pressed.add(e.code);
     down.add(e.code);
     // Leave keys alone on menu buttons so Space/Enter still press them.
     if (NO_DEFAULT.has(e.code) && !(e.target instanceof HTMLButtonElement)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => down.delete(e.code));
+  window.addEventListener('paste', (e) => {
+    const pasted = e.clipboardData?.getData('text') ?? '';
+    if (!typing || e.target instanceof HTMLInputElement) return;
+    e.preventDefault();
+    typing.text = (typing.text + pasted.replace(/\s+/g, ' ')).slice(0, typing.maxLength);
+  });
   // Releasing a key while the tab is unfocused never fires keyup, so forget everything.
   window.addEventListener('blur', () => down.clear());
 
@@ -182,6 +199,40 @@ export function consumeWheel(): number {
   const steps = wheelSteps;
   wheelSteps = 0;
   return steps;
+}
+
+// --- Typing (naming a map pin) ---
+
+/**
+ * While typing, key presses edit the text instead of reaching the actions, except the keys of
+ * `confirm` and `pause`, which go through as usual so the game can end typing.
+ */
+let typing: { text: string; maxLength: number } | null = null;
+
+/** Start typing into a text that starts as `text`. */
+export function startTyping(text: string, maxLength: number): void {
+  typing = { text: text.slice(0, maxLength), maxLength };
+}
+
+export function stopTyping(): void {
+  typing = null;
+}
+
+/** The text being typed, or null when not typing. */
+export function typedText(): string | null {
+  return typing?.text ?? null;
+}
+
+/** Keys that finish typing reach the actions as usual. */
+function endsTyping(code: string): boolean {
+  return ACTIONS.confirm.keys.includes(code) || ACTIONS.pause.keys.includes(code);
+}
+
+/** One key press while typing. Shortcuts type nothing (AltGr, which reads as Ctrl+Alt, does). */
+function typeKey(entry: { text: string; maxLength: number }, e: KeyboardEvent): void {
+  if (e.metaKey || e.ctrlKey !== e.altKey) return;
+  if (e.key === 'Backspace') entry.text = entry.text.slice(0, -1);
+  else if (e.key.length === 1 && entry.text.length < entry.maxLength) entry.text += e.key;
 }
 
 /** Call after every fixed update step. */

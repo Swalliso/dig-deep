@@ -62,16 +62,19 @@ export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
     ['Build a row', `Hold ${use} and sweep`],
     ['Throw a held flare', `${key('use')} at a spot`],
     ['Pick block onto hotbar', key('pickBlock')],
+    ['Quick torch (keeps what you hold)', list('quickTorch')],
     ['Open chest, use door or bed', `${clickName('interact', table)} it`],
     ['Climb a ladder', `${keyPairs('climbUp', 'climbDown', table)} on it`],
     ['Drop through a platform', `${key('climbDown')} (hold to keep dropping)`],
     ['Map / minimap', `${key('map')} / ${key('minimap')}`],
+    ['Add or edit a map pin', `${clickName('pin', table)} the map`],
     ['Select hotbar slot', `${hotbarRange(table)} or mouse wheel`],
     ['Drop selected stack', list('dropStack')],
     ['Quick stack to nearby chests', list('quickStack')],
     ['Inventory, crafting, nearest chest', list('inventory')],
     ['Move stack (hotbar ↔ bag ↔ chest)', `${key('modifier')}-click`],
     ['Craft 10', `${key('modifier')}-click a recipe`],
+    ['Pin a recipe as your goal', `${clickName('pin', table)} the recipe`],
     ['Pause', list('pause')],
     ['Debug overlay (FPS)', list('overlay')],
   ];
@@ -87,9 +90,9 @@ export function overlayHelpLines(table: ActionTable = ACTIONS): string[] {
   return [
     `${keyPairs('moveLeft', 'moveRight', table, '/')}: move   ${list('jump')}: jump   ${keyPairs('climbUp', 'climbDown', table, '/')} on a ladder: climb   ${key('climbDown')} on a platform: drop through`,
     `${key('use')}: dig, or place the held block on an empty spot (hold to sweep), or throw a held flare`,
-    `${key('interact')}: open chest or door, sleep in bed (respawn there)   ${key('pickBlock')}: pick block`,
+    `${key('interact')}: open chest or door, sleep in bed (respawn there)   ${key('pickBlock')}: pick block   ${list('quickTorch')}: quick torch`,
     `${hotbarRange(table)} or wheel: select   ${list('dropStack')}: drop stack   ${list('quickStack')}: quick stack to nearby chests`,
-    `${list('inventory')}: inventory + crafting, with the nearest chest (${key('modifier').toLowerCase()}-click: move stack, craft 10)`,
+    `${list('inventory')}: inventory + crafting, with the nearest chest (${key('modifier').toLowerCase()}-click: move stack, craft 10; ${key('pin').toLowerCase()}: pin a recipe)`,
     `${list('map')}: map   ${list('minimap')}: minimap   ${list('pause')}: pause   ${list('overlay')}: hide this overlay`,
   ];
 }
@@ -108,5 +111,20 @@ export function ladderGrabHint(table: ActionTable = ACTIONS): string {
 export function mapHelpText(table: ActionTable = ACTIONS): string {
   const pan = (['climbUp', 'moveLeft', 'climbDown', 'moveRight'] as const).map((action) => mainKey(action, table));
   const panKeys = pan.every((name) => name.length === 1) ? pan.join('') : pan.join('/');
-  return `Drag or ${panKeys} to pan · Wheel to zoom · ${mainKey('map', table)} or ${mainKey('pause', table)} to close`;
+  return `Drag or ${panKeys} to pan · Wheel to zoom · ${clickName('pin', table)}: pin · ${mainKey('map', table)} or ${mainKey('pause', table)} to close`;
+}
+
+/** The pin editor's help line: 'Type a name · Enter: done · Esc: cancel'. */
+export function pinEditorHelp(table: ActionTable = ACTIONS): string {
+  return `Type a name · ${mainKey('confirm', table)}: done · ${mainKey('pause', table)}: cancel`;
+}
+
+/** The goal box with nothing pinned: 'Right-click a recipe to pin it as your goal.' */
+export function pinRecipeHint(table: ActionTable = ACTIONS): string {
+  return `${clickName('pin', table)} a recipe to pin it as your goal.`;
+}
+
+/** A recipe tooltip's pin line: 'Right-click: pin as your goal' (or 'unpin'). */
+export function pinRecipeTip(pinned: boolean, table: ActionTable = ACTIONS): string {
+  return `${clickName('pin', table)}: ${pinned ? 'unpin' : 'pin as your goal'}`;
 }

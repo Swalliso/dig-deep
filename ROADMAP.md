@@ -176,9 +176,9 @@ recipe expansion. These additions do not renumber phases.
 
 | Enhancement | Target | Scope and acceptance |
 | --- | --- | --- |
-| Optional next goal | Guidance slice | Pin one recipe, show ingredient counts and the required station, and suggest the next pickaxe upgrade. Counts include nearby crafting storage. Add brief ore-depth guidance; no separate quest system. The pin survives reload and can be cleared. |
+| Optional next goal | Guidance slice | Pin one recipe, show ingredient counts and the required station, and suggest the next pickaxe upgrade. Counts include nearby crafting storage. Add brief ore-depth guidance; no separate quest system. The pin survives reload and can be cleared. Built in the guidance slice. |
 | Introduction prompts | With each hazard | Short, dismissible hints for the first crafting station, bed, dangerous fall, unstable ceiling and dark cave. Teach each hazard in a forgiving encounter; hints can be reopened from help. Shipped so far: the ladder-grab hint (11b), the loose-gravel and support hints (12) and the dread hint (13). Still to do: station and bed hints, and reopening hints from help. |
-| Player map pins | Guidance slice | A few named pins for veins, alternate routes and places to revisit. Save them per world, respect fog of war, and allow one selected pin to show direction and distance without forcing the map open. |
+| Player map pins | Guidance slice | A few named pins for veins, alternate routes and places to revisit. Save them per world, respect fog of war, and allow one selected pin to show direction and distance without forcing the map open. Built in the guidance slice. |
 | Action feedback | During Arc 3 (flexible) | Visible mining swing, hovered tile names, and specific tier hints such as "Requires copper pickaxe" (today's hint just says "Need better pickaxe"). Invalid building explains the reason. Shipped: support previews (12) and the lantern drawn in the player's hand (13). |
 | Accessible controls and display | During Arc 3 (flexible) | Remappable actions (a screen over 11a's action table) with reset-to-default and conflict feedback; independent UI/text scaling; visual equivalents for sound warnings. Persist preferences per device and update displayed key hints. Introduce visual hazard cues with each hazard. Shipped: the reduced-flash setting (11b). |
 | Crafting grows with content | By 16 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. |
@@ -369,6 +369,16 @@ getting back to places, and placing torches gets quicker now that dread makes th
   so its key hints, and later remapping, follow. (Promoted from "Quick light action".)
 - Saves: the pinned recipe and map pins are saved per world as optional fields in
   `savedState()`, so no `SAVE_VERSION` bump.
+- As built: right-click (the `pin` action) pins a recipe in the crafting panel and adds or
+  picks a map pin on the full map; T is quick torch. The inventory gets a **Next goal** box
+  (the pinned recipe, an Unpin button, and the next pickaxe with where its ore is found, from
+  the generation's ore depths; clicking it pins that pickaxe), and the HUD lists the goal's
+  ingredients under the hearts, with the depths of any raw ore still missing. A pin stays
+  pinned after crafting until cleared. Map pins (up to 12, named by typing on the map; Enter
+  keeps the name, Esc the old one) can be tracked, renamed and deleted from a small editor on
+  the map; the first one is tracked straight away. The tracked pin shows as "Name 34 m ↘" on
+  the HUD and in white on the map and minimap. Quick torch takes a torch from anywhere in the
+  inventory and places it at the cursor, or at the free spot nearest the player within 2 tiles.
 
 - [ ] A pinned recipe shows what's missing and where to craft it, and still does after a reload.
 - [ ] Map pins can be added, named, selected and removed; the selected pin's direction shows
@@ -410,7 +420,7 @@ number 14.
   was felled), a wood substitute from the Fungal Hollows (mushroom stems), or both. Keep growth
   simple, with no farming system.
 - **Progression checks**: every new ore can be reached and mined using the preceding tier.
-- Debug: T teleports to the top of the next stratum.
+- Debug: Y teleports to the top of the next stratum (T is quick torch, from the guidance slice).
 
 - [ ] Each stratum looks and sounds different at its depth, and the same seed gives the same
       world.
