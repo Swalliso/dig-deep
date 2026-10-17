@@ -307,6 +307,58 @@ function bed(img: ImageData, rng: Rng, left: boolean): void {
   }
 }
 
+/**
+ * Gravel: rounded pebbles of several shades, each with a light top and a dark edge, packed with
+ * dark gaps between them. Lighter and lumpier than stone, so loose ground reads at a glance.
+ */
+function gravel(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Gravel).color);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) put(img, x, y, c, 0.45 + rng() * 0.08);
+  // Pebbles on a jittered 4 px grid, each 3 or 4 px across with clipped corners.
+  for (let gy = 0; gy < S; gy += 4) {
+    for (let gx = 0; gx < S; gx += 4) {
+      const size = rng() < 0.5 ? 3 : 4;
+      const ox = gx + randInt(rng, 0, 4 - size + (size === 3 ? 1 : 0));
+      const oy = gy + randInt(rng, 0, 4 - size + (size === 3 ? 1 : 0));
+      const tone = 0.85 + rng() * 0.35;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const corner = (x === 0 || x === size - 1) && (y === 0 || y === size - 1);
+          if (corner || ox + x >= S || oy + y >= S) continue;
+          const shade = y === 0 || (x === 0 && y === 1) ? 1.2 : y === size - 1 || x === size - 1 ? 0.78 : 1;
+          put(img, ox + x, oy + y, c, tone * shade);
+        }
+      }
+    }
+  }
+}
+
+/** Beam: a vertical post of rough wood, 6 px wide, with a dark edge and grain lines. */
+function beam(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Beam).color);
+  for (let y = 0; y < S; y++) {
+    for (let x = 5; x < 11; x++) {
+      const edge = x === 5 ? 1.18 : x === 10 ? 0.62 : x === 8 ? 0.86 : 1;
+      put(img, x, y, c, edge * (rng() < 0.12 ? 0.88 : 1));
+    }
+  }
+  // Iron bands near the top and bottom.
+  for (const y of [1, 14]) for (let x = 5; x < 11; x++) put(img, x, y, [70, 70, 76], x === 5 ? 1.3 : 1);
+}
+
+/** Crossbeam: a thick horizontal beam along the top of the tile, with two angled braces under it. */
+function crossbeam(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Crossbeam).color);
+  for (let y = 0; y < 5; y++) {
+    for (let x = 0; x < S; x++) put(img, x, y, c, (y === 0 ? 1.2 : y === 4 ? 0.62 : 1) * (rng() < 0.12 ? 0.88 : 1));
+  }
+  for (let i = 0; i < 5; i++) {
+    put(img, 2 + i, 5 + i, c, 0.8);
+    put(img, 13 - i, 5 + i, c, 0.8);
+  }
+  for (const x of [3, 12]) put(img, x, 2, [70, 70, 76]); // pegs
+}
+
 function drawTile(img: ImageData, id: number, rng: Rng): void {
   switch (id) {
     case Tile.Grass: return grass(img, rng);
@@ -333,6 +385,9 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.DoorOpenBottom: return doorOpen(img, false);
     case Tile.BedLeft: return bed(img, rng, true);
     case Tile.BedRight: return bed(img, rng, false);
+    case Tile.Gravel: return gravel(img, rng);
+    case Tile.Beam: return beam(img, rng);
+    case Tile.Crossbeam: return crossbeam(img, rng);
   }
 }
 

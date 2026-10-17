@@ -464,12 +464,18 @@ function placesLine(item: ItemId): TipLine | null {
   return { text: `Places: ${def.name} (${def.solid ? 'solid block' : 'walk-through'})`, color: LIGHT };
 }
 
+/** An item's extra tooltip lines (how it works, its limits). */
+function detailLines(item: ItemId): TipLine[] {
+  return (itemDef(item).details ?? []).map((text) => ({ text, color: LIGHT }));
+}
+
 /** Name, what it does, what it places and where it's crafted. */
 function itemTip(item: ItemId): TipLine[] {
   const def = itemDef(item);
   const lines: TipLine[] = [
     { text: def.name, color: WHITE, big: true },
     { text: def.description, color: LIGHT },
+    ...detailLines(item),
   ];
   if (def.pickaxeTier !== undefined) lines.push({ text: `Mining speed ${PICKAXES[def.pickaxeTier].speed}x`, color: LIGHT });
   const places = placesLine(item);
@@ -486,6 +492,7 @@ function recipeTip(recipe: Recipe, state: PanelState): TipLine[] {
   const lines: TipLine[] = [
     { text: recipe.count > 1 ? `${def.name} x${recipe.count}` : def.name, color: WHITE, big: true },
     { text: def.description, color: LIGHT },
+    ...detailLines(recipe.output),
   ];
   if (def.pickaxeTier !== undefined) lines.push({ text: `Mining speed ${PICKAXES[def.pickaxeTier].speed}x`, color: LIGHT });
   const places = placesLine(recipe.output);

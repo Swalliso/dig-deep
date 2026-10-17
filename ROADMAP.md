@@ -611,6 +611,13 @@ phase with acceptance criteria when playtests show it solves a real problem.
 - **Run variety**: test an optional cache or side objective that offers supplies versus a
   boon, or an early extraction choice. Adopt only if it improves the existing risk/reward loop
   without extending runs beyond their target length.
+- **Hazard and building design review**: once the danger arc and strata have settled, review
+  cave-ins and supports as a whole alongside the other hazards and building pieces, rather
+  than rule by rule. Questions from the Phase 12 playtest: do supports earn their place over
+  plain blocks (they now reach diagonally and keep space open), are the anchoring rules
+  (walls, beams, ground, rock above, the 4-tile span that is really 5 next to a wall) easy to
+  predict, how often do gravel pockets and rich ceilings appear, and does Cozy (no cave-ins at
+  all) still feel right next to dread and later hazards.
 
 ## Order
 
