@@ -1,8 +1,8 @@
-import { BEAM_MAX_HEIGHT, CHEST_SLOTS, MAX_STACK, SPAN_MAX, SUPPORT_REACH } from '../config';
+import { BEAM_MAX_HEIGHT, CHEST_SLOTS, FLARE_LIGHT, FLARE_TIME, LANTERN_LIGHT, LIGHT_FALLOFF_AIR, MAX_STACK, SPAN_MAX, SUPPORT_REACH } from '../config';
 import { Tile, type TileId } from '../world/tiles';
 
 /** A tile texture, or a shape drawn in code with a material color. */
-export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed'; color: string };
+export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed' | 'lantern' | 'flare'; color: string };
 
 export interface ItemDef {
   name: string;
@@ -17,6 +17,8 @@ export interface ItemDef {
   icon: ItemIcon;
   /** Set on pickaxes: the tier it mines at (index into PICKAXES). */
   pickaxeTier?: number;
+  /** Left-click throws one toward the cursor (flares). */
+  thrown?: boolean;
 }
 
 const block = (name: string, tile: TileId, description: string): ItemDef => ({
@@ -96,6 +98,30 @@ export const ITEMS = {
       'Platforms hold gravel the same way.',
     ],
   },
+  lantern: {
+    name: 'Lantern',
+    description: `Lights ${LANTERN_LIGHT / LIGHT_FALLOFF_AIR} tiles around you while it's in your hand.`,
+    details: [
+      'Its light keeps dread away wherever you go,',
+      'but health only comes back in the light of',
+      'torches or the sky.',
+      'Mining still works while you hold it.',
+    ],
+    maxStack: 1,
+    placeTile: null,
+    icon: { shape: 'lantern', color: '#ffcf5a' },
+  },
+  flare: {
+    name: 'Flare',
+    description: `Thrown at the cursor, it sticks and lights ${FLARE_LIGHT / LIGHT_FALLOFF_AIR} tiles around for ${FLARE_TIME} s.`,
+    details: ['For scouting: its light keeps dread away,', "but like the lantern's, it doesn't heal."],
+    maxStack: MAX_STACK,
+    placeTile: null,
+    icon: { shape: 'flare', color: '#ff5a6e' },
+    thrown: true,
+  },
+  glowshroom: block('Glowshroom', Tile.Glowshroom, "A mushroom that glows. Its light heals, like a torch's."),
+  glow_crystal: block('Glow crystal', Tile.GlowCrystal, "A crystal that glows. Its light heals, like a torch's."),
   // Placed as the bottom half; building.ts adds the top half above it.
   door: { ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'), icon: { shape: 'door', color: '#8f6236' } },
   // Placed as the left half; building.ts adds the right half beside it.

@@ -9,6 +9,7 @@ import {
   WORLD_WIDTH,
 } from './config';
 import { DEBUG, debugState } from './debug';
+import { flaresFromSave } from './entities/flare';
 import { Game, type FrameStats } from './game';
 import { actionPressed, consumeWheel, endInputStep, initInput } from './input';
 import { Renderer } from './render/renderer';
@@ -39,6 +40,7 @@ import {
   type WorldMeta,
 } from './systems/save';
 import { restoreBed, restoreSatchels } from './systems/death';
+import { Dread } from './systems/dread';
 import type { Difficulty } from './systems/health';
 import { computeStats } from './systems/stats';
 import { loadSettings, saveSettings } from './systems/settings';
@@ -164,9 +166,10 @@ function applySettings(): void {
   currentGame()?.resize();
 }
 
-/** Health, difficulty, bed, satchels and cave-ins: the game's saved state beyond the player and inventory. */
+/** Health, difficulty, bed, satchels, cave-ins, dread and flares: the game's saved state beyond the player and inventory. */
 function survival(game: Game): SurvivalState {
-  return { health: game.health, difficulty: game.difficulty, bed: game.bed, satchels: game.satchels, caveIns: game.caveIns };
+  const { health, difficulty, bed, satchels, caveIns, dread, flares } = game;
+  return { health, difficulty, bed, satchels, caveIns, dread, flares };
 }
 
 /** The game as a save, right now. */
@@ -306,6 +309,8 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
             bed: restoreBed(save.bed, world),
             satchels: restoreSatchels(save.satchels, world),
             caveIns: save.caveIns,
+            dread: Dread.fromSave(save.dread),
+            flares: flaresFromSave(save.flares),
           }
         : { difficulty },
     );

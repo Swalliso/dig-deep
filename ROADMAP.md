@@ -291,39 +291,46 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 ### Phase 13: The dark
 
 - **Dread meter**:
-  - Rises while the light-map level at the player's tile is below a threshold. The player glow
-    doesn't count, since it's only drawn.
-  - Drains quickly in light.
-  - When full: a vignette, a heartbeat, and 1 HP lost every 2 s.
-  - Health only regenerates in light. Cozy worlds have no dread.
+  - Rises while the light-map level at the player's tile is below a threshold (4 of 16: about 6
+    tiles from a torch in open air), filling in about 25 s. The player glow doesn't count, since
+    it's only drawn. It isn't drawn differently from real light: the dread meter and its status
+    line already say when the player is unsafe, and a tinted glow read as the dread itself.
+  - Drains quickly (about 4 s) in light, carried light included.
+  - When nearly full, a slow quiet heartbeat warns. When full: a red vignette, a faster
+    heartbeat, and 1 HP lost every 2 s.
+  - Health only regenerates in established light. Cozy worlds have no dread.
 - **Carried light**:
-  - The light map gets a moving light source that relights when the player moves to another
-    tile.
-  - A **lantern** (iron + torch) lights a 6-tile radius while held. A helmet version comes in
-    Phase 15.
-- **Light design gate before implementation**: prototype the lantern while moving and while
-  mining, alongside placed torches. Mining currently uses the best carried pickaxe regardless
-  of the selected item, so holding a lantern has no inherent mining tradeoff. Decide whether
-  portable light intentionally solves dread as an earned upgrade, or provides travel safety
-  while established light is needed for recovery. Update dread thresholds, regeneration,
-  helmet behavior and the Descent starting kit together after that decision. The rules above
-  and the lantern acceptance check below are the baseline for the prototype, not a settled
-  balance decision. Try simpler light/safety rules before adding fuel or another resource meter.
-  Starting hypothesis to test first: carried light (lantern, later the helmet) stops dread from
-  rising, but health only regenerates in established light (torches, glowing tiles or the sky).
-  Travel is safe with a lantern, while recovering still means getting back to a lit place, so
-  lit routes and bases keep their value.
-- **Flare**: thrown, sticks where it lands, and lights a large area for 30 s, for scouting.
-- **Natural light**: glowing mushrooms and crystals as new tiles, placed once strata arrive, so
-  not every cave is pitch black.
-- **Readable safety**: show whether the player is safe, accumulating dread or recovering, and
-  explain why. Make the drawn player glow visibly distinct from light that provides safety.
-  Save dread and active flare duration; paused time does not consume either.
+  - The light map gets moving light sources, each relit in its own small patch when it moves
+    to another tile (or a tile in its patch changes), kept apart from the established light.
+  - A **lantern** (2 iron bars + a torch, at a workbench) lights a 6-tile radius while it's the
+    selected item. A helmet version comes in Phase 15.
+- **Light design gate (resolved after the prototype)**: carried light (the lantern, flares,
+  later the helmet) stops dread from rising and drains it, but health only regenerates in
+  established light: the sky, torches and glowing tiles. Travel is safe with a lantern, while
+  recovering means getting back to a lit place (or placing a torch, which then becomes part of
+  a lit route). Holding the lantern costs nothing while mining, since mining uses the best
+  carried pickaxe; that's intended under these rules. No fuel or other meter for now: a later
+  balance pass may make things harder (for example lantern fuel refilled with coal or wood),
+  see "Optional enhancements". The helmet (Phase 15) and the Descent starting lantern follow
+  the same rule: carried light, no healing.
+- **Flare**: thrown at the cursor (left mouse with one in hand), sticks to the first solid tile
+  it hits (falling again if that tile is mined), and lights an 11-tile radius for 30 s, dimming
+  at the end, for scouting. Its light is carried light. Made from a torch and 2 coal (2 flares).
+- **Natural light**: glowing mushrooms (glowshrooms) and glow crystals exist as tiles that are
+  established light sources and can be mined and placed. Each tints the lit tiles around it
+  with its own soft, slowly pulsing color (teal, violet); the color is only drawn, so the light
+  rules don't change. Pulled forward from Phase 14 to keep that phase smaller. Strata place them in worlds (Phase 14),
+  so not every cave is pitch black; until then they come from the debug kit.
+- **Readable safety**: the HUD line under the dread meter says whether the player is safe,
+  accumulating dread or recovering, and why (too dark, lantern light that doesn't heal, lit
+  and healing). Save dread and active flare duration; paused time does not consume either.
+- Debug: U fills the dread meter (again: empties it); the kit includes a lantern, flares,
+  glowshrooms and glow crystals.
 
 - [ ] Standing in an unlit cave fills dread and eventually hurts. A torch or lantern stops it.
 - [ ] The incremental-vs-full lighting test still passes with moving lights.
-- [ ] The light design gate is resolved and its final rules are reflected in these checks.
-      Preparing a lit route has a noticeable benefit under the chosen rules.
+- [ ] Under the chosen rules, a lantern keeps dread away but health only comes back near torches,
+      glowing tiles or the sky, so a lit route home or a lit base is where you recover.
 - [ ] A muted, reduced-effects playtest can identify darkness danger and reach safety in time.
 
 ## Arc 3 – The deep (strata, gear, structures, lifts)
@@ -368,7 +375,7 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 
 | Accessory | Effect |
 | --- | --- |
-| Miner's helmet | Carried light, radius 4 |
+| Miner's helmet | Carried light, radius 4 (keeps dread away, doesn't heal, like the lantern) |
 | Toolbelt | Crafting station range +4 |
 | Magnet charm | Pickup range +3 |
 | Long-handled grip | Reach +1.5 |
@@ -510,8 +517,8 @@ and saving trustworthy, then 11b adds the first way to lose items. Both keep the
 
 - Mode select on the title screen, and the floor profiles.
 - Use simple arrival/exit gates for the skeleton; use the full lifts if Phase 17 is complete.
-  Start with "reach the exit" as the objective. The starting boon choice waits for Phase 19;
-  include the lantern only if Phase 13's light rules are ready.
+  Start with "reach the exit" as the objective. The starting boon choice waits for Phase 19.
+  Phase 13's light rules are settled, so the starting lantern is included.
 - Moving between floors, the run summary on death, and a save slot for resuming a run.
 - Establish the floor supply guarantees and versioned run rules. Save floor time, objectives,
   inventory, status and random state with the run.
@@ -611,6 +618,11 @@ phase with acceptance criteria when playtests show it solves a real problem.
 - **Run variety**: test an optional cache or side objective that offers supplies versus a
   boon, or an early extraction choice. Adopt only if it improves the existing risk/reward loop
   without extending runs beyond their target length.
+- **Light balance pass**: after strata and gear, check how dread feels with real routes and
+  decide whether to make it harder. Candidates: lantern fuel (refilled with coal or wood),
+  shorter dread fill times deeper down, or limiting where torches can be placed to heal.
+  Phase 13 kept the simplest rule (carried light holds dread off, only established light
+  heals) on purpose.
 - **Hazard and building design review**: once the danger arc and strata have settled, review
   cave-ins and supports as a whole alongside the other hazards and building pieces, rather
   than rule by rule. Questions from the Phase 12 playtest: do supports earn their place over
@@ -627,7 +639,8 @@ Work through the phases in number order, with the companion polish in small slic
 2. Phase 11b: health, falls and safe recovery; start goal clarity.
 3. Phase 12: readable, affordable supports and rewarding hazard encounters, with generation
    profiles keeping older worlds intact; add map pins.
-4. Phase 13: resolve portable light versus established safety through a playable prototype.
+4. Phase 13: portable light versus established safety, resolved: carried light holds dread off,
+   only established light heals.
 5. Phases 14–17: distinct strata, understandable equipment choices, useful discoveries and a
    reliable way home. Expand crafting navigation before the recipe list grows.
 6. Phase 18: validate a complete floor and the pressure loop before expanding boons in 19 and

@@ -6,9 +6,8 @@ import {
   LIGHT_MAX,
   PLAYER_GLOW,
   PLAYER_GLOW_FALLOFF,
-  TORCH_LIGHT,
 } from '../config';
-import { isSolid, Tile } from './tiles';
+import { isSolid, TILE_LIGHT } from './tiles';
 import type { World } from './world';
 
 /**
@@ -19,8 +18,8 @@ export function playerGlow(distance: number): number {
   return Math.max(0, PLAYER_GLOW - PLAYER_GLOW_FALLOFF * distance);
 }
 
-/** Farthest any light travels from its source, in tiles. */
-const REACH = Math.ceil(Math.max(LIGHT_MAX, TORCH_LIGHT) / LIGHT_FALLOFF_AIR);
+/** Farthest any established light travels from its source, in tiles. */
+const REACH = Math.ceil(Math.max(LIGHT_MAX, ...TILE_LIGHT) / LIGHT_FALLOFF_AIR);
 
 interface Region {
   x0: number;
@@ -30,25 +29,48 @@ interface Region {
 }
 
 /**
+ * A light that moves (the held lantern, a flare). Its light is worked out on its own, in a small patch
+ * around it, and kept apart from the established light: where several lights overlap a tile
+ * simply gets the brightest, so the two combine exactly with a max.
+ */
+interface MovingLight {
+  tx: number;
+  ty: number;
+  level: number;
+  /** Every tile its light can reach. */
+  box: Region;
+  /** Light levels over the box, row by row. */
+  patch: Uint8Array;
+  /** Moved, or a tile in its box changed: recompute the patch in the next update(). */
+  stale: boolean;
+}
+
+/**
  * Per-tile light level, 0 (black) to LIGHT_MAX (open sky).
  *
  * Sky light falls straight down each column to the first solid tile (which is lit too).
- * Torches glow at TORCH_LIGHT. From those sources light spreads to neighbouring tiles,
+ * Torches and glowing tiles shine at their own level (TileDef.light). From those sources light spreads to neighbouring tiles,
  * losing LIGHT_FALLOFF_AIR per open tile and LIGHT_FALLOFF_SOLID per solid one (a little more
  * for diagonal steps, which round the glow off).
  *
  * The whole map is computed once. After that, a tile change only relights the area within
  * REACH tiles of it (plus the stretch of its column whose sky light changed); light that
  * comes in from just outside that area is kept as it was, since it can't have changed.
+ *
+ * That is the world's established light (`established`). Moving lights (setMovingLight) add
+ * to it without touching it: each one relights only its own small patch, when it moves to
+ * another tile or a tile in its patch changes. `level` is the brightest of all of them.
  */
 export class LightMap {
   readonly width: number;
   readonly height: number;
+  /** Established light (sky, torches, glowing tiles), row by row. Moving lights aren't in here. */
   readonly light: Uint8Array;
   /** Per column: first row that blocks sky light (world height if none). */
   private readonly skyRow: Int16Array;
   private readonly world: World;
   private dirty: Region | null = null;
+  private readonly moving = new Map<string, MovingLight>();
 
   constructor(world: World) {
     this.world = world;
@@ -61,10 +83,45 @@ export class LightMap {
     world.onTileChange((tx, ty) => this.tileChanged(tx, ty));
   }
 
-  /** Light level of a tile; 0 outside the world. */
+  /** Light level of a tile, moving lights included; 0 outside the world. */
   level(tx: number, ty: number): number {
+    let level = this.established(tx, ty);
+    for (const { box, patch } of this.moving.values()) {
+      if (tx < box.x0 || tx > box.x1 || ty < box.y0 || ty > box.y1) continue;
+      const v = patch[(ty - box.y0) * (box.x1 - box.x0 + 1) + (tx - box.x0)];
+      if (v > level) level = v;
+    }
+    return level;
+  }
+
+  /** Light from the world itself (sky, torches, glowing tiles), leaving out moving lights; 0 outside the world. */
+  established(tx: number, ty: number): number {
     if (tx < 0 || ty < 0 || tx >= this.width || ty >= this.height) return 0;
     return this.light[ty * this.width + tx];
+  }
+
+  /**
+   * Put moving light `id` at (tx, ty) with brightness `level`, adding it if it's new. It's relit
+   * in the next update(), and only if it moved to another tile or changed brightness.
+   */
+  setMovingLight(id: string, tx: number, ty: number, level: number): void {
+    const m = this.moving.get(id);
+    if (m && m.tx === tx && m.ty === ty && m.level === level) return;
+    // Light loses at least LIGHT_FALLOFF_AIR per tile (diagonals too), so it never gets past r.
+    const r = Math.ceil(level / LIGHT_FALLOFF_AIR);
+    const size = (2 * r + 1) * (2 * r + 1);
+    this.moving.set(id, {
+      tx,
+      ty,
+      level,
+      box: { x0: tx - r, y0: ty - r, x1: tx + r, y1: ty + r },
+      patch: m && m.patch.length === size ? m.patch : new Uint8Array(size),
+      stale: true,
+    });
+  }
+
+  removeMovingLight(id: string): void {
+    this.moving.delete(id);
   }
 
   /** Note a changed tile; the relighting happens in the next update(). */
@@ -76,14 +133,23 @@ export class LightMap {
     const top = before === after ? ty : Math.min(ty, before, after);
     const bottom = before === after ? ty : Math.max(ty, before, after);
     this.markDirty({ x0: tx - REACH, y0: top - REACH, x1: tx + REACH, y1: bottom + REACH });
+    for (const m of this.moving.values()) {
+      if (tx >= m.box.x0 && tx <= m.box.x1 && ty >= m.box.y0 && ty <= m.box.y1) m.stale = true;
+    }
   }
 
   /** Relight everything touched since the last call. Call once per update step. */
   update(): void {
-    if (!this.dirty) return;
-    const region = this.dirty;
-    this.dirty = null;
-    this.relight(region);
+    if (this.dirty) {
+      const region = this.dirty;
+      this.dirty = null;
+      this.relight(region);
+    }
+    for (const m of this.moving.values()) {
+      if (!m.stale) continue;
+      m.stale = false;
+      this.lightPatch(m);
+    }
   }
 
   private markDirty(r: Region): void {
@@ -100,42 +166,62 @@ export class LightMap {
 
   private relight(region: Region): void {
     const { width: w, height: h, light, world } = this;
-    const x0 = Math.max(0, region.x0);
-    const y0 = Math.max(0, region.y0);
-    const x1 = Math.min(w - 1, region.x1);
-    const y1 = Math.min(h - 1, region.y1);
+    const r: Region = {
+      x0: Math.max(0, region.x0),
+      y0: Math.max(0, region.y0),
+      x1: Math.min(w - 1, region.x1),
+      y1: Math.min(h - 1, region.y1),
+    };
     const queue: number[] = [];
 
-    // Reset the region to its own sources: sky above (and on) the first solid tile, torches.
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
+    // Reset the region to its own sources: sky above (and on) the first solid tile, torches and glowing tiles.
+    for (let y = r.y0; y <= r.y1; y++) {
+      for (let x = r.x0; x <= r.x1; x++) {
         const sky = y <= this.skyRow[x] ? LIGHT_MAX : 0;
-        const torch = world.getTile(x, y) === Tile.Torch ? TORCH_LIGHT : 0;
         const i = y * w + x;
-        light[i] = Math.max(sky, torch);
+        light[i] = Math.max(sky, TILE_LIGHT[world.getTile(x, y)]);
         if (light[i] > 0) queue.push(i);
       }
     }
-    // Light shining in from the ring just outside the region.
+    // Light shining in from the ring just outside the region, corners included (they shine in
+    // diagonally).
     const edge = (x: number, y: number): void => {
       if (x >= 0 && y >= 0 && x < w && y < h && light[y * w + x] > 0) queue.push(y * w + x);
     };
-    for (let x = x0; x <= x1; x++) {
-      edge(x, y0 - 1);
-      edge(x, y1 + 1);
+    for (let x = r.x0 - 1; x <= r.x1 + 1; x++) {
+      edge(x, r.y0 - 1);
+      edge(x, r.y1 + 1);
     }
-    for (let y = y0; y <= y1; y++) {
-      edge(x0 - 1, y);
-      edge(x1 + 1, y);
+    for (let y = r.y0; y <= r.y1; y++) {
+      edge(r.x0 - 1, y);
+      edge(r.x1 + 1, y);
     }
+    this.spread(light, 0, 0, w, r, queue);
+  }
 
-    // Spread outward, only writing inside the region.
+  /** Work out a moving light's patch from scratch. */
+  private lightPatch(m: MovingLight): void {
+    const { box, patch } = m;
+    const stride = box.x1 - box.x0 + 1;
+    const i = (m.ty - box.y0) * stride + (m.tx - box.x0);
+    patch.fill(0);
+    patch[i] = m.level;
+    this.spread(patch, box.x0, box.y0, stride, box, [i]);
+  }
+
+  /**
+   * Spread light outward from the queued tiles, only writing inside `bounds`. `target` covers a
+   * box `stride` tiles wide with its top-left at (ox, oy), and the queue holds indices into it.
+   */
+  private spread(target: Uint8Array, ox: number, oy: number, stride: number, bounds: Region, queue: number[]): void {
+    const { world } = this;
+    const { x0, y0, x1, y1 } = bounds;
     const visit = (nx: number, ny: number, level: number, airCost: number, solidCost: number): void => {
       if (nx < x0 || nx > x1 || ny < y0 || ny > y1) return;
-      const ni = ny * w + nx;
+      const ni = (ny - oy) * stride + (nx - ox);
       const next = level - (isSolid(world.getTile(nx, ny)) ? solidCost : airCost);
-      if (next > light[ni]) {
-        light[ni] = next;
+      if (next > target[ni]) {
+        target[ni] = next;
         queue.push(ni);
       }
     };
@@ -146,10 +232,11 @@ export class LightMap {
     };
     for (let head = 0; head < queue.length; head++) {
       const i = queue[head];
-      const level = light[i];
+      const level = target[i];
       if (level <= LIGHT_FALLOFF_AIR) continue;
-      const x = i % w;
-      const y = (i - x) / w;
+      const lx = i % stride;
+      const x = lx + ox;
+      const y = (i - lx) / stride + oy;
       visit(x - 1, y, level, LIGHT_FALLOFF_AIR, LIGHT_FALLOFF_SOLID);
       visit(x + 1, y, level, LIGHT_FALLOFF_AIR, LIGHT_FALLOFF_SOLID);
       visit(x, y - 1, level, LIGHT_FALLOFF_AIR, LIGHT_FALLOFF_SOLID);

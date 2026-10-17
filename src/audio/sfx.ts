@@ -408,6 +408,24 @@ export function death(): void {
 }
 
 /** The bed became the respawn point: a soft rising chime. */
+/** One heartbeat (lub-dub) while dread is full. `strength` 0..1. */
+export function heartbeat(strength = 1): void {
+  play({ volume: SFX_VOLUMES.heartbeat * strength, key: 'heartbeat' }, (v) => {
+    tone(v, { type: 'sine', freq: 62, to: 44, attack: 0.01, decay: 0.16, gain: 1 });
+    noiseBurst(v, { filter: 'lowpass', freq: 160, attack: 0.005, decay: 0.08, gain: 0.5 });
+    tone(v, { type: 'sine', freq: 54, to: 40, delay: 0.2, attack: 0.01, decay: 0.14, gain: 0.7 });
+  });
+}
+
+/** A flare thrown: a whoosh, then it catches with a fizz. */
+export function flareThrow(): void {
+  play({ volume: SFX_VOLUMES.flare, key: 'flare' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'bandpass', freq: 900 * p, to: 2200 * p, q: 1.5, attack: 0.02, decay: 0.16, gain: 0.6 });
+    noiseBurst(v, { filter: 'highpass', freq: 3500 * p, delay: 0.1, attack: 0.01, decay: 0.45, gain: 0.45 });
+  });
+}
+
 export function bedSet(): void {
   play({ volume: SFX_VOLUMES.bed, key: 'bed' }, (v) => {
     tone(v, { type: 'sine', freq: 523, attack: 0.02, decay: 0.3, gain: 0.5 });

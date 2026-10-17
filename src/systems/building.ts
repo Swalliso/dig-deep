@@ -97,12 +97,12 @@ export function tryPlace(world: World, player: Player, inventory: Inventory, tx:
   return true;
 }
 
-/** What a left-click does for as long as the button stays down: mine tiles or place blocks. */
-export type PrimaryAction = 'dig' | 'build';
+/** What a left-click does for as long as the button stays down: mine tiles, place blocks, or throw one (a flare). */
+export type PrimaryAction = 'dig' | 'build' | 'throw';
 
 /**
  * Decide what a left-click does, from what's held and the tile under the cursor when the button
- * goes down. A held tool is used (a pickaxe digs; later tools add their own actions); a held
+ * goes down. A held tool is used (a pickaxe digs, a flare is thrown, once per press); a held
  * block is placed on an empty spot; anything else digs with the best pickaxe carried, so the
  * dig-and-build loop never needs a hotbar switch. Deciding once per press keeps a building
  * sweep from mining what it drags across, and a dig from placing blocks.
@@ -111,6 +111,7 @@ export function primaryAction(held: ItemId | null, cursorTile: TileId): PrimaryA
   if (held === null) return 'dig';
   const def = itemDef(held);
   if (def.pickaxeTier !== undefined) return 'dig';
+  if (def.thrown) return 'throw';
   return def.placeTile !== null && cursorTile === Tile.Air ? 'build' : 'dig';
 }
 

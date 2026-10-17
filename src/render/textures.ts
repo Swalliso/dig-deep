@@ -138,6 +138,39 @@ function torch(img: ImageData): void {
   put(img, 8, 5, [255, 243, 160]);
 }
 
+/** Two glowing mushrooms growing from the floor: pale stems, bright speckled caps. */
+function glowshroom(img: ImageData): void {
+  const cap = rgb(tileDef(Tile.Glowshroom).color);
+  const stem: RGB = [214, 236, 226];
+  const mushroom = (cx: number, top: number, width: number): void => {
+    for (let y = top + 2; y < S; y++) put(img, cx, y, stem, y === S - 1 ? 0.8 : 1);
+    for (let x = cx - width; x <= cx + width; x++) put(img, x, top + 1, cap, 0.85);
+    for (let x = cx - width + 1; x <= cx + width - 1; x++) put(img, x, top, cap, 1.1);
+    put(img, cx - 1, top, [230, 255, 250]);
+    put(img, cx + width - 1, top + 1, [230, 255, 250]);
+  };
+  mushroom(5, 7, 3);
+  mushroom(11, 10, 2);
+}
+
+/** Rock with glowing crystal shards growing out of it. */
+function glowCrystal(img: ImageData, rng: Rng): void {
+  stone(img, rng);
+  const c = rgb(tileDef(Tile.GlowCrystal).color);
+  const shard = (x0: number, bottom: number, height: number): void => {
+    for (let i = 0; i < height; i++) {
+      const y = bottom - i;
+      put(img, x0, y, c, 1.25);
+      put(img, x0 + 1, y, c, 0.85);
+      if (i < height - 2) put(img, x0 - 1, y, c, 0.7);
+    }
+    put(img, x0, bottom - height + 1, [245, 230, 255]);
+  };
+  shard(4, 14, 9);
+  shard(8, 13, 11);
+  shard(12, 14, 7);
+}
+
 function planks(img: ImageData, rng: Rng): void {
   const c = rgb(tileDef(Tile.Planks).color);
   speckle(img, rng, c, 0.5);
@@ -388,6 +421,8 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.Gravel: return gravel(img, rng);
     case Tile.Beam: return beam(img, rng);
     case Tile.Crossbeam: return crossbeam(img, rng);
+    case Tile.Glowshroom: return glowshroom(img);
+    case Tile.GlowCrystal: return glowCrystal(img, rng);
   }
 }
 
@@ -451,6 +486,34 @@ function bedIcon(img: ImageData, color: string): void {
   }
 }
 
+/** A lantern: a ring handle, a dark iron cap and base, and a glowing glass body between them. */
+function lanternIcon(img: ImageData, color: string): void {
+  const iron: RGB = [70, 72, 80];
+  const glow = rgb(color);
+  for (const [x, y] of [[7, 1], [8, 1], [6, 2], [9, 2], [6, 3], [9, 3]] as [number, number][]) put(img, x, y, iron);
+  for (let x = 5; x < 11; x++) put(img, x, 4, iron, 1.2);
+  for (let y = 5; y < 12; y++) {
+    put(img, 4, y, iron);
+    put(img, 11, y, iron);
+    for (let x = 5; x < 11; x++) put(img, x, y, glow, x === 7 || x === 8 ? (y > 6 && y < 10 ? 1.25 : 1.1) : 0.85);
+  }
+  for (let x = 4; x < 12; x++) put(img, x, 12, iron, 1.2);
+  for (let x = 5; x < 11; x++) put(img, x, 13, iron, 0.8);
+}
+
+/** A flare: a red paper tube with a cap, sparking at its tip. */
+function flareIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  for (let i = 0; i < 9; i++) {
+    put(img, 4 + i, 13 - i, c, 1.05);
+    put(img, 5 + i, 13 - i, c, 0.75);
+  }
+  put(img, 4, 13, [60, 50, 50]);
+  put(img, 5, 13, [60, 50, 50]);
+  const spark: RGB = [255, 240, 190];
+  for (const [x, y] of [[13, 3], [14, 2], [12, 2], [14, 4], [11, 1], [15, 1]] as [number, number][]) put(img, x, y, spark);
+}
+
 /** Item icons: ITEM_IDS[i] lives at x = i * TILE_SIZE. Tile items reuse their tile texture. */
 export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement {
   const atlas = document.createElement('canvas');
@@ -468,6 +531,8 @@ export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement 
     if (icon.shape === 'bar') barIcon(img, icon.color);
     else if (icon.shape === 'door') doorIcon(img, icon.color);
     else if (icon.shape === 'bed') bedIcon(img, icon.color);
+    else if (icon.shape === 'lantern') lanternIcon(img, icon.color);
+    else if (icon.shape === 'flare') flareIcon(img, icon.color);
     else pickaxeIcon(img, icon.color);
     ctx.putImageData(img, i * S, 0);
   });

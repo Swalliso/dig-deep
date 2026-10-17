@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { storageKey } from '../src/channel';
 import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, MAX_STACK, TILE_SIZE } from '../src/config';
+import { throwFlare } from '../src/entities/flare';
 import { ItemDrop } from '../src/entities/itemDrop';
 import { Player } from '../src/entities/player';
 import { CaveIns } from '../src/systems/caveIns';
 import { chestAt } from '../src/systems/chests';
+import { Dread } from '../src/systems/dread';
 import { Health } from '../src/systems/health';
 import { Inventory } from '../src/systems/inventory';
 import {
@@ -342,6 +344,8 @@ describe('save reliability', () => {
       bed: { tx: 3, ty: 4 },
       satchels: [{ x: 1, y: 2, stacks: [{ item: 'coal' as const, count: 3 }] }],
       caveIns,
+      dread: new Dread(),
+      flares: [throwFlare(10, 20, 100, 20)],
     };
     const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5, survival });
     const state = savedState(player, inventory, [], new TileEntities(world), survival);
