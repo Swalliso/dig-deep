@@ -25,7 +25,7 @@ const ACTION_DEFS = {
   jump: { label: 'Jump', keys: ['Space', 'KeyW', 'ArrowUp'] },
   climbUp: { label: 'Climb up (pan the map up)', keys: ['KeyW', 'ArrowUp'] },
   climbDown: { label: 'Climb down, or drop through a platform', keys: ['KeyS', 'ArrowDown'] },
-  use: { label: 'Dig, or place the held block', keys: ['MouseLeft'] },
+  use: { label: 'Dig, place the held block or throw a flare', keys: ['MouseLeft'] },
   interact: { label: 'Open a chest or door, or sleep in a bed', keys: ['MouseRight'] },
   pickBlock: { label: 'Pick block onto the hotbar', keys: ['MouseMiddle'] },
   click: { label: 'Click in the inventory and drag the map', keys: ['MouseLeft'] },
@@ -58,6 +58,7 @@ const ACTION_DEFS = {
   debugGodMode: { label: 'Debug: god mode on/off (and heal)', keys: ['KeyH'], debug: true },
   debugHurt: { label: 'Debug: take 2 damage', keys: ['KeyJ'], debug: true },
   debugGravel: { label: 'Debug: gravel pocket at the cursor', keys: ['KeyB'], debug: true },
+  debugDread: { label: 'Debug: fill dread (again: empty it)', keys: ['KeyU'], debug: true },
 } satisfies Record<string, ActionDef>;
 
 export type Action = keyof typeof ACTION_DEFS;

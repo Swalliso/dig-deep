@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LIGHT_FALLOFF_AIR, LIGHT_FALLOFF_SOLID, LIGHT_MAX, PLAYER_GLOW, TOAST_DURATION, TORCH_LIGHT } from '../src/config';
+import { FLARE_LIGHT, GLOW_CRYSTAL_LIGHT, GLOWSHROOM_LIGHT, LANTERN_LIGHT, LIGHT_FALLOFF_AIR, LIGHT_FALLOFF_SOLID, LIGHT_MAX, PLAYER_GLOW, TOAST_DURATION, TORCH_LIGHT } from '../src/config';
 import { Toasts } from '../src/ui/hud';
 import { createRng, randInt } from '../src/util/rng';
 import { generateWorld } from '../src/world/generate';
@@ -20,11 +20,22 @@ function fill(world: World, x0: number, y0: number, x1: number, y1: number, id: 
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) world.setTile(x, y, id);
 }
 
-/** A fresh LightMap computed from scratch on a copy of the world. */
-function fullRecompute(world: World): LightMap {
+function copyOf(world: World): World {
   const copy = new World(world.width, world.height, world.seed);
   copy.chunks.forEach((chunk, i) => chunk.set(world.chunks[i]));
-  return new LightMap(copy);
+  return copy;
+}
+
+/** A fresh LightMap computed from scratch on a copy of the world. */
+function fullRecompute(world: World): LightMap {
+  return new LightMap(copyOf(world));
+}
+
+/** Every tile's level, moving lights included. */
+function levels(light: LightMap): number[] {
+  const out: number[] = [];
+  for (let y = 0; y < light.height; y++) for (let x = 0; x < light.width; x++) out.push(light.level(x, y));
+  return out;
 }
 
 describe('lighting', () => {
@@ -84,7 +95,7 @@ describe('lighting', () => {
     fill(world, 20, 38, 45, 44, Tile.Air);
     const light = new LightMap(world);
     const rng = createRng(5);
-    const choices: TileId[] = [Tile.Air, Tile.Air, Tile.Stone, Tile.Torch, Tile.Dirt];
+    const choices: TileId[] = [Tile.Air, Tile.Air, Tile.Stone, Tile.Torch, Tile.Dirt, Tile.Glowshroom, Tile.GlowCrystal];
     for (let edit = 1; edit <= 300; edit++) {
       // A few changes per step, like breaking a tree or using the 3x3 brush.
       for (let k = randInt(rng, 1, 3); k > 0; k--) {
@@ -92,6 +103,82 @@ describe('lighting', () => {
       }
       light.update();
       if (edit % 25 === 0) expect(Array.from(light.light)).toEqual(Array.from(fullRecompute(world).light));
+    }
+  });
+
+  it('a moving light lights its radius but stays out of the established light', () => {
+    const world = stoneWorld();
+    fill(world, 5, 37, 55, 37, Tile.Air);
+    const light = new LightMap(world);
+    light.setMovingLight('lantern', 25, 37, LANTERN_LIGHT);
+    light.update();
+    const radius = LANTERN_LIGHT / LIGHT_FALLOFF_AIR;
+    expect(radius).toBe(6);
+    for (let d = 0; d <= radius; d++) expect(light.level(25 + d, 37)).toBe(LANTERN_LIGHT - LIGHT_FALLOFF_AIR * d);
+    expect(light.level(25 + radius + 1, 37)).toBe(0);
+    expect(light.established(25, 37)).toBe(0);
+
+    light.setMovingLight('lantern', 30, 37, LANTERN_LIGHT); // walk 5 tiles right
+    light.update();
+    expect(light.level(30, 37)).toBe(LANTERN_LIGHT);
+    expect(light.level(20, 37)).toBe(0);
+    light.removeMovingLight('lantern');
+    expect(light.level(30, 37)).toBe(0);
+  });
+
+  it('glowing tiles light the dark as established light', () => {
+    const world = stoneWorld();
+    fill(world, 5, 37, 55, 37, Tile.Air);
+    world.setTile(15, 37, Tile.Glowshroom);
+    world.setTile(40, 38, Tile.GlowCrystal); // set in the floor of the tunnel
+    const light = new LightMap(world);
+    expect(light.established(15, 37)).toBe(GLOWSHROOM_LIGHT);
+    expect(light.level(15 + GLOWSHROOM_LIGHT / LIGHT_FALLOFF_AIR, 37)).toBe(0);
+    expect(light.established(40, 37)).toBe(GLOW_CRYSTAL_LIGHT - LIGHT_FALLOFF_AIR);
+    expect(light.established(28, 37)).toBe(0);
+  });
+
+  it('a moving light gives exactly what a torch in its place would', () => {
+    const world = stoneWorld();
+    fill(world, 8, 30, 50, 34, Tile.Air);
+    fill(world, 20, 35, 22, 44, Tile.Air);
+    world.setTile(15, 32, Tile.Torch);
+    const moving = new LightMap(world);
+    moving.setMovingLight('test', 21, 33, TORCH_LIGHT);
+    moving.update();
+    const torch = copyOf(world);
+    torch.setTile(21, 33, Tile.Torch);
+    expect(levels(moving)).toEqual(levels(new LightMap(torch)));
+  });
+
+  it('incremental relighting matches a full recompute with moving lights too', () => {
+    const world = stoneWorld();
+    fill(world, 8, 30, 50, 34, Tile.Air);
+    fill(world, 20, 38, 45, 44, Tile.Air);
+    const light = new LightMap(world);
+    const rng = createRng(9);
+    const choices: TileId[] = [Tile.Air, Tile.Air, Tile.Stone, Tile.Torch, Tile.Dirt, Tile.Glowshroom];
+    let x = 20;
+    let y = 32;
+    for (let step = 1; step <= 400; step++) {
+      // The lantern wanders around (sometimes into rock it has just dug), now and then switched off.
+      x = Math.max(1, Math.min(58, x + randInt(rng, -1, 1)));
+      y = Math.max(21, Math.min(48, y + randInt(rng, -1, 1)));
+      if (step % 50 < 45) light.setMovingLight('lantern', x, y, LANTERN_LIGHT);
+      else light.removeMovingLight('lantern');
+      light.setMovingLight('flare', 40, 41, FLARE_LIGHT);
+      for (let k = randInt(rng, 0, 2); k > 0; k--) {
+        world.setTile(randInt(rng, 1, 58), randInt(rng, 5, 48), choices[randInt(rng, 0, choices.length - 1)]);
+      }
+      light.update();
+      if (step % 20 === 0) {
+        const fresh = fullRecompute(world);
+        if (step % 50 < 45) fresh.setMovingLight('lantern', x, y, LANTERN_LIGHT);
+        fresh.setMovingLight('flare', 40, 41, FLARE_LIGHT);
+        fresh.update();
+        expect(Array.from(light.light)).toEqual(Array.from(fresh.light));
+        expect(levels(light)).toEqual(levels(fresh));
+      }
     }
   });
 

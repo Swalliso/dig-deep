@@ -5,6 +5,15 @@ import {
   DAMAGE_NUMBER_TIME,
   DEATH_SCREEN_DELAY,
   DIG_TICK_INTERVAL,
+  DREAD_HEARTBEAT,
+  DREAD_HEARTBEAT_SLOW,
+  DREAD_PULSE_TIME,
+  DREAD_WARN,
+  DREAD_HURT,
+  DREAD_SAFE_LIGHT,
+  DREAD_VIGNETTE_ALPHA,
+  DREAD_VIGNETTE_FROM,
+  FLARE_MAX,
   DROP_THROW_SPEED,
   EXPLORE_INTERVAL,
   FOOTSTEP_DISTANCE,
@@ -15,6 +24,7 @@ import {
   HURT_FLASH_TIME,
   HURT_PROTECTION,
   LAND_FULL_SPEED,
+  LANTERN_LIGHT,
   LAND_MIN_SPEED,
   PICKAXES,
   PLAYER_HEIGHT,
@@ -39,6 +49,7 @@ import {
   placeOreSampler,
   type InstantMine,
 } from './debug';
+import { flareLevel, throwFlare, updateFlares, type Flare } from './entities/flare';
 import { ItemDrop, updateDrops } from './entities/itemDrop';
 import { Player } from './entities/player';
 import { actionDown, actionPressed, consumeWheel, HOTBAR_ACTIONS, mouse } from './input';
@@ -52,6 +63,7 @@ import { CaveIns, gravelDamage, type CaveInHooks, type SavedCaveIns } from './sy
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
 import { SessionClock, type PauseReason } from './systems/clock';
 import { nearbyStations } from './systems/crafting';
+import { Dread, dreadStatus, lightSafety, type LightSafety } from './systems/dread';
 import {
   collectSatchel,
   dropSatchel,
@@ -72,7 +84,7 @@ import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/c
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
 import { drawMinimap, FullMap, type MapInput, type MapMarkers } from './ui/map';
 import { InventoryPanel, type PanelState } from './ui/menus';
-import { directionText, drawDeathScreen, drawHearts, drawHudLine, offsetText } from './ui/vitals';
+import { directionText, drawDeathScreen, drawDreadMeter, drawHearts, drawHudLine, offsetText } from './ui/vitals';
 import { bedLeft, bedPartner, isBed, isWholeBed } from './world/beds';
 import { ExploredMap } from './world/explored';
 import { doorBottom, doorPartner, isDoorOpen, toggleDoor } from './world/doors';
@@ -111,6 +123,10 @@ export interface GameStart {
   fallTop?: number | null;
   /** Shaking gravel, falling blocks and tiles waiting for a recheck; defaults to none. */
   caveIns?: SavedCaveIns;
+  /** Defaults to none. */
+  dread?: Dread;
+  /** Burning flares; defaults to none. */
+  flares?: Flare[];
 }
 
 /** What the death screen says, shown until the player respawns. */
@@ -186,6 +202,17 @@ export class Game {
   readonly tileUpdates: TileUpdates;
   /** Shaking and falling gravel (off in Cozy worlds). */
   readonly caveIns: CaveIns;
+  /** Builds up in the dark and hurts when full (none in Cozy worlds). */
+  readonly dread: Dread;
+  /** How lit the player's tile was at the last simulation step. */
+  private safety: LightSafety = 'established';
+  private flareList: Flare[];
+  /** Session clock time of the last heartbeat (dread near full), or -Infinity. */
+  private lastBeatAt = -Infinity;
+  /** The "dread" hint shows the first time dread builds up in a session. */
+  private dreadHintShown = false;
+  /** Flares whose moving light is in the light map, by id. */
+  private readonly flareLights = new Set<number>();
   private readonly renderer: Renderer;
   /** Shared with the Settings screen, which changes it while the game is paused. */
   private readonly settings: Settings;
@@ -244,6 +271,8 @@ export class Game {
     this.difficulty = start.difficulty ?? 'normal';
     this.bed = start.bed ?? null;
     this.satchels = start.satchels ?? [];
+    this.dread = start.dread ?? new Dread();
+    this.flareList = start.flares ?? [];
     this.inventory = start.inventory ?? Inventory.withStartingItems();
     this.dropList = start.drops ?? [];
     this.tileEntities = start.tileEntities ?? new TileEntities(world);
@@ -294,6 +323,11 @@ export class Game {
     return this.dropList;
   }
 
+  /** Flares thrown and still burning. */
+  get flares(): readonly Flare[] {
+    return this.flareList;
+  }
+
   /** Is Esc going to close something in the game (the panel or the map) rather than pause? */
   get capturesEscape(): boolean {
     return this.inventoryPanel.open || this.fullMap.open;
@@ -334,7 +368,8 @@ export class Game {
     } else {
       this.simulate(dt);
     }
-    this.lightMap.update(); // relight around any tiles that changed this step
+    this.updateCarriedLight();
+    this.lightMap.update(); // relight around any tiles that changed this step, and the lantern if it moved
     this.toasts.update(dt);
   }
 
@@ -403,6 +438,10 @@ export class Game {
     }
     // These change tiles at the cursor or hurt the player, so they need the world in view.
     if (this.pausedBy) return;
+    if (actionPressed('debugDread')) {
+      if (this.difficulty === 'cozy') toasts.show('Debug: Cozy worlds have no dread');
+      else this.dread.level = this.dread.full ? 0 : 1;
+    }
     if (actionPressed('debugHurt')) {
       if (this.difficulty === 'cozy') toasts.show('Debug: Cozy worlds take no damage');
       this.hurt(2, { kind: 'debug' });
@@ -467,13 +506,16 @@ export class Game {
     });
     this.playerFeedback();
     this.checkFall();
-    this.health.update(this.clock.time, player.stats.maxHealth);
+    this.feelTheDark(dt);
+    // Health only comes back in the world's own light (not the lantern's).
+    this.health.update(this.clock.time, player.stats.maxHealth, this.safety === 'established');
     if (this.deathScreen) return; // the fall was fatal: the rest waits for the respawn
     this.useHeldItem(dt);
     this.caveIns.update(dt, this.clock.time, TILE_UPDATE_BUDGET, this.caveInHooks);
     if (this.deathScreen) return; // crushed: the rest waits for the respawn
     this.trickleDust(dt);
     this.updateSatchels();
+    this.flareList = updateFlares(this.flareList, dt, world);
 
     this.dropList = updateDrops(this.dropList, dt, world, player, this.inventory, (item, count) => {
       this.toasts.gained(item, count);
@@ -501,6 +543,7 @@ export class Game {
       this.lastBuildTile = [tx, ty];
       this.builtThisHold.clear();
     }
+    if (actionPressed('use') && this.leftAction === 'throw') this.throwFlareAt(tx, ty);
     const held = this.leftAction === 'dig' && actionDown('use');
     const tier = inventory.bestPickaxeTier();
     const instant = this.instantMine !== 'off';
@@ -546,13 +589,15 @@ export class Game {
     }
     renderer.drawFallingBlocks(this.caveIns.falling, alpha, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
+    renderer.drawFlares(this.flareList, alpha, this.clock.time, camX, camY);
     renderer.drawSatchels(this.satchels, this.clock.time, camX, camY);
     // Dead: the player isn't drawn (they're already back at the bed, off screen).
-    if (!this.deathScreen) renderer.drawPlayer(player, px, py, camX, camY, this.playerAlpha());
+    if (!this.deathScreen) renderer.drawPlayer(player, px, py, camX, camY, this.playerAlpha(), inventory.selectedStack?.item === 'lantern');
     renderer.drawParticles(this.particles, camX, camY);
     if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
     if (!reduced) renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.clock.time, camX, camY, glowX, glowY);
     renderer.drawFlashes(this.flashes, camX, camY);
+    this.drawDreadVignette();
     for (const f of this.floaters) {
       const t = (this.clock.time - f.at) / f.duration;
       renderer.drawFloatingText(f.text, f.x, f.y - t * 12, f.color, Math.min(1, 3 * (1 - t)), camX, camY);
@@ -612,6 +657,12 @@ export class Game {
         u,
       );
       if (health.god) y = drawHudLine(renderer.ctx, 'God mode', y, u, '#ffe066');
+      const { dread, safety } = this;
+      if (dread.level > 0 || safety !== 'established') {
+        const carrier = this.inventory.selectedStack?.item === 'lantern' ? 'Lantern' : 'Flare';
+        const status = dreadStatus(safety, dread.level, health.hp < player.stats.maxHealth, carrier);
+        y = drawDreadMeter(renderer.ctx, dread.level, status, this.settings.reducedFlashes ? 0 : this.heartbeat(), y, u);
+      }
     }
     const satchel = this.nearestSatchel();
     if (satchel) {
@@ -621,6 +672,20 @@ export class Game {
       y = drawHudLine(renderer.ctx, directionText('Satchel', dx, dy) + more, y, u, '#d9bfff');
     }
     return y;
+  }
+
+  /** 0..1: the latest heartbeat's thump, fading over DREAD_PULSE_TIME. */
+  private heartbeat(): number {
+    return Math.max(0, 1 - (this.clock.time - this.lastBeatAt) / DREAD_PULSE_TIME);
+  }
+
+  /** Darkness closing in from the screen edges as dread builds (it pulses when full, unless Reduced flashes). */
+  private drawDreadVignette(): void {
+    const level = this.dread.level;
+    if (level <= DREAD_VIGNETTE_FROM) return;
+    const strength = (level - DREAD_VIGNETTE_FROM) / (1 - DREAD_VIGNETTE_FROM);
+    const pulse = this.settings.reducedFlashes ? 0 : this.heartbeat();
+    this.renderer.drawVignette(DREAD_VIGNETTE_ALPHA * strength, pulse * (this.dread.full ? 0.35 : 0.15));
   }
 
   /** How opaque to draw the player: protection blinks it, or (Reduced flashes) shows it see-through. */
@@ -805,7 +870,7 @@ export class Game {
     if (difficulty === this.difficulty) return;
     this.difficulty = difficulty;
     this.caveIns.setEnabled(difficulty === 'normal');
-    this.toasts.show(difficulty === 'cozy' ? 'Cozy: nothing can hurt you now, and gravel stays put' : 'Normal: falls and falling gravel hurt now', 3);
+    this.toasts.show(difficulty === 'cozy' ? 'Cozy: nothing can hurt you now, and gravel stays put' : 'Normal: falls, falling gravel and the dark hurt now', 3);
   }
 
   /** Take damage (ignored in Cozy worlds, in god mode and while protected). Dying shows the death screen. */
@@ -862,6 +927,7 @@ export class Game {
     else lines.push('You have no bed, so you wake up near the world spawn. Craft one at a workbench.');
     player.placeAt(spot.x, spot.y);
     this.health.refill(player.stats.maxHealth, this.clock.time, RESPAWN_PROTECTION);
+    this.dread.level = 0;
     this.leftAction = null;
     this.touchingSatchels.clear();
     this.deathScreen = { lines, shownAt: performance.now() };
@@ -878,6 +944,67 @@ export class Game {
     this.camera.prevX = this.camera.x;
     this.camera.prevY = this.camera.y;
     sfx.uiClick();
+  }
+
+  /**
+   * Carried light: the held lantern is a moving light on the player's tile, and each burning
+   * flare one on its own tile. The light map only relights one when it moves to another tile
+   * or changes brightness.
+   */
+  private updateCarriedLight(): void {
+    const { lightMap } = this;
+    if (this.inventory.selectedStack?.item === 'lantern') {
+      const [tx, ty] = this.playerTile();
+      lightMap.setMovingLight('lantern', tx, ty, LANTERN_LIGHT);
+    } else {
+      lightMap.removeMovingLight('lantern');
+    }
+    const burning = new Set<number>();
+    for (const flare of this.flareList) {
+      burning.add(flare.id);
+      lightMap.setMovingLight(`flare${flare.id}`, Math.floor(flare.x / TILE_SIZE), Math.floor(flare.y / TILE_SIZE), flareLevel(flare));
+    }
+    for (const id of this.flareLights) if (!burning.has(id)) lightMap.removeMovingLight(`flare${id}`);
+    this.flareLights.clear();
+    for (const id of burning) this.flareLights.add(id);
+  }
+
+  /** Throw one of the held flares from the player toward tile (tx, ty)'s centre. */
+  private throwFlareAt(tx: number, ty: number): void {
+    const { player, inventory } = this;
+    if (inventory.selectedStack?.item !== 'flare') return;
+    inventory.removeFromSlot(inventory.selected, 1);
+    const flare = throwFlare(player.centerX, player.y + 8, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE);
+    this.flareList.push(flare);
+    // Too many burning at once: the oldest goes out.
+    if (this.flareList.length > FLARE_MAX) this.flareList.shift();
+    sfx.flareThrow();
+  }
+
+  /** The tile at the player's centre: where light is measured for dread and healing. */
+  private playerTile(): [number, number] {
+    return [Math.floor(this.player.centerX / TILE_SIZE), Math.floor(this.player.centerY / TILE_SIZE)];
+  }
+
+  /** Dread rises in the dark, drains in light and hurts when full (not in Cozy worlds). */
+  private feelTheDark(dt: number): void {
+    const [tx, ty] = this.playerTile();
+    this.safety = lightSafety(this.lightMap.level(tx, ty), this.lightMap.established(tx, ty));
+    const now = this.clock.time;
+    if (this.dread.update(dt, now, this.safety, this.difficulty === 'normal')) this.hurt(DREAD_HURT, { kind: 'dread' });
+    const { level } = this.dread;
+    // A heartbeat: slow and quiet as a warning, fast and loud when full. Out of the dark it stops.
+    if (this.safety === 'dark' && level >= DREAD_WARN) {
+      const gap = this.dread.full ? DREAD_HEARTBEAT : DREAD_HEARTBEAT_SLOW;
+      if (now - this.lastBeatAt >= gap) {
+        this.lastBeatAt = now;
+        sfx.heartbeat(this.dread.full ? 1 : 0.5);
+      }
+    }
+    if (!this.dreadHintShown && this.safety === 'dark' && level > 0.15) {
+      this.dreadHintShown = true;
+      this.toasts.show('The dark builds dread (the bar under your hearts). Get to light before it fills: a torch, a lantern or the sky.', 7);
+    }
   }
 
   /** Fall damage on landing, and the ladder hint the first time the player falls past a ladder. */
@@ -1193,7 +1320,7 @@ export class Game {
       `Audio ${sfx.audioStatus()}   master ${percent(this.settings.masterVolume)}   SFX ${percent(this.settings.sfxVolume)}`,
       `Seed ${this.world.seed}   World hash ${this.worldHash}   Generation ${profileLabel(this.world.profile)}`,
       `Play time ${this.clock.time.toFixed(1)} s   World ${this.pausedBy ? `paused (${this.pausedBy})` : 'running'}`,
-      `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)}`,
+      `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)} (established ${this.lightMap.established(tx, ty)}, safe from ${DREAD_SAFE_LIGHT})   ${this.safety}   dread ${Math.round(this.dread.level * 100)}%`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
       `${difficultyName(this.difficulty)}   HP ${this.health.hp}/${player.stats.maxHealth}   protected ${protectedFor.toFixed(1)} s   fall ${fall}   bed ${this.activeBed() ? `(${this.bed!.tx}, ${this.bed!.ty})` : 'none'}   satchels ${this.satchels.length}`,
       `Cave-ins ${this.caveIns.isEnabled ? 'on' : 'off (Cozy)'}   shaking ${this.caveIns.warnings.size}   falling ${this.caveIns.falling.length}   rechecks queued ${this.tileUpdates.size}`,

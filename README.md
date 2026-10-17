@@ -19,6 +19,7 @@ and pick **Normal** or **Cozy**).
 | Dig                                | Hold left mouse on a tile |
 | Place the held block               | Left mouse on empty space |
 | Build a row                        | Hold left mouse and sweep |
+| Throw a held flare                 | Left mouse at a spot      |
 | Pick block onto hotbar             | Middle mouse              |
 | Open chest, use door or bed        | Right-click it            |
 | Climb a ladder                     | W / S or ↑ / ↓ on it      |
@@ -41,7 +42,21 @@ and pick **Normal** or **Cozy**).
   blocks: **Wooden → Stone → Copper → Iron → Gold**.
 - Chop trees for wood, turn it into planks and a **Workbench**, then mine stone for a
   **Furnace** to smelt ore into bars. Crafting needs the right station within 4 tiles.
-- Caves are dark, so place torches.
+- **The dark hurts** (Normal worlds). Standing where it's too dark (more than about 6 tiles
+  from a torch) fills the **dread** meter under your hearts in about 25 s; in light it drains in
+  a few seconds. When it's full you hear a heartbeat, red closes in from the screen edges and
+  you lose 1 HP every 2 s. The line under the meter says how things stand and why. The faint
+  glow right around you only helps you see: it doesn't keep dread away.
+  - **Torches**, **glowshrooms**, **glow crystals** and the sky are established light: they keep
+    dread away and your health only comes back in their light.
+  - A **lantern** (2 iron bars and a torch at a workbench) lights 6 tiles around you while it's
+    in your hand, and you can still dig while holding it. Its light keeps dread away wherever
+    you go, but it doesn't heal: get back to a torch (or place one) for that.
+  - **Flares** (a torch and 2 coal make 2, at a workbench): with one in hand, left mouse throws
+    it at the cursor. It sticks where it lands and lights about 11 tiles around for 30 s, for
+    scouting ahead. Like the lantern's, its light keeps dread away but doesn't heal.
+  - Glowshrooms and glow crystals don't grow in worlds yet (strata will place them); for now
+    they're only in the debug kit.
 - **Chests** (8 planks at a workbench) hold 20 stacks. Right-click one, or press E near one,
   to open it next to your inventory: **Loot all**, **Deposit all** (your bag, not the hotbar) and **Quick stack**
   (only items the chest already holds). C quick-stacks into every chest within 4 tiles, and
@@ -56,7 +71,7 @@ and pick **Normal** or **Cozy**).
 - **Health** (Normal worlds): 10 HP, shown as 5 hearts in the top left. Falls of more than 12
   tiles hurt; grab a ladder on the way down (hold W or S) and the fall ends safely, and walking
   off a ledge into a ladder shaft catches you on the ladder. Health comes back slowly after 5 s
-  without damage. Right after a hit you can't be hurt again for a moment (the hearts get a light
+  without damage, but only in established light (see the dark, above). Right after a hit you can't be hurt again for a moment (the hearts get a light
   outline and a bar under them).
 - **Beds** (10 planks and 4 wood at a workbench) are two tiles wide. Right-click one to respawn
   there; it's marked on the map. When you die your bag goes into a **satchel** where you died
@@ -78,7 +93,7 @@ and pick **Normal** or **Cozy**).
   it. Holding one shows which gravel it would hold up (green), with a
   line of help the first time; the inventory tooltips have the details. Pointing at a beam that
   holds gravel up warns you before you take it out. Worlds from before gravel existed don't get any.
-- **Cozy** worlds have no damage at all, and their gravel never falls. Worlds from before health existed are Cozy. Change it
+- **Cozy** worlds have no damage at all, no dread, and their gravel never falls. Worlds from before health existed are Cozy. Change it
   any time from the pause menu.
 - **M** opens the map: drag or use WASD to pan, scroll to zoom. It only shows what you've
   seen: places you've had on screen in the light, and anything close to you in the dark. **N**
@@ -117,8 +132,9 @@ Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
 3x3), **L** toggles lighting, **O** puts a patch of every ore at the cursor, **K** digs a
 100 m ladder shaft down from the cursor, **V** reveals the whole map, **H** toggles god mode
-(and heals), **J** deals 2 damage and **B** puts a 3 x 3 block of gravel at the cursor (it
-falls if nothing holds it up). The title screen also
+(and heals), **J** deals 2 damage, **B** puts a 3 x 3 block of gravel at the cursor (it
+falls if nothing holds it up) and **U** fills the dread meter (press again to empty it). The kit
+includes a lantern, flares, glowshrooms and glow crystals. The title screen also
 gets a button that marks your most recent world as an older version, and the pause menu a
 **Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't
 pause when its window loses focus, and the running game is on `window.digDeep` in the browser

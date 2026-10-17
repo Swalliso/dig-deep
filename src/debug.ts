@@ -40,10 +40,16 @@ export function brushNeighbours(mode: InstantMine): [number, number][] {
 }
 
 /**
- * Enough of every material to craft every recipe, plus both stations, some chests and a stack
- * of ladders, platforms, doors, beds, gravel, beams and crossbeams ready to place.
+ * Enough of every material to craft every recipe, plus both stations, some chests, the dark's
+ * kit (a lantern, flares, glowshrooms and glow crystals) and a stack of ladders, platforms, doors,
+ * beds, gravel, beams and crossbeams ready to place.
  */
 const KIT: ReadonlyArray<[ItemId, number]> = [
+  // First, so they always fit.
+  ['lantern', 1],
+  ['flare', 20],
+  ['glowshroom', 20],
+  ['glow_crystal', 10],
   ['wood', 99],
   ['stone', 200],
   ['coal', 99],
@@ -114,6 +120,6 @@ export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbr
     `       ${mainKey('debugFly')}: fly ${flying ? 'ON' : 'off'} (${keyPairs('climbUp', 'climbDown', undefined, '/')}, ${mainKey('modifier')} fast)   ${mainKey('debugInstantMine')}: instant mine ${instantMine}`,
     `       ${mainKey('debugOres')}: ore patch at the cursor   ${mainKey('debugLadderShaft')}: ${LADDER_SHAFT_LENGTH} m ladder shaft down from the cursor   ${mainKey('debugRevealMap')}: reveal the map`,
     `       ${mainKey('debugGodMode')}: god mode ${god ? 'ON' : 'off'} (and heal)   ${mainKey('debugHurt')}: take 2 damage (fly up and turn fly off to test falls)`,
-    `       ${mainKey('debugGravel')}: 3 x 3 gravel at the cursor (falls if nothing holds it up)`,
+    `       ${mainKey('debugGravel')}: 3 x 3 gravel at the cursor (falls if nothing holds it up)   ${mainKey('debugDread')}: fill or empty dread`,
   ];
 }

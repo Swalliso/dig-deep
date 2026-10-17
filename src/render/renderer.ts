@@ -14,6 +14,7 @@ import {
   SURFACE_BACKGROUND,
   TILE_SIZE,
 } from '../config';
+import type { Flare } from '../entities/flare';
 import type { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
 import type { FallingBlock } from '../systems/caveIns';
@@ -197,6 +198,7 @@ export class Renderer {
   /**
    * Darkness over every visible tile: a black overlay with alpha = 1 - light. (glowX, glowY)
    * is the player's centre in world px; tiles near it get at least the player's faint glow.
+   * Flares shine brighter than the sky; past LIGHT_MAX a tile is simply fully lit.
    */
   drawLight(lightMap: LightMap, camX: number, camY: number, glowX: number, glowY: number): void {
     const tx0 = Math.floor(camX / TILE_SIZE);
@@ -214,7 +216,7 @@ export class Renderer {
     for (let y = 0; y < th; y++) {
       for (let x = 0; x < tw; x++) {
         const glow = playerGlow(Math.hypot(tx0 + x - gx, ty0 + y - gy));
-        const level = Math.max(lightMap.level(tx0 + x, ty0 + y), glow);
+        const level = Math.min(LIGHT_MAX, Math.max(lightMap.level(tx0 + x, ty0 + y), glow));
         data[(y * tw + x) * 4 + 3] = 255 - Math.round((level * 255) / LIGHT_MAX);
       }
     }
@@ -241,7 +243,8 @@ export class Renderer {
         if (!IS_ORE[world.getTile(tx, ty)]) continue;
         const sparkle = oreSparkle(tx, ty, time);
         if (!sparkle) continue;
-        const level = lightMap ? Math.max(lightMap.level(tx, ty), playerGlow(Math.hypot(tx - gx, ty - gy))) : LIGHT_MAX;
+        // Flares shine brighter than the sky: anything past LIGHT_MAX looks fully lit.
+        const level = lightMap ? Math.min(LIGHT_MAX, Math.max(lightMap.level(tx, ty), playerGlow(Math.hypot(tx - gx, ty - gy)))) : LIGHT_MAX;
         if (level < SPARKLE_MIN_LIGHT) continue;
         const alpha = SPARKLE_ALPHA * sparkle.strength * (level / LIGHT_MAX);
         const x = tx * TILE_SIZE + sparkle.x - camX;
@@ -259,6 +262,43 @@ export class Renderer {
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Dread closing in from the screen's edges: clear in the middle, a dark red at the corners
+   * (red, so it shows even over a pitch-black cave) of strength `alpha`, plus `pulse` for the
+   * heartbeat. Draws in screen space.
+   */
+  drawVignette(alpha: number, pulse: number): void {
+    const { ctx, canvas } = this;
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.hypot(w, h) / 2);
+    const r = Math.round(110 + 80 * pulse);
+    g.addColorStop(0, `rgba(${r}, 0, 16, 0)`);
+    g.addColorStop(0.6, `rgba(${r}, 0, 16, ${(alpha + pulse) * 0.35})`);
+    g.addColorStop(1, `rgba(${r}, 0, 16, ${Math.min(1, alpha + pulse)})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
+  /** Burning flares, between their last two steps: a red tube with a flickering white-hot tip. */
+  drawFlares(flares: readonly Flare[], alpha: number, time: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    for (const f of flares) {
+      const x = Math.round(f.prevX + (f.x - f.prevX) * alpha) - camX;
+      const y = Math.round(f.prevY + (f.y - f.prevY) * alpha) - camY;
+      ctx.fillStyle = '#c8303f';
+      ctx.fillRect(x - 1, y, 2, 4);
+      const flicker = Math.floor(time * 20 + f.id * 7) % 3;
+      ctx.fillStyle = flicker === 0 ? '#ffffff' : flicker === 1 ? '#ffe0a0' : '#ff9a7a';
+      ctx.fillRect(x - 1, y - 2, 2, 2);
+      ctx.fillStyle = 'rgba(255, 200, 160, 0.5)';
+      ctx.fillRect(x - 2 + flicker, y - 3 - (flicker % 2), 1, 1);
+    }
   }
 
   /** White flashes over tiles that just broke. Marks each one drawn. */
@@ -423,7 +463,7 @@ export class Renderer {
   }
 
   /** Draw the player at top-left (x, y) in world px, `alpha` opaque. Call after drawWorld. */
-  drawPlayer(player: Player, x: number, y: number, camX: number, camY: number, alpha = 1): void {
+  drawPlayer(player: Player, x: number, y: number, camX: number, camY: number, alpha = 1, lantern = false): void {
     const { ctx } = this;
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -467,6 +507,18 @@ export class Renderer {
     ctx.fillRect(2, 4, 2, 3);
     ctx.fillStyle = '#1b1b24';
     ctx.fillRect(7, 5, 1, 2);
+
+    // A held lantern, hanging from the hand in front.
+    if (lantern) {
+      ctx.fillStyle = '#46484f';
+      ctx.fillRect(9, 17, 1, 2);
+      ctx.fillRect(8, 19, 5, 1);
+      ctx.fillRect(8, 24, 5, 1);
+      ctx.fillStyle = '#ffcf5a';
+      ctx.fillRect(8, 20, 5, 4);
+      ctx.fillStyle = '#fff3c4';
+      ctx.fillRect(10, 21, 1, 2);
+    }
     ctx.restore();
   }
 

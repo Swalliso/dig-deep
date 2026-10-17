@@ -1,6 +1,7 @@
 import { delMany, get, getMany, keys, set, setMany } from 'idb-keyval';
 import { storageKey } from '../channel';
 import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE, WORLD_HEIGHT, WORLD_WIDTH } from '../config';
+import { savedFlares, type Flare, type SavedFlare } from '../entities/flare';
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
 import { ExploredMap } from '../world/explored';
@@ -9,6 +10,7 @@ import { TileEntities } from '../world/tileEntities';
 import { Tile, TILE_COUNT } from '../world/tiles';
 import type { World } from '../world/world';
 import type { CaveIns, SavedCaveIns } from './caveIns';
+import type { Dread, SavedDread } from './dread';
 import type { BedSpot, Satchel } from './death';
 import { Health, type Difficulty, type SavedHealth } from './health';
 import { Inventory, type ItemStack, type Slots } from './inventory';
@@ -70,6 +72,10 @@ export interface SaveData {
   satchels?: Satchel[];
   /** Shaking gravel, falling blocks and tiles waiting for a recheck (Phase 12). */
   caveIns?: SavedCaveIns;
+  /** How full the dread meter is (Phase 13). Missing means none. */
+  dread?: SavedDread;
+  /** Flares still burning, with the seconds they have left (Phase 13). */
+  flares?: SavedFlare[];
 }
 
 /**
@@ -139,7 +145,10 @@ export function decodeRle(rle: Uint8Array, length: number): Uint8Array {
 
 // --- Building and applying saves (pure, so they can be unit-tested). ---
 
-/** Player state beyond the player and the inventory (Phase 11b): health, difficulty, bed, satchels. */
+/**
+ * Player state beyond the player and the inventory: health, difficulty, bed, satchels (Phase
+ * 11b), cave-ins (12), dread and flares (13).
+ */
 export interface SurvivalState {
   health: Health;
   difficulty: Difficulty;
@@ -147,6 +156,9 @@ export interface SurvivalState {
   satchels: readonly Satchel[];
   /** Phase 12. */
   caveIns?: CaveIns;
+  /** Phase 13. */
+  dread?: Dread;
+  flares?: readonly Flare[];
 }
 
 export function createSave(
@@ -182,7 +194,7 @@ export function createSave(
  */
 export type SavedState = Pick<
   SaveData,
-  'player' | 'inventory' | 'drops' | 'tileEntities' | 'difficulty' | 'health' | 'bed' | 'satchels' | 'caveIns'
+  'player' | 'inventory' | 'drops' | 'tileEntities' | 'difficulty' | 'health' | 'bed' | 'satchels' | 'caveIns' | 'dread' | 'flares'
 >;
 
 export function savedState(
@@ -209,6 +221,8 @@ export function savedState(
       satchels: survival.satchels.map((s) => ({ x: s.x, y: s.y, stacks: s.stacks.map((st) => ({ ...st })) })),
     }),
     ...(survival?.caveIns && { caveIns: survival.caveIns.saved() }),
+    ...(survival?.dread && { dread: survival.dread.saved() }),
+    ...(survival?.flares && { flares: savedFlares(survival.flares) }),
   };
 }
 
@@ -365,7 +379,8 @@ export function checkSave(raw: unknown): SaveStatus {
     (save.tileEntities === undefined || Array.isArray(save.tileEntities)) &&
     (save.explored === undefined || Array.isArray(save.explored)) &&
     (save.satchels === undefined || Array.isArray(save.satchels)) &&
-    (save.caveIns === undefined || (typeof save.caveIns === 'object' && save.caveIns !== null));
+    (save.caveIns === undefined || (typeof save.caveIns === 'object' && save.caveIns !== null)) &&
+    (save.flares === undefined || Array.isArray(save.flares));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 

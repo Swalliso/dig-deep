@@ -1,3 +1,4 @@
+import type { DreadStatus } from '../systems/dread';
 import { shadowText } from './hud';
 
 // Health on the HUD (hearts, the protection bar, the way back to a satchel) and the death
@@ -74,6 +75,44 @@ function drawHeart(ctx: CanvasRenderingContext2D, x: number, y: number, u: numbe
     ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
     ctx.fillRect(x + u, y + u, u, u);
   }
+}
+
+const DREAD_COLORS: Record<DreadStatus['tone'], string> = {
+  danger: '#ff8a80',
+  warning: '#d7b8ff',
+  carried: '#ffd98a',
+  safe: '#cfe8c8',
+};
+
+/**
+ * The dread meter under the hearts: a bar that fills purple, turning red and pulsing with the
+ * heartbeat (`pulse`, 0..1) when full, then the status line saying how things stand and why.
+ * Returns the y (screen px) below it.
+ */
+export function drawDreadMeter(ctx: CanvasRenderingContext2D, level: number, status: DreadStatus | null, pulse: number, y: number, u: number): number {
+  const x0 = 6 * u;
+  const width = 43 * u;
+  const full = level >= 1;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const grow = full ? Math.round(pulse * u) : 0;
+  ctx.fillStyle = full ? '#ff8a80' : '#000';
+  ctx.fillRect(x0 - u - grow, y - u - grow, width + 2 * u + 2 * grow, 5 * u + 2 * grow);
+  ctx.fillStyle = '#241c2e';
+  ctx.fillRect(x0, y, width, 3 * u);
+  ctx.fillStyle = full ? '#c03a52' : '#9b6bd6';
+  ctx.fillRect(x0, y, Math.round(width * Math.min(1, level)), 3 * u);
+  // Ticks at quarters, so the level reads without relying on color.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  for (let i = 1; i < 4; i++) ctx.fillRect(x0 + Math.round((width * i) / 4), y, u, 3 * u);
+  ctx.font = `${6 * u}px monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  shadowText(ctx, 'Dread', x0 + width + 4 * u, y - 2 * u, full ? '#ff8a80' : '#d7b8ff', u);
+  ctx.restore();
+  let bottom = y + 7 * u;
+  if (status) bottom = drawHudLine(ctx, status.text, bottom, u, DREAD_COLORS[status.tone]);
+  return bottom;
 }
 
 /** One short line of HUD text at (6u, y), e.g. "Cozy world" or the way to a satchel. Returns the y below it. */

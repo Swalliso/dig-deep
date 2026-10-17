@@ -47,7 +47,14 @@ These override the spec. Don't revert them.
   (wood drops, leaves just burst); the stump below the cut stays.
 - **Player glow.** A faint ~3-tile glow around the player (`PLAYER_GLOW`) so you can see where
   to put a torch in a pitch-black cave. It's applied when drawing the darkness overlay only;
-  the light map (and "caves are dark") is unaffected.
+  the light map (and "caves are dark") is unaffected, so it never keeps dread away. It's drawn
+  like any other light, with no special tint: the dread meter and the status line under it are
+  what tell the player they're unsafe (agreed with the user in Phase 13).
+- **Light rules (Phase 13's light design gate, decided with the user).** Any light at the
+  player's tile of at least `DREAD_SAFE_LIGHT` keeps dread from rising and drains it, carried
+  light (the held lantern, flares) included. Health only regenerates in *established* light:
+  the light map without moving lights (sky, torches, glowing tiles). No fuel or other meter for
+  now; a balance pass (maybe lantern fuel) is backlogged in ROADMAP.md.
 - **Mouse: left uses what's held, right interacts.** A left press decides what its hold does
   (`primaryAction` in `systems/building.ts`): holding a block over an empty spot places it
   (hold to sweep), anything else digs with the best carried pickaxe, and held tools will get
@@ -73,15 +80,17 @@ These override the spec. Don't revert them.
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
 **G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
-chests, two beds, and stacks of ladders, platforms, doors, gravel, beams and crossbeams), **F**
+chests, two beds, a lantern, flares, glowshrooms, glow crystals, and stacks of ladders,
+platforms, doors, gravel, beams and crossbeams), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
 (fullbright) for exploring, **O** puts a 4 x 2 patch of every ore at the cursor (for ore
 sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, **V** reveals the
 whole map, **H** toggles god mode (and heals), **J** deals 2 damage (to test falls, fly up
-with F and turn fly off) and **B** puts a 3 x 3 block of gravel at the cursor (in the open it
-shakes and falls at once; in rock it's a pocket to dig under). Debug mode also opens the F3 overlay at start, the title screen gets a button
+with F and turn fly off), **B** puts a 3 x 3 block of gravel at the cursor (in the open it
+shakes and falls at once; in rock it's a pocket to dig under) and **U** fills the dread meter
+(again: empties it). Debug mode also opens the F3 overlay at start, the title screen gets a button
 that marks the most recent world as an older version (to test the version-mismatch screen), and
 the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
 mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
@@ -144,7 +153,8 @@ src/
     tileUpdates.ts   active tile updates: a queue of tiles to recheck after a change next to them,
                      worked through with a per-step budget
     trees.ts         felling: cutting a trunk removes the tree above the cut
-    lighting.ts      per-tile light: sky columns + torches, spread with falloff, incremental relight
+    lighting.ts      per-tile light: sky columns + torches + glowing tiles, spread with falloff,
+                     incremental relight; moving lights (lantern, flares) in their own patches
     tileEntities.ts  per-tile data (chest contents), keyed by ty * width + tx, removed when the
                      tile changes
     doors.ts         doors: two tiles each (open and closed are separate tile ids), toggling,
@@ -155,6 +165,7 @@ src/
     player.ts        movement, jump, tile collision, auto step-up, ladder climbing, one-way
                      platforms
     itemDrop.ts      dropped items: fall, fly to the player within 2 tiles, picked up on touch
+    flare.ts         thrown flares: flight, sticking to a tile, burn time, saved form
   systems/
     items.ts         item registry (name, max stack, tile it places, icon, pickaxe tier)
     inventory.ts     40 slots (10 hotbar + 30 bag), stacking, cursor stack, shift-move,
@@ -170,6 +181,8 @@ src/
                      station range, drop pull, run/jump, max health, safe fall height)
     health.ts        HP, hurt protection and regeneration (on the session clock), difficulty
                      (Cozy/Normal), fall damage
+    dread.ts         the dread meter (rises in the dark, hurts when full), light safety (dark /
+                     carried / established) and the HUD status line
     death.ts         satchels (the bag left on death) and collecting them, the respawn point
                      (bed, or a safe fallback near spawn)
     crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
@@ -242,8 +255,12 @@ they drop.
   when one of their tiles changes (tracked with per-chunk version numbers).
 - **Lighting**: `World.onTileChange` (a list of listeners; tile entities and the map image listen too) tells the
   `LightMap` about every tile change; it relights only the box within light reach of the
-  changes (plus any stretch of a column whose sky light moved), once per update step. A test checks incremental relighting against a full recompute;
-  keep it passing when touching lighting.
+  changes (plus any stretch of a column whose sky light moved), once per update step. Light
+  sources are tiles with `TileDef.light`. Moving lights (`setMovingLight`: the held lantern,
+  flares) are kept apart from that established light, each in a small patch relit only when it
+  moves to another tile or a tile in its patch changes; `level()` is the max of both and
+  `established()` leaves moving lights out. Tests check incremental relighting (with moving
+  lights) against a full recompute; keep them passing when touching lighting.
 - **Saves**: a save is the seed plus only the chunks changed since generation (the rest is
   regenerated), so **bump `SAVE_VERSION` in `systems/save.ts` whenever world generation, tile
   ids, chunk/world size or the save format change**; old saves then show "Save from an older
@@ -256,7 +273,9 @@ they drop.
   Autosave's change check compares `savedState()` (everything but tiles, map and play time)
   plus the world's and map's revisions, so new saved state goes in `savedState()`; a test
   enforces it. Cave-ins (shaking tiles, falling blocks, queued rechecks) are saved as an
-  optional `caveIns` field, so a reload mid-collapse loses and duplicates nothing. Save & quit only leaves once the write succeeds. Backups (`systems/backup.ts`)
+  optional `caveIns` field, so a reload mid-collapse loses and duplicates nothing. Dread
+  (`dread`, in percent so autosave notices it) and burning flares (`flares`, with their time
+  left) are optional fields too. Save & quit only leaves once the write succeeds. Backups (`systems/backup.ts`)
   are the save as JSON with Uint8Arrays as `{ "$bytes": base64 }`; imports must pass
   `checkSave` and `findSaveProblem` before anything is written, and replacing a world needs a
   second click. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original

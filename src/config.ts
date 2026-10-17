@@ -193,6 +193,10 @@ export const QUICK_STACK_HOTBAR = true;
 // --- Lighting ---
 export const LIGHT_MAX = 16; // full brightness: open sky
 export const TORCH_LIGHT = 16; // brightness at a torch's own tile
+// Natural light (Phase 13): tiles that glow on their own. Strata place them in new worlds from
+// Phase 14; until then they come from the debug kit.
+export const GLOWSHROOM_LIGHT = 10; // 5-tile radius
+export const GLOW_CRYSTAL_LIGHT = 12; // 6-tile radius
 export const LIGHT_FALLOFF_AIR = 2; // lost per tile through air and other non-solid tiles (16 / 2 = 8-tile torch radius)
 export const LIGHT_FALLOFF_SOLID = 4; // lost per tile into solid blocks, so lit walls fade into the rock
 // Light also spreads diagonally, costing a bit more (≈ √2 ×), which rounds a torch's glow
@@ -204,6 +208,37 @@ export const LIGHT_FALLOFF_SOLID_DIAGONAL = 6;
 export const PLAYER_GLOW = 6; // light level at the player's centre (out of LIGHT_MAX = 16)
 export const PLAYER_GLOW_FALLOFF = 1.8; // levels lost per tile of distance (6 / 1.8 ≈ 3-tile radius)
 export const BACKDROP_BRIGHTNESS = 0.35; // underground backdrop = dirt texture at this brightness
+
+// --- The dark (Phase 13) ---
+// A held lantern is a moving light at the player's tile (12 / 2 = 6-tile radius).
+export const LANTERN_LIGHT = 12;
+// Dread rises while the light level at the player's tile (the light map, not the drawn glow) is
+// below this, and drains while it's at least this: in open air that's within 6 tiles of a torch.
+export const DREAD_SAFE_LIGHT = 4;
+export const DREAD_RISE_TIME = 25; // s of darkness to fill dread from empty
+export const DREAD_DRAIN_TIME = 4; // s of light to empty it from full
+export const DREAD_HURT_INTERVAL = 2; // s between hits while dread is full...
+export const DREAD_HURT = 1; // ...of this many HP
+// Cues: a dark red vignette closes in from DREAD_VIGNETTE_FROM (0..1 of the meter) and is
+// strongest at full. From DREAD_WARN a slow, quiet heartbeat warns that damage is coming; at
+// full it beats every DREAD_HEARTBEAT seconds, and the vignette and the meter pulse with it
+// (not with Reduced flashes).
+export const DREAD_VIGNETTE_FROM = 0.4;
+export const DREAD_VIGNETTE_ALPHA = 0.55; // edge strength at full dread
+export const DREAD_WARN = 0.75;
+export const DREAD_HEARTBEAT_SLOW = 1.3; // s between beats from DREAD_WARN
+export const DREAD_HEARTBEAT = 0.8; // s between beats when full
+export const DREAD_PULSE_TIME = 0.25; // s a beat's pulse lasts on screen
+// Flares: left-click throws one toward the cursor. It flies under gravity, sticks to the first
+// solid tile it touches and lights a big area (FLARE_LIGHT / 2 = 11 tiles) for FLARE_TIME
+// seconds of play, dimming over its last FLARE_FADE seconds. Its light is carried light: it
+// keeps dread away but doesn't heal.
+export const FLARE_LIGHT = 22;
+export const FLARE_TIME = 30; // s
+export const FLARE_FADE = 4; // s
+export const FLARE_THROW_SPEED = 560; // px/s
+export const FLARE_GRAVITY = 600; // px/s^2 (a flat throw carries ~9 tiles, aimed up ~25)
+export const FLARE_MAX = 6; // burning at once; throwing another burns the oldest out
 
 // --- Sound (synthesized in src/audio/sfx.ts) ---
 // Volume settings are 0..1 sliders; the gain applied is the square, which sounds more even.
@@ -229,6 +264,8 @@ export const SFX_VOLUMES = {
   bed: 0.4,
   rumble: 0.45,
   gravelLand: 0.4,
+  heartbeat: 0.6,
+  flare: 0.4,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile

@@ -50,6 +50,8 @@ describe('recipes', () => {
       ['1 iron_pickaxe', '10 iron_bar + 5 wood', 'workbench'],
       ['1 gold_bar', '3 gold_ore + 1 coal', 'furnace'],
       ['1 gold_pickaxe', '10 gold_bar + 5 wood', 'workbench'],
+      ['1 lantern', '2 iron_bar + 1 torch', 'workbench'], // Phase 13
+      ['2 flare', '1 torch + 2 coal', 'workbench'], // Phase 13
       ['1 chest', '8 planks', 'workbench'],
       ['2 beam', '1 planks', 'none'], // Phase 12
       ['2 crossbeam', '1 planks', 'none'], // Phase 12
@@ -64,7 +66,7 @@ describe('recipes', () => {
     const byGroup = Object.fromEntries(RECIPE_GROUPS.map((g) => [g, RECIPES.filter((r) => r.group === g).map((r) => r.output)]));
     expect(byGroup).toEqual({
       blocks: ['planks', 'torch', 'beam', 'crossbeam', 'ladder', 'platform', 'door'],
-      tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe'],
+      tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe', 'lantern', 'flare'],
       materials: ['copper_bar', 'iron_bar', 'gold_bar'],
       stations: ['workbench', 'furnace', 'chest', 'bed'],
     });

@@ -1,5 +1,6 @@
 // Tile type registry. IDs are stored directly in chunk Uint8Arrays, so never renumber them.
 
+import { GLOW_CRYSTAL_LIGHT, GLOWSHROOM_LIGHT, TORCH_LIGHT } from '../config';
 import type { ItemId } from '../systems/items';
 import type { World } from './world';
 
@@ -35,6 +36,9 @@ export const Tile = {
   Gravel: 25,
   Beam: 26,
   Crossbeam: 27,
+  // Phase 13: natural light.
+  Glowshroom: 28,
+  GlowCrystal: 29,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -69,6 +73,8 @@ export interface TileDef {
    * within SPAN_MAX tiles.
    */
   support?: 'post' | 'span';
+  /** Light sources (torches, glowing tiles): the light level at the tile itself. */
+  light?: number;
 }
 
 const defs: TileDef[] = [
@@ -84,7 +90,7 @@ const defs: TileDef[] = [
   { id: Tile.GoldOre, name: 'Gold ore', hardness: 2.0, minTier: 3, color: '#f2c94c', drop: 'gold_ore', solid: true, material: 'ore' },
   { id: Tile.Deepstone, name: 'Deepstone', hardness: 2.5, minTier: 2, color: '#3e4454', drop: 'deepstone', solid: true, material: 'stone' },
   { id: Tile.Bedrock, name: 'Bedrock', hardness: Infinity, minTier: Infinity, color: '#1c1c20', drop: null, solid: true, material: 'stone' },
-  { id: Tile.Torch, name: 'Torch', hardness: 0.05, minTier: 0, color: '#ffb347', drop: 'torch', solid: false, material: 'wood' },
+  { id: Tile.Torch, name: 'Torch', hardness: 0.05, minTier: 0, color: '#ffb347', drop: 'torch', solid: false, material: 'wood', light: TORCH_LIGHT },
   { id: Tile.Planks, name: 'Planks', hardness: 0.4, minTier: 0, color: '#b88a52', drop: 'planks', solid: true, material: 'wood' },
   { id: Tile.Workbench, name: 'Workbench', hardness: 0.5, minTier: 0, color: '#a0703c', drop: 'workbench', solid: false, material: 'wood' },
   { id: Tile.Furnace, name: 'Furnace', hardness: 1.0, minTier: 0, color: '#6e6e74', drop: 'furnace', solid: false, material: 'stone' },
@@ -103,6 +109,9 @@ const defs: TileDef[] = [
   // A vertical post you can walk through, and a horizontal beam along the top of its tile.
   { id: Tile.Beam, name: 'Beam', hardness: 0.25, minTier: 0, color: '#9c7240', drop: 'beam', solid: false, material: 'wood', support: 'post' },
   { id: Tile.Crossbeam, name: 'Crossbeam', hardness: 0.25, minTier: 0, color: '#9c7240', drop: 'crossbeam', solid: false, material: 'wood', support: 'span' },
+  // Natural light: a mushroom you can walk through, and a crystal set in the rock.
+  { id: Tile.Glowshroom, name: 'Glowshroom', hardness: 0.1, minTier: 0, color: '#5fe0c8', drop: 'glowshroom', solid: false, material: 'plant', light: GLOWSHROOM_LIGHT },
+  { id: Tile.GlowCrystal, name: 'Glow crystal', hardness: 1.5, minTier: 2, color: '#b58cff', drop: 'glow_crystal', solid: true, material: 'ore', light: GLOW_CRYSTAL_LIGHT },
 ];
 
 /** Indexed by tile id. */
@@ -115,6 +124,9 @@ export const ORE_TILES: readonly TileId[] = [Tile.CoalOre, Tile.CopperOre, Tile.
 export function tileDef(id: number): TileDef {
   return TILES[id] ?? TILES[Tile.Air];
 }
+
+/** Light level each tile id gives off (0 for most), indexed by id. */
+export const TILE_LIGHT: Uint8Array = Uint8Array.from(TILES, (def) => def.light ?? 0);
 
 export function isSolid(id: number): boolean {
   return tileDef(id).solid;

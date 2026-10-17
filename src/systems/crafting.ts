@@ -53,6 +53,8 @@ export const RECIPES: readonly Recipe[] = [
   recipe('tools', 'iron_pickaxe', 1, 'workbench', ['iron_bar', 10], ['wood', 5]),
   recipe('materials', 'gold_bar', 1, 'furnace', ['gold_ore', 3], ['coal', 1]),
   recipe('tools', 'gold_pickaxe', 1, 'workbench', ['gold_bar', 10], ['wood', 5]),
+  recipe('tools', 'lantern', 1, 'workbench', ['iron_bar', 2], ['torch', 1]),
+  recipe('tools', 'flare', 2, 'workbench', ['torch', 1], ['coal', 2]),
   recipe('stations', 'chest', 1, 'workbench', ['planks', 8]),
   recipe('blocks', 'beam', 2, null, ['planks', 1]),
   recipe('blocks', 'crossbeam', 2, null, ['planks', 1]),

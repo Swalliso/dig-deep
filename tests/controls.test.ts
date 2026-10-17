@@ -21,6 +21,8 @@ describe('left-click', () => {
     expect(primaryAction('wooden_pickaxe', Tile.Dirt)).toBe('dig');
     expect(primaryAction(null, Tile.Dirt)).toBe('dig');
     expect(primaryAction('coal', Tile.Air)).toBe('dig');
+    expect(primaryAction('flare', Tile.Air)).toBe('throw');
+    expect(primaryAction('flare', Tile.Stone)).toBe('throw');
   });
 });
 
