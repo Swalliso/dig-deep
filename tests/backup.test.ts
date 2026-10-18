@@ -77,7 +77,7 @@ describe('world backups', () => {
     );
     const chests = restoreTileEntities(restored, reloaded);
     expect(chests.size).toBe(1);
-    expect(chests.entries()[0].entity.slots).toEqual(save.tileEntities![0].slots);
+    expect(chests.entries()[0].entity).toEqual({ kind: 'chest', slots: (save.tileEntities![0] as { slots: unknown }).slots });
     const map = restoreExplored(restored, reloaded);
     expect([...map.chunks.keys()]).toEqual([...restoreExplored(save, world).chunks.keys()]);
     expect(map.isExplored(reloaded.spawnTx, reloaded.spawnTy)).toBe(true);

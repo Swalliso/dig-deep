@@ -21,6 +21,7 @@ import { DIFFICULTIES, difficultyName, type Difficulty } from '../systems/health
 import { readBackup } from '../systems/backup';
 import { SAVE_VERSION, type SaveData, type WorldMeta } from '../systems/save';
 import type { PixelScale, Settings } from '../systems/settings';
+import type { GenProfile } from '../world/generate';
 import { tileDef } from '../world/tiles';
 import { CONTROLS, keyList, mainKey, pinRecipeHint, pinRecipeTip } from './controls';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
@@ -31,9 +32,9 @@ import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 //
 //   +-----------------------+  +------------------------------------+
 //   | Inventory     [trash] |  | Crafting          [ ] Craftable only|
-//   | hotbar                |  | Blocks                             |
+//   | hotbar                |  | [Blocks][Light 2][Tools][...]      |
 //   | bag (3 rows)          |  |  recipe        recipe              |
-//   +-----------------------+  | Tools ...                          |
+//   +-----------------------+  |  recipe        recipe              |
 //   +-----------------------+  |                                    |
 //   | Chest  [Loot][Dep][QS]|  |                                    |
 //   | 2 rows                |  |                                    |
@@ -45,8 +46,10 @@ import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 //   +-----------------------+  +------------------------------------+
 //
 // The chest panel only shows while a chest is open (the goal box moves up into its place when
-// it's closed). Recipes sit in two columns, or one long column when that lets everything be
-// drawn bigger (tall, narrow windows).
+// it's closed). Each recipe group has a tab (with how many of its recipes can be crafted right
+// now), and the panel is sized for the biggest group, so switching tabs moves nothing. Recipes
+// sit in two columns, or one long column when that lets everything be drawn bigger (tall,
+// narrow windows).
 
 interface Rect {
   x: number;
@@ -68,9 +71,9 @@ interface Layout {
   chestSlots: Rect[];
   buttons: { id: ChestButton; rect: Rect }[];
   filter: Rect;
-  /** Headings of the recipe groups being shown, with the top-left of their text. */
-  groups: { group: RecipeGroup; x: number; y: number }[];
-  /** The recipes being shown (all of them, or only the craftable ones). */
+  /** One tab per recipe group. */
+  tabs: { group: RecipeGroup; rect: Rect }[];
+  /** The recipes being shown: the open tab's (all of them, or only the craftable ones). */
   recipes: { recipe: Recipe; rect: Rect }[];
   /** Top of the "Near:" line at the bottom of the crafting panel. */
   footerY: number;
@@ -94,14 +97,20 @@ const FILTER_W = 52; // checkbox and its label
 const RECIPE_W = 140;
 const RECIPE_H = 19;
 const RECIPE_GAP = 4; // between the two recipe columns
-const GROUP_H = 9; // a group's heading above its recipes
+const TAB_H = 11;
+const TAB_GAP = 3; // between tabs, and under them
 const FOOTER = 9;
 const PANEL_GAP = 8;
 const GOAL_H = PAD * 2 + TITLE + 18 + 16; // title, the pinned recipe (icon and two lines), the next pickaxe (two lines)
 /** Monospace text at 5 units is about this many units per character (sizes the buttons). */
 const CHAR_W = 3;
 
-const GROUP_NAMES: Record<RecipeGroup, string> = { blocks: 'Blocks', tools: 'Tools', materials: 'Materials', stations: 'Stations' };
+const GROUP_NAMES: Record<RecipeGroup, string> = { blocks: 'Blocks', light: 'Light', tools: 'Tools', materials: 'Materials', stations: 'Stations' };
+/** A tab's width: its group's name, with room for a count of what can be crafted. */
+const tabWidth = (group: RecipeGroup): number => (GROUP_NAMES[group].length + 3) * CHAR_W + 6;
+const TABS_W = RECIPE_GROUPS.reduce((w, g) => w + tabWidth(g), 0) + (RECIPE_GROUPS.length - 1) * TAB_GAP;
+/** The most recipes in one group: the list is sized for it. */
+const MOST_IN_A_GROUP = Math.max(...RECIPE_GROUPS.map((g) => RECIPES.filter((r) => r.group === g).length));
 const BUTTONS: { id: ChestButton; label: string; tip: string[] }[] = [
   { id: 'loot', label: 'Loot all', tip: ['Take everything out of the chest.'] },
   {
@@ -123,16 +132,6 @@ const RED = '#ff6b6b';
 const GREEN = '#a8f0b0';
 const PIN = '#ffe066';
 
-/** Height of a recipe list (headings plus rows) with `cols` recipes per row. */
-function listHeight(recipes: readonly Recipe[], cols: number): number {
-  let h = 0;
-  for (const group of RECIPE_GROUPS) {
-    const n = recipes.filter((r) => r.group === group).length;
-    if (n > 0) h += GROUP_H + Math.ceil(n / cols) * RECIPE_H;
-  }
-  return h;
-}
-
 function computeLayout(width: number, height: number, scale: number, shown: readonly Recipe[], chestOpen: boolean): Layout {
   const gridW = COLS * SLOT + (COLS - 1) * SLOT_GAP;
   const gridH = ROWS * SLOT + (ROWS - 1) * SLOT_GAP + HOTBAR_GAP;
@@ -142,10 +141,10 @@ function computeLayout(width: number, height: number, scale: number, shown: read
   const chestH = PAD * 2 + CHEST_HEADER + chestGridH;
   const leftH = invH + PANEL_GAP + chestH + PANEL_GAP + GOAL_H;
 
-  // Sized for the full recipe list, so filtering doesn't move anything.
+  // Sized for the biggest group, so switching tabs or filtering doesn't move anything.
   const fit = (cols: number) => {
-    const craftW = PAD * 2 + cols * RECIPE_W + (cols - 1) * RECIPE_GAP;
-    const craftH = PAD * 2 + TITLE + listHeight(RECIPES, cols) + FOOTER;
+    const craftW = PAD * 2 + Math.max(cols * RECIPE_W + (cols - 1) * RECIPE_GAP, TABS_W);
+    const craftH = PAD * 2 + TITLE + TAB_H + TAB_GAP + Math.ceil(MOST_IN_A_GROUP / cols) * RECIPE_H + FOOTER;
     const totalW = leftW + PANEL_GAP + craftW;
     const totalH = Math.max(leftH, craftH);
     const u = Math.max(1, Math.min(scale, Math.floor(width / (totalW + 8)), Math.floor(height / (totalH + 40))));
@@ -185,21 +184,18 @@ function computeLayout(width: number, height: number, scale: number, shown: read
   const unpinW = 'Unpin'.length * CHAR_W + 6;
 
   const craftX = leftW + PANEL_GAP;
-  const groups: Layout['groups'] = [];
-  const recipes: Layout['recipes'] = [];
-  let y = PAD + TITLE;
+  const tabs: Layout['tabs'] = [];
+  let tabX = craftX + PAD;
   for (const group of RECIPE_GROUPS) {
-    const inGroup = shown.filter((r) => r.group === group);
-    if (inGroup.length === 0) continue;
-    groups.push({ group, x: x0 + (craftX + PAD) * u, y: y0 + (y + 2) * u });
-    y += GROUP_H;
-    inGroup.forEach((recipe, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      recipes.push({ recipe, rect: at(craftX + PAD + col * (RECIPE_W + RECIPE_GAP), y + row * RECIPE_H, RECIPE_W, RECIPE_H - 1) });
-    });
-    y += Math.ceil(inGroup.length / cols) * RECIPE_H;
+    tabs.push({ group, rect: at(tabX, PAD + TITLE, tabWidth(group), TAB_H) });
+    tabX += tabWidth(group) + TAB_GAP;
   }
+  const listY = PAD + TITLE + TAB_H + TAB_GAP;
+  const recipes: Layout['recipes'] = shown.map((recipe, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    return { recipe, rect: at(craftX + PAD + col * (RECIPE_W + RECIPE_GAP), listY + row * RECIPE_H, RECIPE_W, RECIPE_H - 1) };
+  });
 
   return {
     u,
@@ -211,7 +207,7 @@ function computeLayout(width: number, height: number, scale: number, shown: read
     chestSlots,
     buttons,
     filter: at(craftX + craftW - PAD - FILTER_W, 3, FILTER_W, 9),
-    groups,
+    tabs,
     recipes,
     footerY: y0 + (craftH - PAD - FOOTER + 3) * u,
     goal: at(0, goalY, leftW, GOAL_H),
@@ -237,6 +233,8 @@ export interface PanelState {
   pinned: ItemId | null;
   /** The best pickaxe tier carried, for the next-pickaxe suggestion. */
   pickaxeTier: number;
+  /** How the world was generated: where its ores are found (and whether it has emberite). */
+  profile: GenProfile;
 }
 
 /** What a left click in the panel did. */
@@ -246,6 +244,7 @@ export type PanelClick =
   | { kind: 'cantCraft' }
   | { kind: 'button'; moved: number }
   | { kind: 'filter' }
+  | { kind: 'tab' }
   /** Pin a recipe as the goal (by the item it makes), or unpin it (null). */
   | { kind: 'pin'; item: ItemId | null };
 
@@ -253,6 +252,8 @@ export class InventoryPanel {
   open = false;
   /** "Craftable only": hide recipes that can't be made right now. */
   craftableOnly = false;
+  /** The recipe group whose tab is open. */
+  tab: RecipeGroup = RECIPE_GROUPS[0];
 
   /** Is canvas pixel (mx, my) over the panel? Clicks there don't reach the world. */
   covers(canvas: HTMLCanvasElement, scale: number, mx: number, my: number, state: PanelState): boolean {
@@ -304,8 +305,13 @@ export class InventoryPanel {
       this.craftableOnly = !this.craftableOnly;
       return { kind: 'filter' };
     }
+    const tab = layout.tabs.find((t) => hit(t.rect, mx, my));
+    if (tab) {
+      this.tab = tab.group;
+      return { kind: 'tab' };
+    }
     if (state.pinned && hit(layout.unpin, mx, my)) return { kind: 'pin', item: null };
-    const next = nextPickaxe(state.pickaxeTier);
+    const next = nextPickaxe(state.pickaxeTier, state.profile);
     if (next && hit(layout.suggestion, mx, my)) return { kind: 'pin', item: next.recipe.output };
     const row = layout.recipes.find((r) => hit(r.rect, mx, my));
     if (!row) return null;
@@ -355,18 +361,27 @@ export class InventoryPanel {
       }
     }
 
-    // Recipes, grouped, with the filter toggle and what's nearby.
+    // Recipes in tabs, with the filter toggle and what's nearby.
     drawPanel(ctx, layout.crafting, u);
     panelTitle(ctx, 'Crafting', layout.crafting, u);
     const overFilter = hit(layout.filter, mx, my);
     drawCheckbox(ctx, layout.filter, 'Craftable only', this.craftableOnly, overFilter, u);
     if (overFilter) tip = [{ text: 'Craftable only', color: WHITE, big: true }, { text: 'Show only what you can craft right now.', color: LIGHT }];
+    for (const { group, rect } of layout.tabs) {
+      const craftable = RECIPES.filter((r) => r.group === group && canCraft(state.inventory, r, state.stations, state.chests)).length;
+      const over = hit(rect, mx, my);
+      drawTab(ctx, rect, GROUP_NAMES[group], craftable, group === this.tab, over, u);
+      if (over) {
+        const can = craftable > 0 ? `You can craft ${craftable} of these right now.` : 'Nothing here you can craft right now.';
+        tip = [{ text: GROUP_NAMES[group], color: WHITE, big: true }, { text: can, color: LIGHT }];
+      }
+    }
     ctx.font = `${5 * u}px monospace`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    for (const { group, x, y } of layout.groups) shadowText(ctx, GROUP_NAMES[group], x, y, GREY, u);
     if (layout.recipes.length === 0) {
-      shadowText(ctx, 'Nothing you can craft here yet.', layout.crafting.x + PAD * u, layout.crafting.y + (PAD + TITLE + 2) * u, GREY, u);
+      const top = layout.crafting.y + (PAD + TITLE + TAB_H + TAB_GAP + 2) * u;
+      shadowText(ctx, 'Nothing you can craft here yet.', layout.crafting.x + PAD * u, top, GREY, u);
     }
     for (const { recipe, rect } of layout.recipes) {
       const over = hit(rect, mx, my);
@@ -388,9 +403,28 @@ export class InventoryPanel {
   }
 
   private layout(width: number, height: number, scale: number, state: PanelState): Layout {
-    const shown = this.craftableOnly ? RECIPES.filter((r) => canCraft(state.inventory, r, state.stations, state.chests)) : RECIPES;
+    const shown = RECIPES.filter(
+      (r) => r.group === this.tab && (!this.craftableOnly || canCraft(state.inventory, r, state.stations, state.chests)),
+    );
     return computeLayout(width, height, scale, shown, state.chest !== null);
   }
+}
+
+/** A recipe tab: brighter when open, with how many of its recipes can be crafted right now (in green). */
+function drawTab(ctx: CanvasRenderingContext2D, r: Rect, label: string, craftable: number, open: boolean, hovered: boolean, u: number): void {
+  ctx.fillStyle = open ? 'rgba(255, 255, 255, 0.32)' : hovered ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  if (open) {
+    ctx.fillStyle = WHITE;
+    ctx.fillRect(r.x, r.y + r.h - u, r.w, u);
+  }
+  ctx.font = `${5 * u}px monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const y = r.y + r.h / 2 + u / 2;
+  const x = r.x + 3 * u;
+  shadowText(ctx, label, x, y, open || hovered ? WHITE : LIGHT, u);
+  if (craftable > 0) shadowText(ctx, String(craftable), x + ctx.measureText(`${label} `).width, y, GREEN, u);
 }
 
 function drawPanel(ctx: CanvasRenderingContext2D, r: Rect, u: number): void {
@@ -462,7 +496,7 @@ function drawGoalBox(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement
     const overUnpin = hit(layout.unpin, mx, my);
     drawButton(ctx, layout.unpin, 'Unpin', overUnpin, u);
     if (overUnpin) tip = [{ text: 'Unpin', color: WHITE, big: true }, { text: 'Clear the goal from the HUD.', color: LIGHT }];
-    const status = goalStatus(pinned, state.inventory, state.stations, state.chests);
+    const status = goalStatus(pinned, state.inventory, state.stations, state.chests, state.profile);
     drawStack(ctx, itemAtlas, { item: pinned.output, count: pinned.count }, left, y, 16, u);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -490,7 +524,7 @@ function drawGoalBox(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement
     shadowText(ctx, pinRecipeHint(), left, y + 9 * u, GREY, u);
   }
   y += 18 * u;
-  const next = nextPickaxe(state.pickaxeTier);
+  const next = nextPickaxe(state.pickaxeTier, state.profile);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.font = `${5 * u}px monospace`;
@@ -502,7 +536,7 @@ function drawGoalBox(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement
       ctx.fillRect(layout.suggestion.x - u, layout.suggestion.y, layout.suggestion.w + 2 * u, layout.suggestion.h);
     }
     shadowText(ctx, `Next pickaxe: ${itemDef(next.recipe.output).name}${isPinned ? ' (pinned)' : ''}`, left, y + u, over ? WHITE : PIN, u);
-    shadowText(ctx, pickaxeNote(next), left, y + 9 * u, LIGHT, u);
+    shadowText(ctx, pickaxeNote(next, state.profile), left, y + 9 * u, LIGHT, u);
     if (over) {
       tip = [
         { text: itemDef(next.recipe.output).name, color: WHITE, big: true },
@@ -940,7 +974,7 @@ export class Menus {
     back.focus();
   }
 
-  /** Volumes, screen shake, reduced flashes, pixel scale, the FPS counter and the minimap. Every change applies and saves at once. */
+  /** Volumes (master, effects, ambience), screen shake, reduced flashes, pixel scale, the FPS counter and the minimap. Every change applies and saves at once. */
   showSettings(hooks: SettingsHooks, kind: 'title' | 'pause', onBack: () => void): void {
     const { settings, onChange } = hooks;
     const menu = this.open(kind);
@@ -951,6 +985,10 @@ export class Menus {
     });
     const effects = slider('set-sfx', 'Sound effects', settings.sfxVolume, (v) => {
       settings.sfxVolume = v;
+      onChange();
+    });
+    const ambience = slider('set-ambience', 'Ambience', settings.ambienceVolume, (v) => {
+      settings.ambienceVolume = v;
       onChange();
     });
     const shake = toggle('set-shake', 'Screen shake', settings.screenShake, (on) => {
@@ -978,7 +1016,7 @@ export class Menus {
       settings.showMinimap = on;
       onChange();
     });
-    menu.append(el('h2', 'Settings'), master.row, effects.row, shake, flashes, scale, fps, minimap, button('Back', onBack));
+    menu.append(el('h2', 'Settings'), master.row, effects.row, ambience.row, shake, flashes, scale, fps, minimap, button('Back', onBack));
     this.onBack = onBack;
     master.input.focus();
   }

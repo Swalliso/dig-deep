@@ -1,5 +1,6 @@
 import { PLAYER_HEIGHT, PLAYER_WIDTH, QUICK_TORCH_RADIUS, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
+import { canPlantOn } from '../world/plants';
 import { beamFooting, worldGetter } from '../world/supports';
 import { isClimbable, isSolid, Tile, tileDef, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
@@ -10,7 +11,8 @@ import { inReach } from './mining';
 /**
  * Can `tile` be placed at (tx, ty)? The spot must be empty air within reach, next to a tile
  * that holds blocks up (no floating blocks), and a solid block can't overlap the player. A beam
- * also needs a beam or firm ground right under it (see beamFooting).
+ * also needs a beam or firm ground right under it (see beamFooting), and a sapling or mushroom
+ * sprout the ground it grows on (see canPlantOn).
  * Doors and beds have their own rules; see doorSpot and bedSpot.
  */
 export function canPlace(world: World, player: Player, tx: number, ty: number, tile: TileId): boolean {
@@ -18,6 +20,7 @@ export function canPlace(world: World, player: Player, tx: number, ty: number, t
   if (tile === Tile.BedLeft) return bedSpot(world, player, tx, ty) !== null;
   if (!world.inBounds(tx, ty) || world.getTile(tx, ty) !== Tile.Air) return false;
   if (!inReach(player, tx, ty)) return false;
+  if (!canPlantOn(tile, world.getTile(tx, ty + 1))) return false;
   const supported =
     holdsBlocks(world.getTile(tx - 1, ty)) ||
     holdsBlocks(world.getTile(tx + 1, ty)) ||

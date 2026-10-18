@@ -1,8 +1,8 @@
 # Dig Deep – Roadmap after the MVP
 
-All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13 is on
-`develop` (the dev site). **Arc 3 is next**, starting with a short guidance slice and then Phase
-14a. This plan continues the same way: one phase at a time, each phase ends playable, and each
+All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13, the
+guidance slice and Phase 14a (the strata world) are on `develop` (the dev site). **Phase 14b
+(the strata's rules) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
 has acceptance criteria to check before moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
 targets; release status is separate from implementation status.
 
@@ -25,6 +25,9 @@ pickaxes (plus 2 iron bars for the lantern), gold's only use is the gold pickaxe
 still no goal past it, around 250–480 m down. Trees don't regrow, while torches, beams and planks
 all use wood. Arc 3 has to land its rewards (materials with uses, a way home, gear, discoveries
 and a goal at the bottom) as early as its new rules.
+
+Phase 14a has since answered the first part: new worlds have five strata whose every material
+has a use (bricks, gem lamps, the emberite pickaxe past gold), and wood grows back.
 
 ## Direction
 
@@ -85,14 +88,14 @@ phase that needs it, and that phase says so.
 | Foundation | Phase | What changes |
 | --- | --- | --- |
 | Procedural audio (`src/audio/sfx.ts`) | 8 | Sounds synthesized with Web Audio, so no asset files (like the procedural textures). Audio starts on the first click, as browsers require. |
-| Tile entities (`src/world/tileEntities.ts`) | 9 | Data stored per tile (chest contents, lift stops, torch timers), keyed by `ty * width + tx` and cleared when the tile changes. `World.onTileChange` becomes a list of listeners. Saved in an optional `tileEntities` field, so no version bump. |
+| Tile entities (`src/world/tileEntities.ts`) | 9 | Data stored per tile (chest contents, planted saplings' grow times from 14a, later lift stops and torch timers), keyed by `ty * width + tx` and cleared when the tile changes. `World.onTileChange` becomes a list of listeners. Saved in an optional `tileEntities` field, so no version bump. |
 | Save slots | 10 | Several sandbox worlds, plus a run slot and a meta-profile slot later on. The existing save key becomes slot 1, so current saves carry over. |
 | Session clock and saved state | 11a | Define when simulation pauses, then use that clock for damage, regeneration and later hazards (`Game.time` already counts play time for the ore glints; build on it). Save per-world state such as difficulty now, and health, respawn, satchels and fall progress in 11b; include their changes in autosave detection. Later phases extend this contract with their own state. |
 | Input actions (`src/input.ts`) | 11a | Logical actions (move left, jump, climb, map, quick stack…) bound to keys in one table, instead of key codes spread through `game.ts`. The F3 help, the Controls screen, tooltips and hints read their key names from it, so the remapping screen in the companion work only edits the table. |
 | PlayerStats (`src/systems/stats.ts`) | 11b | Player stats computed from the base values in config, plus equipment and boons. Replaces direct reads of `REACH`, `STATION_RANGE`, `DROP_PULL_RANGE` and the run/jump constants. 11b uses it for max health and safe fall height. |
 | Active tile updates (`src/world/tileUpdates.ts`) | 12 | A queue of tiles to recheck, fed by neighbours of changed tiles and worked through with a per-step budget, like the lighting's dirty box. Runs falling blocks, torch burnout and liquids. Never touches the whole world in one frame. |
-| Generation profiles | 12, extended in 14a | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14a adds strata, and Descent floors are smaller profiles. |
-| World compatibility | 12, reviewed at 14a and 17 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. |
+| Generation profiles | 12, extended in 14a | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14a adds strata (the **strata** profile, whose per-column stratum boundaries are kept in `world.strataTops`), and Descent floors are smaller profiles. |
+| World compatibility | 12, reviewed at 14a and 17 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. Reviewed at 14a: strata are a new profile, classic and gravel worlds still generate exactly as before (tests pin both profiles' world hashes), and no `SAVE_VERSION` bump was needed. |
 | Run rules and random streams | 18 | Record the seed, rules/generation version and eligible content pools. Derive separate generation, loot and boon streams from the seed and stable floor identifiers; keep cosmetics independent. Persist the state needed to resume without rerolling content. |
 
 Notes:
@@ -181,7 +184,7 @@ recipe expansion. These additions do not renumber phases.
 | Player map pins | Guidance slice | A few named pins for veins, alternate routes and places to revisit. Save them per world, respect fog of war, and allow one selected pin to show direction and distance without forcing the map open. Built in the guidance slice. |
 | Action feedback | During Arc 3 (flexible) | Visible mining swing, hovered tile names, and specific tier hints such as "Requires copper pickaxe" (today's hint just says "Need better pickaxe"). Invalid building explains the reason. Shipped: support previews (12) and the lantern drawn in the player's hand (13). |
 | Accessible controls and display | During Arc 3 (flexible) | Remappable actions (a screen over 11a's action table) with reset-to-default and conflict feedback; independent UI/text scaling; visual equivalents for sound warnings. Persist preferences per device and update displayed key hints. Introduce visual hazard cues with each hazard. Shipped: the reduced-flash setting (11b). |
-| Crafting grows with content | By 16 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. |
+| Crafting grows with content | By 16 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. Shipped: a tab per recipe group (Blocks, Light, Tools, Materials, Stations), each with how many of its recipes can be crafted now, and the panel sized for the biggest group (14a). Still to do: search. |
 
 ### Phase 11a: Session foundations and save safety
 
@@ -421,6 +424,40 @@ number 14.
   simple, with no farming system.
 - **Progression checks**: every new ore can be reached and mined using the preceding tier.
 - Debug: Y teleports to the top of the next stratum (T is quick torch, from the guidance slice).
+- As built:
+  - New worlds use the `strata` generation profile; classic and gravel worlds keep generating
+    exactly as before. Each boundary wanders up to 8 tiles per column, and Topsoil always
+    reaches below the dirt, so a valley's grass is never in the Stone Caverns.
+  - Each stratum has its own rock, and each rock needs the pickaxe made from the ore above it:
+    stone, **mudstone** (tier 1), deepstone (tier 2) and **basalt** (tier 3). Ores replace only
+    their own stratum's rock: coal and copper in the Stone Caverns, iron in the Fungal Hollows,
+    gold, **rubies** and **sapphires** (tier 3) in the Geode Depths, and **emberite** (tier 4,
+    mined with gold) in the Magma Layer. Coal is only in the Stone Caverns, so deeper trips take
+    it along. Gravel pockets are in the Stone Caverns and the Hollows.
+  - The Hollows grow glowshrooms, thick in patches and rare between them, and giant mushrooms
+    (a pale stem that gives wood under a purple cap, felled like a tree). The Geode Depths have
+    huge open caverns (around a dozen per world) lined with glow crystals, and a few crystals in
+    their other caves.
+  - Uses: every rock fires into its own bricks (4 for 4 at a furnace). A gold bar and a ruby or
+    sapphire make 2 **gem lamps**, which light 10 tiles (a torch lights 8) with a coloured glow;
+    that's gold's use beyond its pickaxe and the gems' interim use. The **emberite pickaxe**
+    (tier 5, 4.6x) is the new top. Nothing needs tier 5 yet: the Heart of the Deep (14b) or
+    sealed vaults (17) can.
+  - Renewable wood: leaves drop saplings (12%) and giant mushroom caps drop spores (15%).
+    Planted on grass or dirt (saplings) or mudstone (spores), they grow after 4–7 minutes of play
+    once there's room, timed by a tile entity on the session clock. Debug: P grows them now.
+  - Look and sound: below Topsoil each stratum draws its own backdrop colour with two parallax
+    layers of rock ledges and formations (stalactites, giant mushrooms, crystals, basalt columns);
+    Topsoil keeps the dirt backdrop. Entering a stratum shows "Fungal Hollows — 110 m" with what's
+    found there; F3 shows the stratum and its boundaries in the player's column. Each stratum has
+    an ambient bed (wind, a drone, damp air, a crystal hum, a rumble) with events now and then
+    (gusts, creaks, drips, chimes, booms) on the session clock, its own **Ambience** volume, half
+    volume while the inventory or map is open and silence on the pause menu.
+  - The crafting panel got a tab per recipe group (a new **Light** group holds torches, lamps,
+    the lantern and flares), from the companion work.
+  - Debug: Y goes to the top of the next stratum (from the Magma Layer, back to the spawn). The
+    kit has the strata's rocks, ores and gems, saplings, spores and gem lamps; O's ore patch has
+    every ore and gem.
 
 - [ ] Each stratum looks and sounds different at its depth, and the same seed gives the same
       world.
@@ -763,16 +800,15 @@ Work through the phases in number order, with the companion polish in small slic
 
 1. Done: Phases 11a and 11b (pausing, saves, health and recovery), 12 (cave-ins and supports,
    with generation profiles keeping older worlds intact) and 13 (the dark: carried light holds
-   dread off, only established light heals).
-2. The guidance slice: pinned recipe, map pins and quick torch.
-3. Phases 14a and 14b: distinct strata whose materials all have uses and renewable wood, then
-   each stratum's rule and the Heart of the Deep.
-4. Phases 15–17: a reliable way home first (lifts and the camp), then understandable equipment
+   dread off, only established light heals), the guidance slice (pinned recipe, map pins and
+   quick torch) and Phase 14a (distinct strata whose materials all have uses, and renewable wood).
+2. Phase 14b: each stratum's rule and the Heart of the Deep.
+3. Phases 15–17: a reliable way home first (lifts and the camp), then understandable equipment
    choices and useful discoveries. Expand crafting navigation before the recipe list grows.
-5. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
+4. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
    before expanding boons in 19 and objectives/mutators in 20. Meta progression and
    standardized dailies follow in 21.
-6. Ideas to brainstorm: camp defense before Phase 18; automation once lifts and liquids exist.
+5. Ideas to brainstorm: camp defense before Phase 18; automation once lifts and liquids exist.
 
 Phase 18 builds on Phase 11's session and health foundations, Phase 12's generation profiles
 and falling blocks (its pressure prototype needs them), Phase 13's darkness, Phase 14's strata

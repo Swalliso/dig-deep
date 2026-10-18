@@ -112,6 +112,146 @@ function deepstone(img: ImageData, rng: Rng): void {
   for (let k = 0; k < 5; k++) put(img, randInt(rng, 0, S - 1), randInt(rng, 0, S - 1), [96, 108, 140]);
 }
 
+/** Mudstone: damp olive rock with darker wet streaks and flecks of moss. */
+function mudstone(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Mudstone).color);
+  speckle(img, rng, c, 1.1);
+  // Layered streaks along the bedding.
+  for (let k = 0; k < 3; k++) {
+    const y = randInt(rng, 1, S - 2);
+    const x0 = randInt(rng, 0, 7);
+    for (let x = x0; x < Math.min(S, x0 + randInt(rng, 5, 10)); x++) put(img, x, y, c, 0.74);
+  }
+  for (let k = 0; k < 4; k++) put(img, randInt(rng, 0, S - 1), randInt(rng, 0, S - 1), [96, 138, 78]);
+}
+
+/**
+ * Basalt: near-black rock with a reddish cast, coarse grain and a few short cracks that run
+ * mostly up and down. Nothing crosses the whole tile, so a wall of it doesn't read as bricks.
+ */
+function basalt(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Basalt).color);
+  speckle(img, rng, c, 1.4);
+  for (let k = 0; k < 3; k++) {
+    let x = randInt(rng, 1, S - 2);
+    let y = randInt(rng, 0, S - 5);
+    for (let i = 0; i < randInt(rng, 3, 5); i++) {
+      put(img, x, y, c, 0.62);
+      if (rng() < 0.3) x = Math.min(S - 1, Math.max(0, x + (rng() < 0.5 ? -1 : 1)));
+      y = Math.min(S - 1, y + 1);
+    }
+  }
+  for (let k = 0; k < 4; k++) put(img, randInt(rng, 0, S - 1), randInt(rng, 0, S - 1), [112, 60, 50]);
+}
+
+/** Bricks: rows of blocks in running bond, light top edges and dark mortar, in the rock's colour. */
+function bricks(img: ImageData, rng: Rng, color: string): void {
+  const c = rgb(color);
+  for (let y = 0; y < S; y++) {
+    const row = Math.floor(y / 4);
+    const offset = row % 2 === 0 ? 0 : 4;
+    for (let x = 0; x < S; x++) {
+      const mortar = y % 4 === 3 || (x + offset) % 8 === 7;
+      const top = y % 4 === 0;
+      put(img, x, y, c, mortar ? 0.55 : top ? 1.18 : rng() < 0.18 ? 0.92 : 1);
+    }
+  }
+}
+
+/** A gem in rock: a few faceted crystals, each with a bright face and a dark one. */
+function gemOre(img: ImageData, rng: Rng, color: string): void {
+  deepstone(img, rng);
+  const c = rgb(color);
+  for (const [cx, cy] of [[4, 4], [11, 6], [6, 11], [12, 12]] as [number, number][]) {
+    const x = cx + randInt(rng, -1, 1);
+    const y = cy + randInt(rng, -1, 1);
+    put(img, x, y - 1, c, 1.45);
+    put(img, x - 1, y, c, 1.2);
+    put(img, x, y, c, 1);
+    put(img, x + 1, y, c, 0.75);
+    put(img, x, y + 1, c, 0.6);
+  }
+}
+
+/** Emberite: glowing orange veins and blobs running through basalt. */
+function emberiteOre(img: ImageData, rng: Rng): void {
+  basalt(img, rng);
+  const c = rgb(tileDef(Tile.EmberiteOre).color);
+  for (let k = 0; k < 3; k++) {
+    let x = randInt(rng, 1, S - 2);
+    let y = randInt(rng, 1, S - 2);
+    for (let i = 0; i < 5; i++) {
+      put(img, x, y, c, i === 2 ? 1.3 : 1);
+      x = Math.min(S - 1, Math.max(0, x + randInt(rng, -1, 1)));
+      y = Math.min(S - 1, Math.max(0, y + 1));
+    }
+  }
+  for (let k = 0; k < 3; k++) put(img, randInt(rng, 2, S - 3), randInt(rng, 2, S - 3), [255, 220, 120]);
+}
+
+/** A giant mushroom's stem: pale, with soft vertical fibres and darker edges. */
+function mushroomStem(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.MushroomStem).color);
+  for (let y = 0; y < S; y++) {
+    for (let x = 3; x < 13; x++) {
+      const edge = x === 3 || x === 12 ? 0.7 : x === 4 ? 1.12 : (x * 5 + y) % 7 === 0 ? 0.9 : 1;
+      put(img, x, y, c, edge * (rng() < 0.1 ? 0.92 : 1));
+    }
+  }
+}
+
+/** A giant mushroom's cap: smooth purple, lighter at the top, darker toward the gills, with pale spots. */
+function mushroomCap(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.MushroomCap).color);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) put(img, x, y, c, 1.12 - y * 0.018 - (rng() < 0.12 ? 0.07 : 0));
+  }
+  for (let x = 0; x < S; x++) put(img, x, S - 1, c, 0.7);
+  for (const [x, y] of [[3, 3], [10, 2], [7, 8], [13, 10]] as [number, number][]) {
+    put(img, x, y, [236, 220, 240]);
+    put(img, x + 1, y, [236, 220, 240], 0.92);
+    put(img, x, y + 1, [236, 220, 240], 0.85);
+    put(img, x + 1, y + 1, [236, 220, 240], 0.8);
+  }
+}
+
+/** A sapling: a thin stem with a few small leaves. */
+function sapling(img: ImageData): void {
+  const stem: RGB = [107, 74, 43];
+  const leaf = rgb(tileDef(Tile.Sapling).color);
+  for (let y = 7; y < S; y++) put(img, 8, y, stem, y === S - 1 ? 0.8 : 1);
+  for (const [x, y, s] of [[6, 7, 1], [7, 6, 1.15], [9, 5, 1], [10, 6, 0.85], [7, 9, 1], [6, 10, 0.85], [9, 10, 1.1], [10, 9, 1], [8, 4, 1.2]] as [number, number, number][]) {
+    put(img, x, y, leaf, s);
+  }
+}
+
+/** A mushroom sprout: a tiny pale stalk with a small purple cap. */
+function mushroomSprout(img: ImageData): void {
+  const stem: RGB = [214, 202, 176];
+  const cap = rgb(tileDef(Tile.MushroomCap).color);
+  for (let y = 11; y < S; y++) put(img, 8, y, stem, y === S - 1 ? 0.8 : 1);
+  for (let x = 6; x <= 10; x++) put(img, x, 10, cap, 0.85);
+  for (let x = 7; x <= 9; x++) put(img, x, 9, cap, 1.1);
+  put(img, 7, 9, [236, 220, 240]);
+  for (let y = 13; y < S; y++) put(img, 4, y, stem, 0.9);
+  put(img, 3, 12, cap);
+  put(img, 4, 12, cap, 1.1);
+  put(img, 5, 12, cap, 0.85);
+}
+
+/** A gem lamp: a gold bracket holding a glowing gem. */
+function gemLamp(img: ImageData, color: string): void {
+  const gold: RGB = [242, 201, 76];
+  const c = rgb(color);
+  for (let y = 9; y < S; y++) put(img, 8, y, gold, y % 3 === 0 ? 0.8 : 1);
+  for (let x = 6; x <= 10; x++) put(img, x, 9, gold, 0.85);
+  for (let y = 3; y < 9; y++) {
+    const half = y < 5 ? y - 3 : y > 6 ? 8 - y : 2;
+    for (let x = 8 - half; x <= 8 + half; x++) put(img, x, y, c, x < 8 ? 1.3 : x > 8 ? 0.8 : 1.05);
+  }
+  put(img, 7, 4, [255, 255, 255]);
+}
+
 function bedrock(img: ImageData, rng: Rng): void {
   const c = rgb(tileDef(Tile.Bedrock).color);
   for (let y = 0; y < S; y++) {
@@ -423,6 +563,21 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.Crossbeam: return crossbeam(img, rng);
     case Tile.Glowshroom: return glowshroom(img);
     case Tile.GlowCrystal: return glowCrystal(img, rng);
+    case Tile.Mudstone: return mudstone(img, rng);
+    case Tile.Basalt: return basalt(img, rng);
+    case Tile.StoneBricks:
+    case Tile.MudstoneBricks:
+    case Tile.DeepstoneBricks:
+    case Tile.BasaltBricks: return bricks(img, rng, tileDef(id).color);
+    case Tile.EmberiteOre: return emberiteOre(img, rng);
+    case Tile.RubyOre:
+    case Tile.SapphireOre: return gemOre(img, rng, tileDef(id).color);
+    case Tile.MushroomStem: return mushroomStem(img, rng);
+    case Tile.MushroomCap: return mushroomCap(img, rng);
+    case Tile.Sapling: return sapling(img);
+    case Tile.MushroomSprout: return mushroomSprout(img);
+    case Tile.RubyLamp:
+    case Tile.SapphireLamp: return gemLamp(img, tileDef(id).color);
   }
 }
 
@@ -514,6 +669,24 @@ function flareIcon(img: ImageData, color: string): void {
   for (const [x, y] of [[13, 3], [14, 2], [12, 2], [14, 4], [11, 1], [15, 1]] as [number, number][]) put(img, x, y, spark);
 }
 
+/** A cut gem: a faceted outline with a bright upper left and a dark lower right. */
+function gemIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  const rows: [number, number][] = [
+    [5, 10], [4, 11], [3, 12], [3, 12], [4, 11], [5, 10], [6, 9], [7, 8],
+  ];
+  rows.forEach(([x0, x1], i) => {
+    const y = 4 + i;
+    for (let x = x0; x <= x1; x++) {
+      const upper = i < 2;
+      put(img, x, y, c, upper ? 1.35 : x - x0 < (x1 - x0) / 2 ? 1.05 : 0.72);
+    }
+  });
+  for (let x = 5; x <= 10; x++) put(img, x, 6, c, 0.85); // the girdle
+  put(img, 6, 4, [255, 255, 255]);
+  put(img, 5, 7, [255, 255, 255], 0.9);
+}
+
 /** Item icons: ITEM_IDS[i] lives at x = i * TILE_SIZE. Tile items reuse their tile texture. */
 export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement {
   const atlas = document.createElement('canvas');
@@ -533,6 +706,7 @@ export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement 
     else if (icon.shape === 'bed') bedIcon(img, icon.color);
     else if (icon.shape === 'lantern') lanternIcon(img, icon.color);
     else if (icon.shape === 'flare') flareIcon(img, icon.color);
+    else if (icon.shape === 'gem') gemIcon(img, icon.color);
     else pickaxeIcon(img, icon.color);
     ctx.putImageData(img, i * S, 0);
   });

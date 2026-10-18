@@ -17,6 +17,7 @@ import {
   SPARKLE_MIN_LIGHT,
   SURFACE_BACKGROUND,
   TILE_SIZE,
+  type StratumLook,
 } from '../config';
 import type { Flare } from '../entities/flare';
 import type { ItemDrop } from '../entities/itemDrop';
@@ -28,10 +29,11 @@ import type { Hint } from '../systems/mining';
 import type { PixelScale } from '../systems/settings';
 import type { GenProgress } from '../world/generate';
 import { playerGlow, type LightMap } from '../world/lighting';
+import { STRATA } from '../world/strata';
 import { ORE_TILES, Tile, TILE_COUNT, tileDef } from '../world/tiles';
 import type { World } from '../world/world';
 import { oreSparkle, type BreakFlash } from './juice';
-import { buildBackground, parallaxX, parallaxY, type BackgroundLayer } from './parallax';
+import { buildBackground, caveOffset, parallaxX, parallaxY, type BackgroundLayer } from './parallax';
 import type { Particles } from './particles';
 import { buildBackdropTile, buildCrackAtlas, buildItemAtlas, buildTileAtlas } from './textures';
 
@@ -45,6 +47,12 @@ const GLOW_RGB: ([number, number, number] | null)[] = Array.from({ length: TILE_
 });
 const IS_ORE = new Uint8Array(TILE_COUNT);
 for (const ore of ORE_TILES) IS_ORE[ore] = 1;
+
+/** How a stratum looks behind caves: its backdrop colour and its parallax layers, as repeating patterns. */
+interface StratumScene {
+  backdrop: string;
+  layers: { layer: BackgroundLayer; pattern: CanvasPattern }[];
+}
 
 interface CachedChunk {
   /** null when the chunk is entirely air. */
@@ -77,6 +85,12 @@ export class Renderer {
   private cacheWorld: World | null = null;
   /** Parallax layers behind the world, built for `cacheWorld` from its seed. */
   private background: BackgroundLayer[] = [];
+  /**
+   * Strata worlds: per stratum (index into STRATA), its backdrop colour and its parallax layers
+   * as repeating patterns. Null for Topsoil, which keeps the dirt backdrop; empty for worlds
+   * without strata.
+   */
+  private strataScenes: (StratumScene | null)[] = [];
   private frame = 0;
   private sky: CanvasGradient | null = null;
   private readonly backdrop: CanvasPattern | null;
@@ -144,6 +158,7 @@ export class Renderer {
       this.chunkCache.clear();
       this.cacheWorld = world;
       this.background = buildBackground(world.seed, SURFACE_BACKGROUND);
+      this.strataScenes = world.strataTops.length === 0 ? [] : STRATA.map((stratum, s) => this.buildScene(world.seed, stratum.look, s));
     }
     this.frame++;
 
@@ -195,22 +210,57 @@ export class Renderer {
     }
   }
 
+  /** A stratum's scene: its backdrop colour and its parallax layers as patterns (null for no look: Topsoil). */
+  private buildScene(seed: number, look: StratumLook | null, salt: number): StratumScene | null {
+    if (!look) return null;
+    const layers = buildBackground(seed, look.background, salt).flatMap((layer) => {
+      const pattern = this.ctx.createPattern(layer.canvas, 'repeat');
+      return pattern ? [{ layer, pattern }] : [];
+    });
+    return { backdrop: look.backdrop, layers };
+  }
+
   /**
-   * Dark dirt wall behind everything below each column's original surface, so dug-out spaces
-   * read as underground instead of showing the sky.
+   * Behind everything below each column's original surface, so dug-out spaces read as
+   * underground instead of showing the sky: a dark dirt wall, or in a strata world, the dirt wall
+   * down to the end of Topsoil and then each stratum's backdrop colour with its parallax layers
+   * over it, between that column's stratum boundaries.
    */
   private drawBackdrop(world: World, camX: number, camY: number): void {
     if (!this.backdrop) return;
     const { ctx } = this;
     this.backdrop.setTransform(new DOMMatrix([1, 0, 0, 1, -camX, -camY]));
-    ctx.fillStyle = this.backdrop;
     const bottom = camY + this.viewHeight;
     const c0 = Math.max(0, Math.floor(camX / TILE_SIZE));
     const c1 = Math.min(world.width - 1, Math.floor((camX + this.viewWidth) / TILE_SIZE));
-    for (let c = c0; c <= c1; c++) {
-      const top = Math.max(world.surface[c] * TILE_SIZE, camY);
-      if (top < bottom) ctx.fillRect(c * TILE_SIZE - camX, top - camY, TILE_SIZE, bottom - top);
+    const tops = world.strataTops;
+    /** Fill each visible column between rows top(c) and end(c) (exclusive) with the current fill. */
+    const fillColumns = (top: (c: number) => number, end: (c: number) => number): void => {
+      for (let c = c0; c <= c1; c++) {
+        const y0 = Math.max(top(c) * TILE_SIZE, camY);
+        const y1 = Math.min(end(c) * TILE_SIZE, bottom);
+        if (y0 < y1) ctx.fillRect(c * TILE_SIZE - camX, y0 - camY, TILE_SIZE, y1 - y0);
+      }
+    };
+    ctx.fillStyle = this.backdrop;
+    if (tops.length === 0) {
+      fillColumns((c) => world.surface[c], () => world.height);
+      return;
     }
+    fillColumns((c) => world.surface[c], (c) => tops[0][c]);
+    this.strataScenes.forEach((scene, s) => {
+      if (!scene) return;
+      const top = (c: number): number => tops[s - 1][c];
+      const end = (c: number): number => (s < tops.length ? tops[s][c] : world.height);
+      ctx.fillStyle = scene.backdrop;
+      fillColumns(top, end);
+      for (const { layer, pattern } of scene.layers) {
+        const [ox, oy] = caveOffset(camX, camY, layer.spec.factor, layer.spec.lift);
+        pattern.setTransform(new DOMMatrix([1, 0, 0, 1, ox, oy]));
+        ctx.fillStyle = pattern;
+        fillColumns(top, end);
+      }
+    });
   }
 
   // The draw* methods below use world px and expect drawWorld's transform to still be set.

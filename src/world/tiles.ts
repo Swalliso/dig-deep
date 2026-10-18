@@ -1,6 +1,6 @@
 // Tile type registry. IDs are stored directly in chunk Uint8Arrays, so never renumber them.
 
-import { GLOW_CRYSTAL_LIGHT, GLOWSHROOM_LIGHT, TORCH_LIGHT } from '../config';
+import { GLOW_CRYSTAL_LIGHT, GLOWSHROOM_LIGHT, LAMP_LIGHT, SAPLING_CHANCE, SPORE_CHANCE, TORCH_LIGHT } from '../config';
 import type { ItemId } from '../systems/items';
 import type { World } from './world';
 
@@ -39,6 +39,25 @@ export const Tile = {
   // Phase 13: natural light.
   Glowshroom: 28,
   GlowCrystal: 29,
+  // Phase 14a: the strata's rock and the bricks made from it.
+  Mudstone: 30,
+  Basalt: 31,
+  StoneBricks: 32,
+  MudstoneBricks: 33,
+  DeepstoneBricks: 34,
+  BasaltBricks: 35,
+  // Phase 14a: new ore and gems.
+  EmberiteOre: 36,
+  RubyOre: 37,
+  SapphireOre: 38,
+  // Phase 14a: giant mushrooms, and what grows trees and giant mushrooms.
+  MushroomStem: 39,
+  MushroomCap: 40,
+  Sapling: 41,
+  MushroomSprout: 42,
+  // Phase 14a: gem lamps.
+  RubyLamp: 43,
+  SapphireLamp: 44,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -77,6 +96,13 @@ export interface TileDef {
   light?: number;
   /** Glowing tiles: the color they tint the lit tiles around them (drawn only). */
   glowColor?: string;
+  /** Sometimes also drops this when broken, felled with a tree included (leaves drop saplings). */
+  chanceDrop?: { item: ItemId; chance: number };
+  /**
+   * Saplings and mushroom sprouts: what they grow into (see plants.ts) and the tiles they can be
+   * planted on.
+   */
+  plant?: { grows: 'tree' | 'giantMushroom'; on: readonly TileId[] };
 }
 
 const defs: TileDef[] = [
@@ -85,7 +111,7 @@ const defs: TileDef[] = [
   { id: Tile.Dirt, name: 'Dirt', hardness: 0.3, minTier: 0, color: '#8a5a34', drop: 'dirt', solid: true, material: 'soil' },
   { id: Tile.Stone, name: 'Stone', hardness: 0.8, minTier: 0, color: '#7d7d82', drop: 'stone', solid: true, material: 'stone' },
   { id: Tile.Wood, name: 'Wood', hardness: 0.6, minTier: 0, color: '#7a5230', drop: 'wood', solid: false, material: 'wood' },
-  { id: Tile.Leaves, name: 'Leaves', hardness: 0.1, minTier: 0, color: '#3f8a2e', drop: null, solid: false, material: 'plant' },
+  { id: Tile.Leaves, name: 'Leaves', hardness: 0.1, minTier: 0, color: '#3f8a2e', drop: null, solid: false, material: 'plant', chanceDrop: { item: 'sapling', chance: SAPLING_CHANCE } },
   { id: Tile.CoalOre, name: 'Coal ore', hardness: 1.0, minTier: 0, color: '#26262a', drop: 'coal', solid: true, material: 'ore' },
   { id: Tile.CopperOre, name: 'Copper ore', hardness: 1.2, minTier: 1, color: '#d9783a', drop: 'copper_ore', solid: true, material: 'ore' },
   { id: Tile.IronOre, name: 'Iron ore', hardness: 1.6, minTier: 2, color: '#d8b49a', drop: 'iron_ore', solid: true, material: 'ore' },
@@ -114,6 +140,24 @@ const defs: TileDef[] = [
   // Natural light: a mushroom you can walk through, and a crystal set in the rock.
   { id: Tile.Glowshroom, name: 'Glowshroom', hardness: 0.1, minTier: 0, color: '#5fe0c8', drop: 'glowshroom', solid: false, material: 'plant', light: GLOWSHROOM_LIGHT, glowColor: '#2ee6c4' },
   { id: Tile.GlowCrystal, name: 'Glow crystal', hardness: 1.5, minTier: 2, color: '#b58cff', drop: 'glow_crystal', solid: true, material: 'ore', light: GLOW_CRYSTAL_LIGHT, glowColor: '#a66bff' },
+  // Each stratum's rock needs the pickaxe made from the ore of the stratum above it (stone needs
+  // none), and bricks break like the rock they're made from.
+  { id: Tile.Mudstone, name: 'Mudstone', hardness: 1.1, minTier: 1, color: '#5d6650', drop: 'mudstone', solid: true, material: 'stone' },
+  { id: Tile.Basalt, name: 'Basalt', hardness: 3.0, minTier: 3, color: '#3d3236', drop: 'basalt', solid: true, material: 'stone' },
+  { id: Tile.StoneBricks, name: 'Stone bricks', hardness: 0.8, minTier: 0, color: '#8b8b92', drop: 'stone_bricks', solid: true, material: 'stone' },
+  { id: Tile.MudstoneBricks, name: 'Mudstone bricks', hardness: 1.1, minTier: 1, color: '#6c7a58', drop: 'mudstone_bricks', solid: true, material: 'stone' },
+  { id: Tile.DeepstoneBricks, name: 'Deepstone bricks', hardness: 2.5, minTier: 2, color: '#4c5468', drop: 'deepstone_bricks', solid: true, material: 'stone' },
+  { id: Tile.BasaltBricks, name: 'Basalt bricks', hardness: 3.0, minTier: 3, color: '#4a3b3f', drop: 'basalt_bricks', solid: true, material: 'stone' },
+  { id: Tile.EmberiteOre, name: 'Emberite ore', hardness: 3.2, minTier: 4, color: '#ff6f2e', drop: 'emberite_ore', solid: true, material: 'ore' },
+  { id: Tile.RubyOre, name: 'Ruby', hardness: 2.2, minTier: 3, color: '#e3245e', drop: 'ruby', solid: true, material: 'ore' },
+  { id: Tile.SapphireOre, name: 'Sapphire', hardness: 2.2, minTier: 3, color: '#3b7cec', drop: 'sapphire', solid: true, material: 'ore' },
+  // A giant mushroom: a stem you can walk through (it gives wood) under a wide cap, felled like a tree.
+  { id: Tile.MushroomStem, name: 'Mushroom stem', hardness: 0.5, minTier: 0, color: '#d6cab0', drop: 'wood', solid: false, material: 'wood' },
+  { id: Tile.MushroomCap, name: 'Mushroom cap', hardness: 0.1, minTier: 0, color: '#8a4fb2', drop: null, solid: false, material: 'plant', chanceDrop: { item: 'mushroom_spores', chance: SPORE_CHANCE } },
+  { id: Tile.Sapling, name: 'Sapling', hardness: 0.05, minTier: 0, color: '#6aa84a', drop: 'sapling', solid: false, material: 'plant', plant: { grows: 'tree', on: [Tile.Grass, Tile.Dirt] } },
+  { id: Tile.MushroomSprout, name: 'Mushroom sprout', hardness: 0.05, minTier: 0, color: '#c9a8e0', drop: 'mushroom_spores', solid: false, material: 'plant', plant: { grows: 'giantMushroom', on: [Tile.Mudstone] } },
+  { id: Tile.RubyLamp, name: 'Ruby lamp', hardness: 0.3, minTier: 0, color: '#ff5a7c', drop: 'ruby_lamp', solid: false, material: 'ore', light: LAMP_LIGHT, glowColor: '#ff3d6e' },
+  { id: Tile.SapphireLamp, name: 'Sapphire lamp', hardness: 0.3, minTier: 0, color: '#5a9cff', drop: 'sapphire_lamp', solid: false, material: 'ore', light: LAMP_LIGHT, glowColor: '#3d8bff' },
 ];
 
 /** Indexed by tile id. */
@@ -121,10 +165,28 @@ export const TILES: readonly TileDef[] = defs;
 
 export const TILE_COUNT = TILES.length;
 
-export const ORE_TILES: readonly TileId[] = [Tile.CoalOre, Tile.CopperOre, Tile.IronOre, Tile.GoldOre];
+/** Tiles that glint when lit (ores and gems), in the order the debug ore patch lays them out. */
+export const ORE_TILES: readonly TileId[] = [
+  Tile.CoalOre,
+  Tile.CopperOre,
+  Tile.IronOre,
+  Tile.GoldOre,
+  Tile.RubyOre,
+  Tile.SapphireOre,
+  Tile.EmberiteOre,
+];
 
 export function tileDef(id: number): TileDef {
   return TILES[id] ?? TILES[Tile.Air];
+}
+
+/**
+ * What a broken tile drops besides its usual drop, given a random number r in 0..1: now and then
+ * a sapling from leaves, or spores from a giant mushroom's cap. Null most of the time.
+ */
+export function chanceDropFor(id: number, r: number): ItemId | null {
+  const extra = tileDef(id).chanceDrop;
+  return extra && r < extra.chance ? extra.item : null;
 }
 
 /** Light level each tile id gives off (0 for most), indexed by id. */

@@ -1,13 +1,16 @@
+import { DEBUG_STRATUM_SEARCH_COLUMNS, DEBUG_STRATUM_SEARCH_ROWS } from './config';
 import type { Inventory } from './systems/inventory';
 import type { ItemId } from './systems/items';
 import { keyPairs, mainKey } from './ui/controls';
-import { ORE_TILES, Tile } from './world/tiles';
+import { STRATA, stratumAt, stratumTopRow } from './world/strata';
+import { isSolid, ORE_TILES, Tile } from './world/tiles';
 import type { World } from './world/world';
 
 // Debug mode: add `debug` to the URL (`?seed=42&debug`) to turn on testing shortcuts.
 // Keep every cheat in here so it's easy to see what the debug build can do.
 
-export const DEBUG = new URLSearchParams(location.search).has('debug');
+// (No `location` outside a browser: the unit tests import the helpers below.)
+export const DEBUG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
 
 /**
  * Debug-only switches. failSaves makes every save fail (the pause menu toggles it), so a failed
@@ -41,8 +44,8 @@ export function brushNeighbours(mode: InstantMine): [number, number][] {
 
 /**
  * Enough of every material to craft every recipe, plus both stations, some chests, the dark's
- * kit (a lantern, flares, glowshrooms and glow crystals) and a stack of ladders, platforms, doors,
- * beds, gravel, beams and crossbeams ready to place.
+ * kit (a lantern, flares, glowshrooms and glow crystals), saplings and spores to plant, gem lamps
+ * and a stack of ladders, platforms, doors, beds, gravel, beams and crossbeams ready to place.
  */
 const KIT: ReadonlyArray<[ItemId, number]> = [
   // First, so they always fit.
@@ -50,12 +53,22 @@ const KIT: ReadonlyArray<[ItemId, number]> = [
   ['flare', 20],
   ['glowshroom', 20],
   ['glow_crystal', 10],
+  ['sapling', 10],
+  ['mushroom_spores', 10],
+  ['ruby_lamp', 6],
+  ['sapphire_lamp', 6],
   ['wood', 99],
   ['stone', 200],
   ['coal', 99],
   ['copper_ore', 99],
   ['iron_ore', 99],
   ['gold_ore', 99],
+  ['emberite_ore', 40],
+  ['ruby', 10],
+  ['sapphire', 10],
+  ['mudstone', 60],
+  ['deepstone', 60],
+  ['basalt', 60],
   ['dirt', 200],
   ['torch', 50],
   ['workbench', 1],
@@ -76,9 +89,9 @@ export function giveDebugKit(inventory: Inventory): void {
 }
 
 /**
- * Ore sampler: a 4 x 2 patch of coal, copper, iron and gold (one column each) with its top-left
- * at (tx, ty), replacing whatever is there except bedrock. For trying ore sounds and glints
- * without digging down to them.
+ * Ore sampler: a patch two tiles tall of every ore and gem (coal, copper, iron, gold, ruby,
+ * sapphire, emberite; one column each) with its top-left at (tx, ty), replacing whatever is
+ * there except bedrock. For trying ore sounds and glints without digging down to them.
  */
 export function placeOreSampler(world: World, tx: number, ty: number): void {
   for (let dy = 0; dy < 2; dy++) {
@@ -114,6 +127,38 @@ export function placeLadderShaft(world: World, tx: number, ty: number): number {
   return length;
 }
 
+/** A spot the player fits in: the tile their feet are in (open, with the one above it open and solid ground under it). */
+function fitsPlayer(world: World, tx: number, ty: number): boolean {
+  return world.inBounds(tx, ty - 1) && !isSolid(world.getTile(tx, ty)) && !isSolid(world.getTile(tx, ty - 1)) && isSolid(world.getTile(tx, ty + 1));
+}
+
+/**
+ * Where debug Y takes a player standing at tile (tx, ty): the top of the next stratum down, as
+ * the tile their feet go in. It looks for open space within DEBUG_STRATUM_SEARCH_ROWS rows of
+ * that stratum's top and DEBUG_STRATUM_SEARCH_COLUMNS columns of tx, nearest columns first, and
+ * otherwise carves a two-tile pocket at the top in column tx. From the bottom stratum it goes back
+ * to the world spawn. Null in a world without strata.
+ */
+export function nextStratumSpot(world: World, tx: number, ty: number): { tx: number; ty: number; stratum: number } | null {
+  const here = stratumAt(world, tx, ty);
+  if (here < 0) return null;
+  const next = here + 1;
+  if (next >= STRATA.length) return { tx: world.spawnTx, ty: world.spawnTy, stratum: stratumAt(world, world.spawnTx, world.spawnTy) };
+  for (let d = 0; d <= DEBUG_STRATUM_SEARCH_COLUMNS; d++) {
+    for (const x of d === 0 ? [tx] : [tx - d, tx + d]) {
+      if (x < 1 || x > world.width - 2) continue;
+      const top = stratumTopRow(world, next, x);
+      for (let y = top + 1; y < top + DEBUG_STRATUM_SEARCH_ROWS; y++) {
+        if (stratumAt(world, x, y - 1) === next && fitsPlayer(world, x, y)) return { tx: x, ty: y, stratum: next };
+      }
+    }
+  }
+  const top = stratumTopRow(world, next, tx);
+  world.setTile(tx, top, Tile.Air);
+  world.setTile(tx, top + 1, Tile.Air);
+  return { tx, ty: top + 1, stratum: next };
+}
+
 export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean, god: boolean): string[] {
   return [
     `DEBUG  ${mainKey('debugGive')}: give materials   ${mainKey('debugLighting')}: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
@@ -121,5 +166,6 @@ export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbr
     `       ${mainKey('debugOres')}: ore patch at the cursor   ${mainKey('debugLadderShaft')}: ${LADDER_SHAFT_LENGTH} m ladder shaft down from the cursor   ${mainKey('debugRevealMap')}: reveal the map`,
     `       ${mainKey('debugGodMode')}: god mode ${god ? 'ON' : 'off'} (and heal)   ${mainKey('debugHurt')}: take 2 damage (fly up and turn fly off to test falls)`,
     `       ${mainKey('debugGravel')}: 3 x 3 gravel at the cursor (falls if nothing holds it up)   ${mainKey('debugDread')}: fill or empty dread`,
+    `       ${mainKey('debugNextStratum')}: top of the next stratum (from the bottom one, back to spawn)   ${mainKey('debugGrowPlants')}: grow planted saplings and spores now`,
   ];
 }

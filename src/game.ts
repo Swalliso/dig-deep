@@ -1,5 +1,9 @@
 import * as sfx from './audio/sfx';
 import {
+  AMBIENCE_DUCK,
+  AMBIENCE_EVENT_GAPS,
+  BANNER_FADE,
+  BANNER_TIME,
   BEAM_MAX_HEIGHT,
   CLIMB_STEP_DISTANCE,
   DAMAGE_NUMBER_TIME,
@@ -27,6 +31,7 @@ import {
   LANTERN_LIGHT,
   LAND_MIN_SPEED,
   PICKAXES,
+  PLANT_CHECK_INTERVAL,
   PLAYER_HEIGHT,
   PLAYER_WIDTH,
   PROTECTION_ALPHA,
@@ -44,6 +49,7 @@ import {
   debugHelpLines,
   giveDebugKit,
   nextInstantMine,
+  nextStratumSpot,
   placeLadderShaft,
   placeGravelPocket,
   placeOreSampler,
@@ -83,7 +89,7 @@ import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { hintSeen, markHintSeen, type HintId } from './systems/hints';
 import { saveSettings, type Settings } from './systems/settings';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
-import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawToasts, Toasts } from './ui/hud';
+import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawStratumBanner, drawToasts, Toasts } from './ui/hud';
 import { goalHudLines } from './ui/guidance';
 import { drawMinimap, FullMap, PIN_COLOR, type MapInput, type MapMarkers } from './ui/map';
 import { InventoryPanel, type PanelState } from './ui/menus';
@@ -91,12 +97,14 @@ import { directionText, drawDeathScreen, drawDreadMeter, drawHearts, drawHudLine
 import { bedLeft, bedPartner, isBed, isWholeBed } from './world/beds';
 import { ExploredMap } from './world/explored';
 import { doorBottom, doorPartner, isDoorOpen, toggleDoor } from './world/doors';
-import { profileLabel } from './world/generate';
+import { CLASSIC_PROFILE, findProfile, profileLabel, type GenProfile } from './world/generate';
 import { LightMap } from './world/lighting';
+import { canPlantOn, growDuePlants, newPlant, plantGrowTime } from './world/plants';
+import { bannerTitle, depthRange, STRATA, StratumTracker, stratumAt } from './world/strata';
 import { beamFooting, columnHeld, holdsLoose, isLoose, isSupport, supportEffect, withTile, worldGetter, type SupportEffect } from './world/supports';
 import { TileEntities, type TileEntity } from './world/tileEntities';
-import { Tile, tileDef, type TileId } from './world/tiles';
-import { fellTreeAbove } from './world/trees';
+import { chanceDropFor, Tile, tileDef, type TileId } from './world/tiles';
+import { fellTreeAbove, isTrunk } from './world/trees';
 import { TileUpdates } from './world/tileUpdates';
 import type { World } from './world/world';
 
@@ -215,6 +223,16 @@ export class Game {
   pinnedRecipe: ItemId | null;
   /** Named pins on the map; the tracked one shows its direction on the HUD. */
   readonly mapPins: MapPins;
+  /** How the world was generated: its ores (for the goal's hints) and whether it has strata. */
+  readonly profile: GenProfile;
+  /** The stratum the player is in (strata worlds), for the entry banner, the ambience and F3. */
+  private readonly stratum: StratumTracker;
+  /** The entry banner of the stratum just entered, while it shows (UI time, like toasts). */
+  private banner: { stratum: number; timeLeft: number } | null = null;
+  /** Session clock time of the next ambient event (a drip, a creak...), or null to pick one. */
+  private nextAmbientAt: number | null = null;
+  /** Seconds until planted saplings and sprouts are next checked for growing. */
+  private plantCheckIn = 0;
   /** How lit the player's tile was at the last simulation step. */
   private safety: LightSafety = 'established';
   private flareList: Flare[];
@@ -286,6 +304,8 @@ export class Game {
     this.flareList = start.flares ?? [];
     this.pinnedRecipe = start.pinnedRecipe ?? null;
     this.mapPins = start.mapPins ?? new MapPins();
+    this.profile = findProfile(world.profile) ?? CLASSIC_PROFILE;
+    this.stratum = new StratumTracker(world, ...this.playerTile());
     this.inventory = start.inventory ?? Inventory.withStartingItems();
     this.dropList = start.drops ?? [];
     this.tileEntities = start.tileEntities ?? new TileEntities(world);
@@ -384,6 +404,53 @@ export class Game {
     this.updateCarriedLight();
     this.lightMap.update(); // relight around any tiles that changed this step, and the lantern if it moved
     this.toasts.update(dt);
+    this.updateStratum(dt);
+  }
+
+  /**
+   * Strata worlds: show the entry banner when the player crosses into another stratum, and play
+   * that stratum's ambience (quieter while the world is paused by the panel, map or death screen).
+   */
+  private updateStratum(dt: number): void {
+    const entered = this.stratum.update(this.world, ...this.playerTile());
+    if (entered !== null) {
+      this.banner = { stratum: entered, timeLeft: BANNER_TIME };
+      this.nextAmbientAt = null;
+    }
+    if (this.banner) {
+      this.banner.timeLeft -= dt;
+      if (this.banner.timeLeft <= 0) this.banner = null;
+    }
+    const s = this.stratum.current;
+    sfx.setAmbience(s >= 0 ? STRATA[s].ambience : null, this.pausedBy || this.deathScreen ? AMBIENCE_DUCK : 1);
+  }
+
+  /**
+   * Now and then (on the session clock, so never while the world is paused), one of the
+   * stratum's ambient events: a gust, a creak, a drip, a chime, a distant boom.
+   */
+  private ambientEvents(): void {
+    const s = this.stratum.current;
+    if (s < 0) return;
+    const id = STRATA[s].ambience;
+    const now = this.clock.time;
+    if (this.nextAmbientAt !== null && now < this.nextAmbientAt) return;
+    if (this.nextAmbientAt !== null) sfx.ambientEvent(id, Math.random() * 2 - 1);
+    const [min, max] = AMBIENCE_EVENT_GAPS[id];
+    this.nextAmbientAt = now + min + Math.random() * (max - min);
+  }
+
+  /** Every PLANT_CHECK_INTERVAL: grow the planted saplings and sprouts whose time has come, if there's room. */
+  private growPlants(dt: number): void {
+    this.plantCheckIn -= dt;
+    if (this.plantCheckIn > 0) return;
+    this.plantCheckIn = PLANT_CHECK_INTERVAL;
+    for (const [tx, ty] of growDuePlants(this.world, this.tileEntities, this.clock.time)) {
+      // A rustle when it happens on screen.
+      const dx = Math.abs((tx + 0.5) * TILE_SIZE - this.player.centerX);
+      const dy = Math.abs((ty + 0.5) * TILE_SIZE - this.player.centerY);
+      if (dx < this.renderer.viewWidth / 2 && dy < this.renderer.viewHeight / 2) sfx.place('plant', this.pan(tx));
+    }
   }
 
   /** Keys, the map and the panel: everything that takes input while the player is alive. */
@@ -474,6 +541,33 @@ export class Game {
       const [lx, ly] = this.cursorTile();
       toasts.show(`Debug: ${placeLadderShaft(world, lx, ly)} m ladder shaft`);
     }
+    if (actionPressed('debugNextStratum')) this.debugNextStratum();
+    if (actionPressed('debugGrowPlants')) {
+      let planted = 0;
+      this.tileEntities.forEach((_tx, _ty, entity) => {
+        if (entity.kind !== 'plant') return;
+        entity.growAt = Math.min(entity.growAt, this.clock.time);
+        planted++;
+      });
+      this.plantCheckIn = 0;
+      toasts.show(planted > 0 ? `Debug: ${planted} planted sapling${planted === 1 ? '' : 's'} or spores grow now (if there's room)` : 'Debug: nothing planted');
+    }
+  }
+
+  /** Debug: to the top of the next stratum down (from the bottom one, back to the world spawn). */
+  private debugNextStratum(): void {
+    const { player, camera, toasts } = this;
+    const spot = nextStratumSpot(this.world, ...this.playerTile());
+    if (!spot) {
+      toasts.show(`Debug: this world has no strata (it was made with ${profileLabel(this.world.profile)})`);
+      return;
+    }
+    player.placeAt(spot.tx * TILE_SIZE + (TILE_SIZE - PLAYER_WIDTH) / 2, (spot.ty + 1) * TILE_SIZE - PLAYER_HEIGHT);
+    camera.centerOn(player.centerX, player.centerY);
+    this.clampCamera();
+    camera.prevX = camera.x;
+    camera.prevY = camera.y;
+    toasts.show(`Debug: ${STRATA[spot.stratum].name}`);
   }
 
   /** Right-click (chests and doors) and clicks in the open inventory panel. Not while the map is open. */
@@ -550,6 +644,8 @@ export class Game {
     if (this.deathScreen) return; // crushed: the rest waits for the respawn
     this.trickleDust(dt);
     this.updateSatchels();
+    this.growPlants(dt);
+    this.ambientEvents();
     this.flareList = updateFlares(this.flareList, dt, world);
 
     this.dropList = updateDrops(this.dropList, dt, world, player, this.inventory, (item, count) => {
@@ -656,6 +752,11 @@ export class Game {
       if (this.settings.showMinimap && !this.fullMap.open) drawMinimap(renderer.ctx, this.mapImage, this.mapMarkers(glowX, glowY), renderer.scale);
     }
     drawToasts(renderer.ctx, this.toasts, renderer.scale);
+    if (this.banner && !this.inventoryPanel.open && !this.fullMap.open && !this.deathScreen) {
+      const { stratum, timeLeft } = this.banner;
+      const alpha = Math.min(1, (BANNER_TIME - timeLeft) / BANNER_FADE, timeLeft / BANNER_FADE);
+      drawStratumBanner(renderer.ctx, bannerTitle(stratum), STRATA[stratum].finds, alpha, renderer.scale);
+    }
     const hudBottom = this.fullMap.open ? 6 * renderer.scale : this.drawVitals(sinceHit);
     // Depth is measured at the player's feet: standing on the surface level reads 0 m.
     drawDepthMeter(renderer.ctx, Math.floor((player.y + PLAYER_HEIGHT) / TILE_SIZE) - SURFACE_LEVEL, renderer.scale);
@@ -719,7 +820,7 @@ export class Game {
       const { world } = this;
       const range = player.stats.stationRange;
       const chests = nearbyChests(world, this.tileEntities, player.centerX, player.centerY, range);
-      const status = goalStatus(goal, this.inventory, nearbyStations(world, player.centerX, player.centerY, range), chests);
+      const status = goalStatus(goal, this.inventory, nearbyStations(world, player.centerX, player.centerY, range), chests, this.profile);
       for (const [text, color] of goalHudLines(status)) y = drawHudLine(renderer.ctx, text, y, u, color);
     }
     return y;
@@ -795,7 +896,7 @@ export class Game {
       playerX: x,
       playerY: y,
       spawn: { tx: this.world.spawnTx, ty: this.world.spawnTy },
-      chests: this.tileEntities.entries().map(({ tx, ty }) => ({ tx, ty })),
+      chests: this.tileEntities.entries().flatMap(({ tx, ty, entity }) => (entity.kind === 'chest' ? [{ tx, ty }] : [])),
       bed: this.activeBed(),
       satchels: this.satchels.map((s) => ({ tx: (s.x + SATCHEL_SIZE / 2) / TILE_SIZE, ty: (s.y + SATCHEL_SIZE / 2) / TILE_SIZE })),
       pins: this.mapPins.pins,
@@ -828,9 +929,9 @@ export class Game {
       this.bed = null;
       this.toasts.show('Your bed is gone. Without one you respawn near the world spawn.', 4);
     }
-    // Cutting a trunk brings down the rest of the tree above the cut.
-    if (tile === Tile.Wood) {
-      for (const felled of fellTreeAbove(this.world, tx, ty)) this.shatter(felled.tx, felled.ty, felled.tile);
+    // Cutting a trunk (or a giant mushroom's stem) brings down the rest of it above the cut.
+    if (isTrunk(tile)) {
+      for (const felled of fellTreeAbove(this.world, tx, ty, tile)) this.shatter(felled.tx, felled.ty, felled.tile);
     }
   }
 
@@ -857,6 +958,7 @@ export class Game {
       stationRange: range,
       pinned: this.pinnedRecipe,
       pickaxeTier: this.inventory.bestPickaxeTier(),
+      profile: this.profile,
     };
   }
 
@@ -895,6 +997,7 @@ export class Game {
     this.builtThisHold.add(key);
     const placed = this.world.getTile(tx, ty);
     if (placed === Tile.Beam || placed === Tile.Crossbeam) markHintSeen(this.supportHintId(placed));
+    if (tileDef(placed).plant) this.tileEntities.set(tx, ty, newPlant(this.clock.time, plantGrowTime(Math.random())));
     sfx.place(tileDef(this.world.getTile(tx, ty)).material, this.pan(tx));
     if (isBed(this.world.getTile(tx, ty))) this.toasts.show(`${mainKey('interact')} the bed to respawn there`, 4);
   }
@@ -1186,8 +1289,9 @@ export class Game {
     sfx.uiClick();
   }
 
-  /** A removed chest's contents, popped out of its tile. */
+  /** A removed chest's contents, popped out of its tile. (A plant's entity just goes.) */
   private spill(tx: number, ty: number, entity: TileEntity): void {
+    if (entity.kind !== 'chest') return;
     for (const stack of entity.slots) {
       if (stack) this.dropList.push(new ItemDrop(stack.item, stack.count, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
     }
@@ -1200,6 +1304,9 @@ export class Game {
     if (!this.settings.reducedFlashes) this.flashes.push({ tx, ty, alpha: breakFlashAlpha(def.hardness), drawn: false });
     this.particles.breakBurst(tx, ty, def.color);
     if (def.drop) this.dropList.push(new ItemDrop(def.drop, 1, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
+    // Leaves sometimes drop a sapling, and giant mushroom caps spores.
+    const extra = chanceDropFor(tile, Math.random());
+    if (extra) this.dropList.push(new ItemDrop(extra, 1, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
   }
 
   /** Dig ticks every DIG_TICK_INTERVAL while `digging` (holding the mine button on a minable tile). */
@@ -1281,6 +1388,12 @@ export class Game {
       // A beam can't go here only because there's nothing under it: say so (the first few times).
       renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
       this.drawSupportHint('placeBeam', 'Beams stand on solid ground or on another beam', tx, ty, '#ffc080', camX, camY);
+    } else if (tile !== null && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty) && !canPlantOn(tile, world.getTile(tx, ty + 1))) {
+      // A sapling or spores over the wrong ground: say what they grow on.
+      const on = tileDef(tile).plant!.on.map((t) => tileDef(t).name.toLowerCase());
+      renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+      const text = `${itemDef(stack!.item).name} only grow${stack!.item === 'sapling' ? 's' : ''} on ${on.join(' or ')}`;
+      renderer.drawFloatingText(text, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
     }
   }
 
@@ -1385,6 +1498,26 @@ export class Game {
     return x + TILE_SIZE - 1 > player.x && x + 1 < player.x + PLAYER_WIDTH && y + TILE_SIZE - 1 > player.y && y + 1 < player.y + PLAYER_HEIGHT;
   }
 
+  /** F3: the stratum at the player's tile, its depths, and where its boundaries are in this column. */
+  private stratumLine(tx: number, ty: number): string {
+    const s = stratumAt(this.world, tx, ty);
+    if (s < 0) return 'Stratum: none (this world has no strata)';
+    const tops = this.world.strataTops;
+    const at = (row: number): string => `${row - SURFACE_LEVEL} m`;
+    const top = s === 0 ? 'the surface' : at(tops[s - 1][tx]);
+    const bottom = s < tops.length ? at(tops[s][tx]) : 'bedrock';
+    return `Stratum: ${STRATA[s].name} (${depthRange(s)}; here ${top} to ${bottom})   ambience ${STRATA[s].ambience}   plants growing ${this.plantCount()}`;
+  }
+
+  /** How many planted saplings and sprouts are waiting to grow. */
+  private plantCount(): number {
+    let n = 0;
+    this.tileEntities.forEach((_tx, _ty, entity) => {
+      if (entity.kind === 'plant') n++;
+    });
+    return n;
+  }
+
   /** F3 debug overlay. */
   private drawOverlay(stats: FrameStats): void {
     const { player } = this;
@@ -1400,6 +1533,7 @@ export class Game {
       `FPS ${stats.fps}   frame ${stats.frameMs.toFixed(1)} ms   saved ${saved}`,
       `Audio ${sfx.audioStatus()}   master ${percent(this.settings.masterVolume)}   SFX ${percent(this.settings.sfxVolume)}`,
       `Seed ${this.world.seed}   World hash ${this.worldHash}   Generation ${profileLabel(this.world.profile)}`,
+      this.stratumLine(tx, ty),
       `Play time ${this.clock.time.toFixed(1)} s   World ${this.pausedBy ? `paused (${this.pausedBy})` : 'running'}`,
       `Player tile (${tx}, ${ty})   Light ${this.lightMap.level(tx, ty)} (established ${this.lightMap.established(tx, ty)}, safe from ${DREAD_SAFE_LIGHT})   ${this.safety}   dread ${Math.round(this.dread.level * 100)}%`,
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,

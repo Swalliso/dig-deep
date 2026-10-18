@@ -7,7 +7,7 @@ import type { Player } from '../entities/player';
 import { ExploredMap } from '../world/explored';
 import { CLASSIC_PROFILE, findProfile, type GenProfile, type ProfileRef } from '../world/generate';
 import { TileEntities } from '../world/tileEntities';
-import { Tile, TILE_COUNT } from '../world/tiles';
+import { Tile, TILE_COUNT, tileDef } from '../world/tiles';
 import type { World } from '../world/world';
 import type { CaveIns, SavedCaveIns } from './caveIns';
 import type { Dread, SavedDread } from './dread';
@@ -59,7 +59,7 @@ export interface SaveData {
    * in the inventory is saved here too, at the player. Missing in older saves.
    */
   drops?: SavedDrop[];
-  /** Per-tile data such as chest contents. Missing in older saves. */
+  /** Per-tile data: chest contents, and when planted saplings and sprouts grow. Missing in older saves. */
   tileEntities?: SavedTileEntity[];
   /** Tiles seen so far (the map), per chunk: 1 byte per tile, RLE-compressed. Missing in older saves. */
   explored?: { index: number; data: Uint8Array }[];
@@ -99,13 +99,10 @@ export interface WorldMeta {
   difficulty?: Difficulty;
 }
 
-/** A tile entity and where it is. Only chests so far. */
-export interface SavedTileEntity {
-  tx: number;
-  ty: number;
-  kind: 'chest';
-  slots: (ItemStack | null)[];
-}
+/** A tile entity and where it is: a chest's contents, or when a planted sapling or sprout grows (Phase 14a). */
+export type SavedTileEntity =
+  | { tx: number; ty: number; kind: 'chest'; slots: (ItemStack | null)[] }
+  | { tx: number; ty: number; kind: 'plant'; growAt: number };
 
 export interface SavedDrop {
   item: ItemId;
@@ -250,7 +247,11 @@ export function savedState(
 
 /** Tile entities as saved (copies, so later changes don't leak into a save waiting to be written). */
 export function savedTileEntities(entities: TileEntities): SavedTileEntity[] {
-  return entities.entries().map(({ tx, ty, entity }) => ({ tx, ty, kind: entity.kind, slots: entity.slots.map((s) => s && { ...s }) }));
+  return entities
+    .entries()
+    .map(({ tx, ty, entity }): SavedTileEntity =>
+      entity.kind === 'chest' ? { tx, ty, kind: 'chest', slots: entity.slots.map((s) => s && { ...s }) } : { tx, ty, kind: 'plant', growAt: entity.growAt },
+    );
 }
 
 /**
@@ -349,16 +350,21 @@ export function restoreDrops(save: SaveData, world: World): ItemDrop[] {
 
 /**
  * Tile entities for a world that already has its saved chunks applied. Entries that are
- * unrecognisable, or whose tile isn't a chest any more, are skipped.
+ * unrecognisable, or whose tile isn't a chest (or a sapling or sprout, for a plant) any more,
+ * are skipped.
  */
 export function restoreTileEntities(save: SaveData, world: World): TileEntities {
   const entities = new TileEntities(world);
   for (const e of save.tileEntities ?? []) {
-    if (!e || e.kind !== 'chest' || !Number.isInteger(e.tx) || !Number.isInteger(e.ty) || !Array.isArray(e.slots)) continue;
-    if (!world.inBounds(e.tx, e.ty) || world.getTile(e.tx, e.ty) !== Tile.Chest) continue;
-    const slots: Slots = new Array(CHEST_SLOTS).fill(null);
-    restoreSlots(e.slots, slots);
-    entities.set(e.tx, e.ty, { kind: 'chest', slots });
+    if (!e || !Number.isInteger(e.tx) || !Number.isInteger(e.ty) || !world.inBounds(e.tx, e.ty)) continue;
+    const tile = world.getTile(e.tx, e.ty);
+    if (e.kind === 'chest' && Array.isArray(e.slots) && tile === Tile.Chest) {
+      const slots: Slots = new Array(CHEST_SLOTS).fill(null);
+      restoreSlots(e.slots, slots);
+      entities.set(e.tx, e.ty, { kind: 'chest', slots });
+    } else if (e.kind === 'plant' && typeof e.growAt === 'number' && Number.isFinite(e.growAt) && tileDef(tile).plant) {
+      entities.set(e.tx, e.ty, { kind: 'plant', growAt: e.growAt });
+    }
   }
   return entities;
 }

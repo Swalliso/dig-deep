@@ -1,5 +1,5 @@
 import { storageKey } from '../channel';
-import { DEFAULT_MASTER_VOLUME, DEFAULT_SFX_VOLUME } from '../config';
+import { DEFAULT_AMBIENCE_VOLUME, DEFAULT_MASTER_VOLUME, DEFAULT_SFX_VOLUME } from '../config';
 
 // Player preferences, kept per device in localStorage (separately for the live and dev sites).
 
@@ -11,6 +11,8 @@ export interface Settings {
   masterVolume: number;
   /** 0..1 */
   sfxVolume: number;
+  /** 0..1: each stratum's ambient sound (strata worlds). */
+  ambienceVolume: number;
   screenShake: boolean;
   /**
    * Reduced flashes: no break flash, no ore glints and no red flash when hurt; protection shows
@@ -30,6 +32,7 @@ export function defaultSettings(): Settings {
   return {
     masterVolume: DEFAULT_MASTER_VOLUME,
     sfxVolume: DEFAULT_SFX_VOLUME,
+    ambienceVolume: DEFAULT_AMBIENCE_VOLUME,
     screenShake: true,
     reducedFlashes: false,
     pixelScale: 'auto',
@@ -53,6 +56,7 @@ export function parseSettings(json: string | null): Settings {
     typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback;
   settings.masterVolume = volume(s.masterVolume, settings.masterVolume);
   settings.sfxVolume = volume(s.sfxVolume, settings.sfxVolume);
+  settings.ambienceVolume = volume(s.ambienceVolume, settings.ambienceVolume);
   if (typeof s.screenShake === 'boolean') settings.screenShake = s.screenShake;
   if (typeof s.reducedFlashes === 'boolean') settings.reducedFlashes = s.reducedFlashes;
   if (s.pixelScale === 'auto' || s.pixelScale === 2 || s.pixelScale === 3) settings.pixelScale = s.pixelScale;

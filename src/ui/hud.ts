@@ -170,6 +170,29 @@ export function drawFpsCounter(ctx: CanvasRenderingContext2D, fps: number, u: nu
   ctx.restore();
 }
 
+/**
+ * A stratum's entry banner near the top of the screen: its name and depth ("Fungal Hollows —
+ * 110 m") over a line of what's found there, between two thin rules, `alpha` opaque.
+ */
+export function drawStratumBanner(ctx: CanvasRenderingContext2D, title: string, subtitle: string, alpha: number, u: number): void {
+  const { width, height } = ctx.canvas;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const y = Math.round(height * 0.2);
+  ctx.font = `bold ${11 * u}px monospace`;
+  const w = ctx.measureText(title).width;
+  shadowText(ctx, title, width / 2, y, '#f4ead2', u);
+  ctx.fillStyle = 'rgba(244, 234, 210, 0.55)';
+  ctx.fillRect(Math.round(width / 2 - w / 2), y - 4 * u, Math.round(w), u);
+  ctx.fillRect(Math.round(width / 2 - w / 2), y + 15 * u, Math.round(w), u);
+  ctx.font = `${6 * u}px monospace`;
+  shadowText(ctx, subtitle, width / 2, y + 19 * u, '#cfc6b4', u);
+  ctx.restore();
+}
+
 /** "Depth: 87 m" in the top-right corner (1 tile = 1 m, 0 at surface level); "Height" above it. */
 export function drawDepthMeter(ctx: CanvasRenderingContext2D, depth: number, u: number): void {
   ctx.save();

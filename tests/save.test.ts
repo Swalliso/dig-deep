@@ -8,7 +8,7 @@ import { CaveIns } from '../src/systems/caveIns';
 import { chestAt } from '../src/systems/chests';
 import { Dread } from '../src/systems/dread';
 import { Health } from '../src/systems/health';
-import { Inventory } from '../src/systems/inventory';
+import { Inventory, type ItemStack } from '../src/systems/inventory';
 import {
   applySavedChunks,
   checkSave,
@@ -29,16 +29,23 @@ import {
   saveKeyFor,
   savedState,
   type SaveData,
+  type SavedTileEntity,
 } from '../src/systems/save';
 import { createRng, randInt } from '../src/util/rng';
 import { MapPins } from '../src/systems/mapPins';
 import { ExploredMap } from '../src/world/explored';
 import { generateWorld } from '../src/world/generate';
-import { TileEntities } from '../src/world/tileEntities';
+import { TileEntities, type TileEntity } from '../src/world/tileEntities';
 import { Tile } from '../src/world/tiles';
 import { TileUpdates } from '../src/world/tileUpdates';
 
 const CHUNK_BYTES = CHUNK_SIZE * CHUNK_SIZE;
+
+/** A chest's slots, from a tile entity (live or saved) that must be a chest. */
+function chestSlots(entity: SavedTileEntity | TileEntity): (ItemStack | null)[] {
+  if (entity.kind !== 'chest') throw new Error(`expected a chest, got ${entity.kind}`);
+  return entity.slots;
+}
 
 describe('run-length encoding', () => {
   it('round-trips chunk data exactly', () => {
@@ -211,7 +218,7 @@ describe('chests', () => {
     const { world, entities, tx, ty } = chestWorld();
     const save = createSave(world, new Player(0, 0), new Inventory(), [], entities);
     chestAt(world, entities, tx, ty)!.slots[0]!.count = 1;
-    expect(save.tileEntities![0].slots[0]).toEqual({ item: 'iron_bar', count: 12 });
+    expect(chestSlots(save.tileEntities![0])[0]).toEqual({ item: 'iron_bar', count: 12 });
   });
 
   it('skip entries that are unrecognisable or no longer on a chest', () => {
@@ -224,14 +231,14 @@ describe('chests', () => {
       { tx, ty, kind: 'lift' as never, slots: [] },
       null as never,
     );
-    save.tileEntities![0].slots[1] = { item: 'unobtainium' as never, count: 4 };
-    save.tileEntities![0].slots[2] = { item: 'dirt', count: 5000 };
+    chestSlots(save.tileEntities![0])[1] = { item: 'unobtainium' as never, count: 4 };
+    chestSlots(save.tileEntities![0])[2] = { item: 'dirt', count: 5000 };
     const restored = restoreTileEntities(save, world);
     expect(restored.size).toBe(2);
-    const chest = restored.get(tx, ty)!;
-    expect(chest.slots).toHaveLength(CHEST_SLOTS);
-    expect(chest.slots[1]).toBeNull();
-    expect(chest.slots[2]).toEqual({ item: 'dirt', count: MAX_STACK });
+    const chest = chestSlots(restored.get(tx, ty)!);
+    expect(chest).toHaveLength(CHEST_SLOTS);
+    expect(chest[1]).toBeNull();
+    expect(chest[2]).toEqual({ item: 'dirt', count: MAX_STACK });
   });
 
   it('load from a save made before chests, as empty chests', () => {

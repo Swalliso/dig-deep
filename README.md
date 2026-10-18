@@ -45,9 +45,31 @@ and pick **Normal** or **Cozy**).
   cursor, or when that spot can't take one, right next to you. It tells you when you have no
   torches or there's nowhere to put one.
 - You start with a wooden pickaxe and 10 torches. Better pickaxes mine faster and reach harder
-  blocks: **Wooden → Stone → Copper → Iron → Gold**.
+  blocks: **Wooden → Stone → Copper → Iron → Gold → Emberite** (worlds made before strata have
+  no emberite, so gold is their best).
 - Chop trees for wood, turn it into planks and a **Workbench**, then mine stone for a
   **Furnace** to smelt ore into bars. Crafting needs the right station within 4 tiles.
+- **Strata** (new worlds): the underground is five layers, each with its own rock, ores, look and
+  ambient sound. Crossing into one shows its name, depth and what's found there near the top of
+  the screen. Each layer's ore makes the pickaxe you need for the next layer's rock and ore.
+  - **Topsoil** (0–15 m): dirt over the first stone, with the trees on top.
+  - **Stone Caverns** (15–110 m): coal and copper, and pockets of loose gravel.
+  - **Fungal Hollows** (110–230 m): damp **mudstone** (needs a stone pickaxe), iron, glowshrooms
+    that light the caves teal, and giant mushrooms whose stems give wood.
+  - **Geode Depths** (230–350 m): deepstone (needs copper), gold, **rubies** and **sapphires**
+    (need iron), and huge caverns lit by glow crystals.
+  - **Magma Layer** (350 m to bedrock): **basalt** (needs iron) and **emberite** ore, which needs
+    a gold pickaxe and makes the emberite pickaxe, the fastest there is.
+
+  Worlds made before strata keep the layers they were made with.
+- **Bricks**: stone, mudstone, deepstone and basalt each fire into their own bricks at a furnace
+  (4 rock make 4 bricks), for building.
+- **Gem lamps**: a gold bar and a ruby (or a sapphire) make 2 lamps at a workbench. They light 10
+  tiles around (a torch lights 8) with a red or blue glow, and their light heals like a torch's.
+- **Wood grows back**: leaves sometimes drop a **sapling**, felled trees included. Plant it on
+  grass or dirt and it grows into a tree after 4–7 minutes of play, once there's room above it.
+  Giant mushroom caps drop **mushroom spores**, which grow into a giant mushroom on mudstone.
+  Nothing grows while the game is paused.
 - **The dark hurts** (Normal worlds). Standing where it's too dark (more than about 6 tiles
   from a torch) fills the **dread** meter under your hearts in about 25 s; in light it drains in
   a few seconds. When it's full you hear a heartbeat, red closes in from the screen edges and
@@ -61,9 +83,9 @@ and pick **Normal** or **Cozy**).
   - **Flares** (a torch and 2 coal make 2, at a workbench): with one in hand, left mouse throws
     it at the cursor. It sticks where it lands and lights about 11 tiles around for 30 s, for
     scouting ahead. Like the lantern's, its light keeps dread away but doesn't heal.
-  - Glowshrooms glow teal and glow crystals violet, tinting the cave around them.
-    Glowshrooms and glow crystals don't grow in worlds yet (strata will place them); for now
-    they're only in the debug kit.
+  - Glowshrooms glow teal and glow crystals violet, tinting the cave around them. In new worlds
+    glowshrooms grow in the Fungal Hollows and glow crystals line the Geode Depths; mine them to
+    light other places.
 - **Chests** (8 planks at a workbench) hold 20 stacks. Right-click one, or press E near one,
   to open it next to your inventory: **Loot all**, **Deposit all** (your bag, not the hotbar) and **Quick stack**
   (only items the chest already holds). C quick-stacks into every chest within 4 tiles, and
@@ -115,7 +137,9 @@ and pick **Normal** or **Cozy**).
   found at. The **Next goal** box in the inventory also suggests your next pickaxe and where
   its ore is; click it to pin that pickaxe.
 - In the inventory, hover anything for a tooltip. The trash slot (top right) destroys a stack;
-  you can take the last one back. **Craftable only** hides recipes you can't make yet.
+  you can take the last one back. Recipes are in tabs (Blocks, Light, Tools, Materials,
+  Stations), each showing how many of its recipes you can craft right now, and **Craftable
+  only** hides recipes you can't make yet.
 - The world stands still while the inventory, the map or the pause menu is open. Switching to
   another window or tab pauses the game too; press **Resume** (or Esc) to carry on.
 - The game saves to your browser (IndexedDB) automatically: within a couple of seconds of any
@@ -126,10 +150,11 @@ and pick **Normal** or **Cozy**).
   downloads a world as a `.json` file. **Import backup** on the Worlds screen checks the file,
   then adds it as a new world, or replaces the world with the same seed if you click Replace
   twice. Backups only import into the version of the game that saved them.
-- **Settings** (on the title screen and the pause menu) has the master and sound-effect
-  volumes, screen shake, reduced flashes (no break flash, ore glints or red hurt flash), pixel
-  scale (auto, 2x or 3x), an FPS counter and the minimap. They're kept per
-  browser. Sound starts after your first click or key press, as browsers require.
+- **Settings** (on the title screen and the pause menu) has the master, sound-effect and
+  ambience volumes (ambience is each stratum's quiet background sound), screen shake, reduced
+  flashes (no break flash, ore glints or red hurt flash), pixel scale (auto, 2x or 3x), an FPS
+  counter and the minimap. They're kept per browser. Sound starts after your first click or key
+  press, as browsers require.
 
 ## Development
 
@@ -146,11 +171,14 @@ npm run preview   # serve the built dist/ locally
 
 Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing shortcuts:
 **G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
-3x3), **L** toggles lighting, **O** puts a patch of every ore at the cursor, **K** digs a
+3x3), **L** toggles lighting, **O** puts a patch of every ore and gem at the cursor, **K** digs a
 100 m ladder shaft down from the cursor, **V** reveals the whole map, **H** toggles god mode
 (and heals), **J** deals 2 damage, **B** puts a 3 x 3 block of gravel at the cursor (it
-falls if nothing holds it up) and **U** fills the dread meter (press again to empty it). The kit
-includes a lantern, flares, glowshrooms and glow crystals. The title screen also
+falls if nothing holds it up), **U** fills the dread meter (press again to empty it), **Y**
+takes you to the top of the next stratum (from the Magma Layer, back to the spawn) and **P**
+makes planted saplings and spores grow now. The kit includes a lantern, flares, glowshrooms,
+glow crystals, saplings, mushroom spores, gem lamps and the strata's rocks, ores and gems. The
+title screen also
 gets a button that marks your most recent world as an older version, and the pause menu a
 **Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't
 pause when its window loses focus, and the running game is on `window.digDeep` in the browser

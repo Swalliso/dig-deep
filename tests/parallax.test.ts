@@ -8,8 +8,9 @@ import {
   SURFACE_LEVEL,
   TILE_SIZE,
 } from '../src/config';
-import { depthShade, parallaxX, parallaxY, periodicSkyline } from '../src/render/parallax';
+import { caveOffset, depthShade, isCaveLayer, parallaxX, parallaxY, periodicSkyline } from '../src/render/parallax';
 import { createRng } from '../src/util/rng';
+import { STRATA } from '../src/world/strata';
 
 const W = BACKGROUND_STRIP_WIDTH;
 
@@ -69,6 +70,27 @@ describe('parallax scrolling', () => {
     const factors = SURFACE_BACKGROUND.map((layer) => layer.factor);
     expect([...factors].sort((a, b) => a - b)).toEqual(factors);
     expect(factors.every((f) => f > 0 && f < 1)).toBe(true);
+  });
+
+  it('gives every stratum below Topsoil an underground set, far to near, that repeats both ways', () => {
+    expect(STRATA[0].look).toBeNull(); // Topsoil keeps the dirt backdrop
+    for (const stratum of STRATA.slice(1)) {
+      const look = stratum.look!;
+      expect(look.backdrop).toMatch(/^#[0-9a-f]{6}$/);
+      const factors = look.background.map((layer) => layer.factor);
+      expect([...factors].sort((a, b) => a - b)).toEqual(factors);
+      for (const layer of look.background) {
+        expect(isCaveLayer(layer), stratum.name).toBe(true);
+        expect(layer.maxHeight * 2, stratum.name).toBeLessThan(layer.period!); // room between two ledges' growths
+      }
+    }
+    expect(SURFACE_BACKGROUND.some(isCaveLayer)).toBe(false);
+  });
+
+  it('scrolls underground layers at their factor both ways, shifted down by their lift', () => {
+    expect(caveOffset(1000, 3000, 0, 40)).toEqual([0, 40]);
+    expect(caveOffset(1000, 3000, 1, 40)).toEqual([-1000, -2960]);
+    expect(caveOffset(1000, 3000, 0.3, 0)).toEqual([-300, -900]);
   });
 });
 

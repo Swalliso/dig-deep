@@ -10,10 +10,10 @@ export type Station = 'workbench' | 'furnace';
 
 export const STATION_NAMES: Record<Station, string> = { workbench: 'Workbench', furnace: 'Furnace' };
 
-/** Where a recipe is listed in the crafting panel. */
-export type RecipeGroup = 'blocks' | 'tools' | 'materials' | 'stations';
+/** Where a recipe is listed in the crafting panel: each group is a tab. */
+export type RecipeGroup = 'blocks' | 'light' | 'tools' | 'materials' | 'stations';
 
-export const RECIPE_GROUPS: readonly RecipeGroup[] = ['blocks', 'tools', 'materials', 'stations'];
+export const RECIPE_GROUPS: readonly RecipeGroup[] = ['blocks', 'light', 'tools', 'materials', 'stations'];
 
 export interface Ingredient {
   item: ItemId;
@@ -43,10 +43,19 @@ const recipe = (
   ingredients: ingredients.map(([item, n]) => ({ item, count: n })),
 });
 
+/** In panel order within each group. */
 export const RECIPES: readonly Recipe[] = [
   recipe('blocks', 'planks', 4, null, ['wood', 1]),
+  // Phase 14a: each stratum's rock fires into bricks.
+  recipe('blocks', 'stone_bricks', 4, 'furnace', ['stone', 4]),
+  recipe('blocks', 'mudstone_bricks', 4, 'furnace', ['mudstone', 4]),
+  recipe('blocks', 'deepstone_bricks', 4, 'furnace', ['deepstone', 4]),
+  recipe('blocks', 'basalt_bricks', 4, 'furnace', ['basalt', 4]),
   recipe('stations', 'workbench', 1, null, ['planks', 10]),
-  recipe('blocks', 'torch', 4, null, ['wood', 1], ['coal', 1]),
+  recipe('light', 'torch', 4, null, ['wood', 1], ['coal', 1]),
+  // Phase 14a: gems set in gold.
+  recipe('light', 'ruby_lamp', 2, 'workbench', ['gold_bar', 1], ['ruby', 1]),
+  recipe('light', 'sapphire_lamp', 2, 'workbench', ['gold_bar', 1], ['sapphire', 1]),
   recipe('stations', 'furnace', 1, 'workbench', ['stone', 20]),
   recipe('tools', 'stone_pickaxe', 1, 'workbench', ['stone', 15], ['wood', 5]),
   recipe('materials', 'copper_bar', 1, 'furnace', ['copper_ore', 3], ['coal', 1]),
@@ -55,8 +64,11 @@ export const RECIPES: readonly Recipe[] = [
   recipe('tools', 'iron_pickaxe', 1, 'workbench', ['iron_bar', 10], ['wood', 5]),
   recipe('materials', 'gold_bar', 1, 'furnace', ['gold_ore', 3], ['coal', 1]),
   recipe('tools', 'gold_pickaxe', 1, 'workbench', ['gold_bar', 10], ['wood', 5]),
-  recipe('tools', 'lantern', 1, 'workbench', ['iron_bar', 2], ['torch', 1]),
-  recipe('tools', 'flare', 2, 'workbench', ['torch', 1], ['coal', 2]),
+  // Phase 14a: the tier 5 pickaxe, from the Magma Layer's emberite.
+  recipe('materials', 'emberite_bar', 1, 'furnace', ['emberite_ore', 3], ['coal', 1]),
+  recipe('tools', 'emberite_pickaxe', 1, 'workbench', ['emberite_bar', 10], ['wood', 5]),
+  recipe('light', 'lantern', 1, 'workbench', ['iron_bar', 2], ['torch', 1]),
+  recipe('light', 'flare', 2, 'workbench', ['torch', 1], ['coal', 2]),
   recipe('stations', 'chest', 1, 'workbench', ['planks', 8]),
   recipe('blocks', 'beam', 2, null, ['planks', 1]),
   recipe('blocks', 'crossbeam', 2, null, ['planks', 1]),

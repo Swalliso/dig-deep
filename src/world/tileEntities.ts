@@ -7,8 +7,15 @@ export interface ChestData {
   slots: (ItemStack | null)[];
 }
 
+/** A planted sapling or mushroom sprout (Phase 14a): when it grows, once there's room. */
+export interface PlantData {
+  kind: 'plant';
+  /** Session clock time it's due to grow. */
+  growAt: number;
+}
+
 /** Data kept for one tile. Each kind belongs to one tile type (lift stops, torch timers later). */
-export type TileEntity = ChestData;
+export type TileEntity = ChestData | PlantData;
 
 /**
  * Per-tile data, keyed by `ty * width + tx`. When a tile changes (broken, replaced, anything),
@@ -42,6 +49,11 @@ export class TileEntities {
     return [...this.map.keys()]
       .sort((a, b) => a - b)
       .map((key) => ({ tx: key % this.width, ty: Math.floor(key / this.width), entity: this.map.get(key)! }));
+  }
+
+  /** Visit every entity, in no particular order (cheaper than entries()). Don't change tiles while visiting. */
+  forEach(visit: (tx: number, ty: number, entity: TileEntity) => void): void {
+    for (const [key, entity] of this.map) visit(key % this.width, Math.floor(key / this.width), entity);
   }
 
   private tileChanged(tx: number, ty: number): void {
