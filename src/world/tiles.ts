@@ -1,6 +1,7 @@
 // Tile type registry. IDs are stored directly in chunk Uint8Arrays, so never renumber them.
 
 import {
+  CAMP_LIGHT,
   FLOATSTONE_LIGHT,
   GLOW_CRYSTAL_LIGHT,
   GLOWSHROOM_LIGHT,
@@ -207,10 +208,11 @@ const defs: TileDef[] = [
   { id: Tile.LiftRail, name: 'Lift rail', hardness: 0.4, minTier: 0, color: '#8f969e', drop: 'lift_rail', solid: false, material: 'ore', climbable: true },
   { id: Tile.LiftStop, name: 'Lift stop', hardness: 0.4, minTier: 0, color: '#e0b040', drop: 'lift_stop', solid: false, material: 'ore' },
   // Any part of the camp drops the camp kit; breaking one part packs up the rest (see camp.ts).
+  // Its stove (bottom right) is a campfire.
   { id: Tile.CampTopLeft, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
   { id: Tile.CampTopRight, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
   { id: Tile.CampBottomLeft, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
-  { id: Tile.CampBottomRight, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
+  { id: Tile.CampBottomRight, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood', light: CAMP_LIGHT, glowColor: '#ff9a3c' },
 ];
 
 /** Indexed by tile id. */

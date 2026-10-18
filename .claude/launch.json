@@ -12,6 +12,18 @@
       "runtimeExecutable": "C:\\Program Files\\nodejs\\npx.cmd",
       "runtimeArgs": ["vite", "--mode", "develop", "--port", "5174", "--strictPort"],
       "port": 5174
+    },
+    {
+      "name": "dig-deep-dev-mac",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5173", "--strictPort"],
+      "port": 5173
+    },
+    {
+      "name": "dig-deep-dev-site-mac",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--mode", "develop", "--port", "5174", "--strictPort"],
+      "port": 5174
     }
   ]
 }

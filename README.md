@@ -95,8 +95,8 @@ and pick **Normal** or **Cozy**).
   a few seconds. When it's full you hear a heartbeat, red closes in from the screen edges and
   you lose 1 HP every 2 s. The line under the meter says how things stand and why. The faint
   glow right around you only helps you see: it doesn't keep dread away.
-  - **Torches**, **glowshrooms**, **glow crystals** and the sky are established light: they keep
-    dread away and your health only comes back in their light.
+  - **Torches**, **glowshrooms**, **glow crystals**, the camp's stove and the sky are established
+    light: they keep dread away and your health only comes back in their light.
   - A **lantern** (2 iron bars and a torch at a workbench) lights 6 tiles around you while it's
     in your hand, and you can still dig while holding it. Its light keeps dread away wherever
     you go, but it doesn't heal: get back to a torch (or place one) for that.
@@ -137,11 +137,13 @@ and pick **Normal** or **Cozy**).
   faster than a ladder. New stops are named after their layer; rename the one you're at from
   the panel. Stops show on the map with their names.
 - **The camp** (a workbench, a furnace, a bed and 2 iron bars make a camp kit, at a workbench) is
-  a 2 x 2 tent and stove that works as a workbench, a furnace and a bed in one. Setting it up on
-  solid ground makes it your respawn point (right-click it to make it your respawn point again
-  after using a bed). Break it to pack it up into a camp kit and set it up again deeper down.
-  You can have one camp at a time; it shows on the map. If your camp is packed up or blocked when
-  you die, you wake up in your bed (and the other way round).
+  a 2 x 2 tent and stove that works as a workbench, a furnace and a bed in one. Its stove is a
+  campfire that lights 7 tiles around, and like a torch's its light heals and keeps dread away
+  (the damp doesn't dim it), so a camp is a safe place to rest wherever you set it up. Setting
+  it up on solid ground makes it your respawn point (right-click it to make it your respawn
+  point again after using a bed). Break it to pack it up into a camp kit and set it up again
+  deeper down. You can have one camp at a time; it shows on the map. If your camp is packed up
+  or blocked when you die, you wake up in your bed (and the other way round).
 - **Gravel** (lumpy, light grey) is loose: it rests only on what's right under it. Dig that
   out and the gravel shakes for a moment, with dust trickling down and an orange outline, then
   falls, and it hurts if it lands on you. Gravel hanging from a cave ceiling (pebbles dangle

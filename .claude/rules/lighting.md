@@ -15,8 +15,9 @@ paths:
   light reach of the changes (plus any stretch of a column whose sky light moved), once per
   update step. Tests check incremental relighting (with moving lights) against a full recompute;
   keep them passing when touching lighting.
-- **Light sources** are tiles with `TileDef.light`. Gem lamps shine past `LIGHT_MAX`, which only
-  means the tiles near them are fully lit for longer. A torch in the Fungal Hollows' damp air
+- **Light sources** are tiles with `TileDef.light` (the camp's stove, Phase 15, is one: a
+  campfire whose light is established, so the camp heals). Gem lamps shine past `LIGHT_MAX`,
+  which only means the tiles near them are fully lit for longer. A torch in the Fungal Hollows' damp air
   gives `torchLight()` instead, which depends only on where it is.
 - **Moving lights** (`setMovingLight`: the held lantern, flares) are kept apart from that
   established light, each in a small patch relit only when it moves to another tile or a tile in
