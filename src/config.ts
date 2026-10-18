@@ -182,6 +182,42 @@ export const LIFT_STOP_NAME_MAX = 18; // characters
 // torch's), so a camp is a safe spot to rest wherever it's set up. The damp doesn't dim it.
 export const CAMP_LIGHT = 14; // 7-tile radius (a torch lights 8)
 
+// --- Gear and tools (Phase 16) ---
+// Accessories go in GEAR_SLOTS slots in the inventory panel (one of each at most) and add to the
+// player's stats (src/systems/stats.ts). Each adds:
+export const GEAR_SLOTS = 4;
+export const HELMET_LIGHT = 4; // tiles of carried light (like the lantern's: keeps dread off, doesn't heal)
+export const TOOLBELT_RANGE = 4; // tiles of crafting station (and chest) range
+export const MAGNET_RANGE = 3; // tiles of pickup range
+export const GRIP_REACH = 1.5; // tiles of reach
+export const SPRING_BOOTS_JUMP = 70; // px/s of jump speed (about 1.6 tiles higher)
+export const PADDED_BOOTS_FALL = 8; // tiles of safe fall height
+// The heat ward stretches the time between heat burns by this much (doubling it).
+export const HEAT_WARD_INTERVAL = 1.5; // s, the same as HEAT_HURT_INTERVAL
+// Climbing claws: in the air, pushing against a wall slides down it at WALL_SLIDE_SPEED at
+// most (a slide never counts as a fall), holding up as well clings still, and a jump press
+// (without up) jumps off it, away from the wall.
+export const WALL_SLIDE_SPEED = 90; // px/s
+export const WALL_JUMP_PUSH = 220; // px/s away from the wall
+// Bombs: left-click throws one at the cursor. It sticks where it lands and goes off after
+// BOMB_FUSE seconds of play, breaking every tile in the 3 x 3 around it that the best carried
+// pickaxe could mine (never bedrock), with the usual drops. Anyone in the 5 x 5 around it
+// (the blast plus a tile) takes BOMB_DAMAGE.
+export const BOMB_FUSE = 2; // s
+export const BOMB_DAMAGE = 4; // HP
+export const BOMB_THROW_SPEED = 420; // px/s
+export const BOMB_GRAVITY = 900; // px/s^2
+export const BOMB_MAX = 8; // fused at once; throwing another sets off the oldest early
+// Rope coil: hung from an empty spot (with something solid above it or beside it), it unrolls
+// a rope ladder straight down, through open space, up to ROPE_LENGTH tiles. Breaking any part of
+// it rolls the whole rope back up into coils.
+export const ROPE_LENGTH = 20; // tiles
+// Drill: mines at least the emberite pickaxe's tier, much faster, as long as there's coal to
+// burn: one coal per DRILL_TILES_PER_COAL tiles broken.
+export const DRILL_TIER = 5;
+export const DRILL_SPEED = 9;
+export const DRILL_TILES_PER_COAL = 8;
+
 // --- Cave-ins and supports (Phase 12) ---
 // Gravel is loose: it rests only on what's directly below it. A tile change rechecks the tiles
 // around it (src/world/tileUpdates.ts, at most TILE_UPDATE_BUDGET rechecks per step), and a
@@ -390,6 +426,7 @@ export const SFX_VOLUMES = {
   sizzle: 0.4,
   heart: 0.6,
   lift: 0.4,
+  bomb: 0.7,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile
@@ -518,6 +555,7 @@ export const GIANT_MUSHROOM_STEM_MAX = 6;
 export const STATION_RANGE = 4; // tiles; a workbench/furnace this close (centre to centre) counts
 // Chests within STATION_RANGE also lend their items to crafting, and take quick stacks (C).
 export const CRAFT_MANY = 10; // batches made by shift-clicking a recipe
+export const RECIPE_SEARCH_MAX = 20; // characters typed into the crafting panel's search box (Phase 16)
 
 // --- World generation ---
 // Average surface row. Depth (in m) = ty - SURFACE_LEVEL, so the depth meter reads 0 here.

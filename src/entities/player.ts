@@ -20,6 +20,8 @@ import {
   RUN_ACCEL,
   RUN_FRICTION,
   TILE_SIZE,
+  WALL_JUMP_PUSH,
+  WALL_SLIDE_SPEED,
 } from '../config';
 import { computeStats, type PlayerStats } from '../systems/stats';
 import { isClimbable, isFloor, isOneWayFloor, isSolid, Tile, type TileId } from '../world/tiles';
@@ -66,6 +68,11 @@ export class Player {
   flying = false;
   /** A jump started during the latest update (for its sound). */
   jumped = false;
+  /**
+   * Climbing claws (Phase 16): the side of the wall the player slid down or clung to during the
+   * latest update (1 right, -1 left), or 0.
+   */
+  onWall: -1 | 0 | 1 = 0;
   /** Fall speed (px/s) if the latest update landed on the ground, else 0 (for sound and dust). */
   landingSpeed = 0;
   /** Holding on to a ladder: no gravity, W/S move up and down. */
@@ -166,6 +173,7 @@ export class Player {
     this.landingSpeed = 0;
     this.fallLanded = 0;
     this.caughtByLadder = false;
+    this.onWall = 0;
     const climb = controls.climb ?? 0;
     const downPressed = climb > 0 && this.prevClimb <= 0;
     this.prevClimb = climb;
@@ -241,6 +249,18 @@ export class Player {
       this.jumpHeld = true;
       this.jumped = true;
     }
+    // Climbing claws: in the air, pushing against a wall grips it (S lets go). A jump press
+    // without up leaps off it, away from the wall; with up (W is also jump) it clings.
+    let wall = this.gripsWall(world, controls.move, climb, dropping);
+    if (wall !== 0 && controls.jumpPressed && climb === 0 && !this.jumped) {
+      this.vy = -this.stats.jumpVelocity;
+      this.vx = -wall * WALL_JUMP_PUSH;
+      this.facing = wall > 0 ? -1 : 1;
+      this.jumpBufferTimer = 0;
+      this.jumpHeld = true;
+      this.jumped = true;
+      wall = 0;
+    }
     if (this.jumpHeld && (!controls.jumpHeld || this.vy >= 0)) {
       if (this.vy < 0) this.vy *= JUMP_CUT;
       this.jumpHeld = false;
@@ -250,6 +270,9 @@ export class Player {
     const gravity = this.floating ? GRAVITY * FLOAT_GRAVITY : GRAVITY;
     const maxFall = this.floating ? MAX_FALL_SPEED * FLOAT_MAX_FALL : MAX_FALL_SPEED;
     this.vy = this.vy > maxFall ? Math.max(maxFall, this.vy - FLOAT_BRAKE * dt) : Math.min(this.vy + gravity * dt, maxFall);
+    // On a wall: sliding down it slowly, or (holding up) clinging still.
+    if (wall !== 0 && this.vy > 0) this.vy = climb < 0 ? 0 : Math.min(this.vy, WALL_SLIDE_SPEED);
+    this.onWall = wall;
 
     // Move in small steps, X then Y, so even max speed can't skip over a tile.
     const dx = this.vx * dt;
@@ -268,8 +291,20 @@ export class Player {
     if (this.grounded) this.walkDistance += Math.abs(this.x - startX);
     if (this.grounded && !wasGrounded) this.landingSpeed = fallSpeed;
     this.trackFall(wasGrounded, dropping || this.jumped);
-    // Floatstone cushions falls: one only counts from where the player leaves its pull.
-    if (this.floating && this.fallTop !== null) this.fallTop = this.y;
+    // Floatstone cushions falls: one only counts from where the player leaves its pull. A slide
+    // down a wall is never a fall either: one only counts from where the player lets go.
+    if ((this.floating || this.onWall !== 0) && this.fallTop !== null) this.fallTop = this.y;
+  }
+
+  /**
+   * Climbing claws: the side of the wall (1 right, -1 left) the player grips this step, or 0.
+   * Gripping needs the claws, the air (not just dropped through a platform), a move key pushing
+   * against a solid tile right beside the body, and not holding down.
+   */
+  private gripsWall(world: World, move: number, climb: number, dropping: boolean): -1 | 0 | 1 {
+    if (this.stats.wallGrip <= 0 || this.grounded || dropping || move === 0 || climb > 0) return 0;
+    const dir = move > 0 ? 1 : -1;
+    return overlapsSolid(world, this.x + dir, this.y) ? dir : 0;
   }
 
   /**

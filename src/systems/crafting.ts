@@ -11,9 +11,9 @@ export type Station = 'workbench' | 'furnace';
 export const STATION_NAMES: Record<Station, string> = { workbench: 'Workbench', furnace: 'Furnace' };
 
 /** Where a recipe is listed in the crafting panel: each group is a tab. */
-export type RecipeGroup = 'blocks' | 'light' | 'tools' | 'materials' | 'stations';
+export type RecipeGroup = 'blocks' | 'light' | 'tools' | 'gear' | 'materials' | 'stations';
 
-export const RECIPE_GROUPS: readonly RecipeGroup[] = ['blocks', 'light', 'tools', 'materials', 'stations'];
+export const RECIPE_GROUPS: readonly RecipeGroup[] = ['blocks', 'light', 'tools', 'gear', 'materials', 'stations'];
 
 export interface Ingredient {
   item: ItemId;
@@ -80,6 +80,18 @@ export const RECIPES: readonly Recipe[] = [
   recipe('blocks', 'lift_rail', LIFT_RAILS_PER_BAR, 'workbench', ['iron_bar', 1], ['planks', 2]),
   recipe('stations', 'lift_stop', 1, 'workbench', ['iron_bar', 1], ['planks', 4]),
   recipe('stations', 'camp_kit', 1, 'workbench', ['workbench', 1], ['furnace', 1], ['bed', 1], ['iron_bar', 2]),
+  // Phase 16: tools, and accessories (gems and floatstone from the deep strata go into some).
+  recipe('tools', 'bomb', 3, 'workbench', ['iron_bar', 1], ['coal', 4]),
+  recipe('tools', 'rope_coil', 1, 'workbench', ['planks', 5]),
+  recipe('tools', 'drill', 1, 'workbench', ['emberite_bar', 8], ['iron_bar', 4]),
+  recipe('gear', 'miner_helmet', 1, 'workbench', ['iron_bar', 3], ['torch', 2]),
+  recipe('gear', 'toolbelt', 1, 'workbench', ['copper_bar', 4], ['planks', 6]),
+  recipe('gear', 'magnet_charm', 1, 'workbench', ['iron_bar', 2], ['sapphire', 2]),
+  recipe('gear', 'long_grip', 1, 'workbench', ['gold_bar', 3], ['wood', 6]),
+  recipe('gear', 'spring_boots', 1, 'workbench', ['iron_bar', 3], ['floatstone', 4]),
+  recipe('gear', 'padded_boots', 1, 'workbench', ['copper_bar', 2], ['planks', 8]),
+  recipe('gear', 'heat_ward', 1, 'workbench', ['gold_bar', 2], ['ruby', 2]),
+  recipe('gear', 'climbing_claws', 1, 'workbench', ['iron_bar', 4], ['wood', 2]),
 ];
 
 /** The tiles that count as each station: its own, and every part of the camp (Phase 15). */

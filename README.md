@@ -19,7 +19,8 @@ and pick **Normal** or **Cozy**).
 | Dig                                | Hold left mouse on a tile |
 | Place the held block               | Left mouse on empty space |
 | Build a row                        | Hold left mouse and sweep |
-| Throw a held flare                 | Left mouse at a spot      |
+| Throw a held flare or bomb         | Left mouse at a spot      |
+| Hang a held rope coil              | Left mouse on an edge     |
 | Pick block onto hotbar             | Middle mouse              |
 | Quick torch (keeps what you hold)  | T                         |
 | Use chest, door, bed, camp, lift   | Right-click it            |
@@ -32,6 +33,7 @@ and pick **Normal** or **Cozy**).
 | Quick stack to nearby chests       | C                         |
 | Inventory, crafting, nearest chest | E or Tab                  |
 | Move stack (hotbar ↔ bag ↔ chest)  | Shift-click               |
+| Wear or take off an accessory      | Shift-click it            |
 | Craft 10                           | Shift-click a recipe      |
 | Pin a recipe as your goal          | Right-click the recipe    |
 | Pause                              | Esc                       |
@@ -127,7 +129,8 @@ and pick **Normal** or **Cozy**).
   there; it's marked on the map. When you die your bag goes into a **satchel** where you died
   (your hotbar and every pickaxe stay with you). Satchels stay until you collect them, show on
   the map and in the top-left corner, and keep whatever doesn't fit in your inventory. With no
-  bed, or a blocked one, you wake up near the world spawn.
+  bed, or a blocked one, you wake up near the world spawn. You also keep your gear and the
+  drill.
 - **Lifts**: a column of **lift rail** (an iron bar and 2 planks make 16, at a workbench) with
   **lift stops** beside it (an iron bar and 4 planks each) is a lift. You can climb the rail
   like a ladder while you build it. A stop goes on a floor right beside the rail. Right-click a
@@ -145,6 +148,30 @@ and pick **Normal** or **Cozy**).
   point again after using a bed). Break it to pack it up into a camp kit and set it up again
   deeper down. You can have one camp at a time; it shows on the map. If your camp is packed up
   or blocked when you die, you wake up in your bed (and the other way round).
+- **Gear**: the inventory's **Gear** box has 4 slots for accessories, one of each. Craft them at
+  a workbench (the Gear tab), then shift-click one to wear it, or drop it on a gear slot.
+  Hovering one shows what wearing it (or taking it off) changes, the box lists your stats with
+  the changed ones in green, and closing the inventory says what changed.
+  - **Miner's helmet**: carried light 4 tiles around you (keeps dread away, doesn't heal), with
+    your hands free.
+  - **Toolbelt**: stations and chests work from 4 tiles further away.
+  - **Magnet charm** (sapphires): drops fly to you from 3 tiles further away.
+  - **Long-handled grip**: reach 1.5 tiles further.
+  - **Spring boots** (floatstone): jump about 1.6 tiles higher.
+  - **Padded boots**: fall 8 tiles further without getting hurt.
+  - **Heat ward** (rubies): hot zones burn you half as often (lava still burns as much).
+  - **Climbing claws**: in the air, push against a wall to slide down it slowly (a slide never
+    counts as a fall), hold W as well to cling still, and press Space to leap off it.
+- **Tools** (Tools tab, at a workbench):
+  - **Bombs** (an iron bar and 4 coal make 3): left mouse throws one at the cursor. It sticks
+    where it lands and goes off after 2 s, breaking the 3 x 3 around it: whatever your best
+    pickaxe could mine, never bedrock. Stand clear: it hurts if you're within 2 tiles.
+  - **Rope coil** (5 planks): left mouse on an empty spot with something solid above or beside
+    it (the lip of a shaft) hangs a rope ladder up to 20 tiles straight down. The cursor shows
+    how far it reaches first. Climb it like a ladder; break any part of it to roll it back up.
+  - **Drill** (8 emberite bars and 4 iron bars): with it in hand, it mines anything the
+    emberite pickaxe can, about twice as fast, burning one coal from your inventory every 8
+    tiles. The hotbar shows how much drilling your coal is good for. You keep it when you die.
 - **Gravel** (lumpy, light grey) is loose: it rests only on what's right under it. Dig that
   out and the gravel shakes for a moment, with dust trickling down and an orange outline, then
   falls, and it hurts if it lands on you. Gravel hanging from a cave ceiling (pebbles dangle
@@ -175,9 +202,10 @@ and pick **Normal** or **Cozy**).
   found at. The **Next goal** box in the inventory also suggests your next pickaxe and where
   its ore is; click it to pin that pickaxe.
 - In the inventory, hover anything for a tooltip. The trash slot (top right) destroys a stack;
-  you can take the last one back. Recipes are in tabs (Blocks, Light, Tools, Materials,
+  you can take the last one back. Recipes are in tabs (Blocks, Light, Tools, Gear, Materials,
   Stations), each showing how many of its recipes you can craft right now, and **Craftable
-  only** hides recipes you can't make yet.
+  only** hides recipes you can't make yet. Click **Search recipes** and type to list every
+  recipe that makes or uses something with that in its name (Enter keeps it, Esc clears it).
 - The world stands still while the inventory, the map, the lift panel or the pause menu is open. Switching to
   another window or tab pauses the game too; press **Resume** (or Esc) to carry on.
 - The game saves to your browser (IndexedDB) automatically: within a couple of seconds of any
@@ -208,7 +236,8 @@ npm run preview   # serve the built dist/ locally
 ```
 
 Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing shortcuts:
-**G** gives a materials kit, **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
+**G** gives a materials kit (**Shift+G** a gear kit: every accessory, bombs, rope coils, a drill
+and coal), **F** toggles fly mode, **I** cycles instant mining (off / 1x1 /
 3x3), **L** toggles lighting, **O** puts a patch of every ore and gem at the cursor, **K** digs a
 100 m ladder shaft down from the cursor, **V** reveals the whole map, **H** toggles god mode
 (and heals), **J** deals 2 damage, **B** puts a 3 x 3 block of gravel at the cursor (it

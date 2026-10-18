@@ -516,6 +516,55 @@ export function liftCall(): void {
   });
 }
 
+/** The drill biting into rock (Phase 16): a buzzing whir, higher on harder tiles. */
+export function drill(hardness: number, pan = 0): void {
+  play({ volume: SFX_VOLUMES.dig, pan, key: 'drill' }, (v) => {
+    const f = (DIG_TICK_FREQ + Math.min(hardness, 3) * DIG_TICK_FREQ_PER_HARDNESS) * jitter();
+    tone(v, { type: 'sawtooth', freq: f * 0.6, to: f * 0.66, attack: 0.005, decay: 0.07, gain: 0.25 });
+    noiseBurst(v, { filter: 'bandpass', freq: f * 3, q: 6, attack: 0.002, decay: 0.06, gain: 0.7 });
+  });
+}
+
+/** A bomb thrown: a whoosh, with the fuse fizzing. */
+export function bombThrow(): void {
+  play({ volume: SFX_VOLUMES.bomb * 0.6, key: 'bombThrow' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'bandpass', freq: 700 * p, to: 1600 * p, q: 1.5, attack: 0.02, decay: 0.14, gain: 0.6 });
+    noiseBurst(v, { filter: 'highpass', freq: 5000 * p, delay: 0.05, attack: 0.01, decay: 0.6, gain: 0.25 });
+  });
+}
+
+/** A bomb going off: a sharp crack, a deep boom and rubble rattling down. */
+export function explosion(pan = 0): void {
+  play({ volume: SFX_VOLUMES.bomb, pan, key: 'explosion' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'highpass', freq: 1800 * p, attack: 0.001, decay: 0.06, gain: 0.8 });
+    noiseBurst(v, { filter: 'lowpass', freq: 400 * p, to: 90 * p, attack: 0.005, decay: 0.9, gain: 1 });
+    tone(v, { type: 'sine', freq: 70 * p, to: 34 * p, attack: 0.005, decay: 0.7, gain: 0.8 });
+    for (let i = 0; i < 5; i++) {
+      noiseBurst(v, { filter: 'bandpass', freq: 1600 * p, q: 4, delay: 0.25 + i * 0.09, attack: 0.001, decay: 0.03, gain: 0.3 });
+    }
+  });
+}
+
+/** A rope ladder unrolling down a shaft: a run of soft slaps. */
+export function rope(pan = 0): void {
+  play({ volume: SFX_VOLUMES.place, pan, key: 'rope' }, (v) => {
+    const p = jitter();
+    for (let i = 0; i < 6; i++) {
+      noiseBurst(v, { filter: 'bandpass', freq: 900 * p - i * 60, q: 2, delay: i * 0.06, attack: 0.002, decay: 0.05, gain: 0.6 - i * 0.07 });
+    }
+  });
+}
+
+/** An accessory put on or taken off: a buckle's click. */
+export function equip(): void {
+  play({ volume: SFX_VOLUMES.ui, key: 'equip' }, (v) => {
+    noiseBurst(v, { filter: 'bandpass', freq: 3000, q: 3, attack: 0.001, decay: 0.03, gain: 0.7 });
+    tone(v, { type: 'triangle', freq: 880, to: 1320, delay: 0.03, attack: 0.002, decay: 0.08, gain: 0.35 });
+  });
+}
+
 /** A menu button or an inventory slot was clicked. */
 export function uiClick(): void {
   play({ volume: SFX_VOLUMES.ui, key: 'ui' }, (v) => {

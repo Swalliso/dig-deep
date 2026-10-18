@@ -75,7 +75,8 @@ export class Mining {
   /**
    * Advance one update step with the cursor on (tx, ty). `held` is the mine button. Returns
    * the tile that broke, if any; the world has already been updated. `instant` (debug mode)
-   * breaks the tile this step, but reach and tier rules still apply.
+   * breaks the tile this step, but reach and tier rules still apply. `speed` is the tool's
+   * mining speed (the drill's); it defaults to the tier's pickaxe.
    */
   update(
     dt: number,
@@ -86,6 +87,7 @@ export class Mining {
     held: boolean,
     tier: number,
     instant = false,
+    speed?: number,
   ): BrokenTile | null {
     if (this.hint) {
       this.hint.timeLeft -= dt;
@@ -110,7 +112,7 @@ export class Mining {
       this.damage.set(key, damage);
     }
     damage.idle = 0;
-    damage.progress += (dt * PICKAXES[tier].speed) / tileDef(tile).hardness;
+    damage.progress += (dt * (speed ?? PICKAXES[tier].speed)) / tileDef(tile).hardness;
     return damage.progress < 1 ? null : this.breakTile(world, tx, ty);
   }
 
@@ -150,6 +152,11 @@ export class Mining {
     this.damage.delete(keyOf(tx, ty));
     world.setTile(tx, ty, Tile.Air);
     return { tx, ty, tile };
+  }
+
+  /** Show a floating hint over tile (tx, ty), like "Need better pickaxe" (the drill's "needs coal"). */
+  say(text: string, tx: number, ty: number): void {
+    this.showHint(text, tx, ty);
   }
 
   private showHint(text: string, tx: number, ty: number): void {

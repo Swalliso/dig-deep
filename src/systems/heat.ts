@@ -27,10 +27,11 @@ export class Heat {
   /**
    * One simulation step of `dt` seconds at clock time `now`. In a hot zone (lava counts) the
    * grace runs out; out of one it comes back HEAT_COOL_RATE times as fast. Returns true when it
-   * should burn the player now: as the grace runs out, then every HEAT_HURT_INTERVAL while they
-   * stay. `enabled` false (Cozy) keeps it at 0.
+   * should burn the player now: as the grace runs out, then every `interval` seconds (the
+   * player's stat: HEAT_HURT_INTERVAL, longer with the heat ward) while they stay. `enabled`
+   * false (Cozy) keeps it at 0.
    */
-  update(dt: number, now: number, safety: HeatSafety, enabled: boolean): boolean {
+  update(dt: number, now: number, safety: HeatSafety, enabled: boolean, interval = HEAT_HURT_INTERVAL): boolean {
     if (!enabled || safety === 'cool') {
       this.exposure = enabled ? Math.max(0, this.exposure - dt * HEAT_COOL_RATE) : 0;
       return false;
@@ -39,11 +40,11 @@ export class Heat {
     this.exposure = Math.min(HEAT_GRACE, this.exposure + dt);
     if (!this.burning) return false;
     if (!wasBurning) {
-      this.burnAt = now + HEAT_HURT_INTERVAL;
+      this.burnAt = now + interval;
       return true;
     }
     if (now < this.burnAt) return false;
-    this.burnAt += HEAT_HURT_INTERVAL;
+    this.burnAt += interval;
     return true;
   }
 }

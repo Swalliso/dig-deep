@@ -1,6 +1,6 @@
 import * as sfx from '../audio/sfx';
 import { BUILD_SHA, CHANNEL } from '../channel';
-import { BAG_SIZE, CHEST_SLOTS, CRAFT_MANY, DEPOSIT_ALL_HOTBAR, HOTBAR_SIZE, PICKAXES } from '../config';
+import { BAG_SIZE, CHEST_SLOTS, CRAFT_MANY, DEPOSIT_ALL_HOTBAR, GEAR_SLOTS, HOTBAR_SIZE, PICKAXES, RECIPE_SEARCH_MAX } from '../config';
 import { depositAll, lootAll, moveToChest, moveToInventory, quickStack, type Chest } from '../systems/chests';
 import {
   availableCount,
@@ -15,15 +15,17 @@ import {
   type Station,
 } from '../systems/crafting';
 import { goalStatus, nextPickaxe, pickaxeNote, recipeFor } from '../systems/goal';
-import { clickSlotIn, type Inventory, type ItemStack } from '../systems/inventory';
-import { itemDef, type ItemId } from '../systems/items';
+import { clickSlotIn, type Inventory, type ItemStack, type WearProblem } from '../systems/inventory';
+import { isAccessory, ITEM_IDS, itemDef, type ItemId } from '../systems/items';
+import { computeStats, statChanges, statLines, type PlayerStats } from '../systems/stats';
+import { startTyping, stopTyping, typedText } from '../input';
 import { DIFFICULTIES, difficultyName, type Difficulty } from '../systems/health';
 import { readBackup } from '../systems/backup';
 import { SAVE_VERSION, type SaveData, type WorldMeta } from '../systems/save';
 import type { PixelScale, Settings } from '../systems/settings';
 import type { GenProfile } from '../world/generate';
 import { tileDef } from '../world/tiles';
-import { CONTROLS, keyList, mainKey, pinRecipeHint, pinRecipeTip } from './controls';
+import { CONTROLS, keyList, mainKey, pinRecipeHint, pinRecipeTip, searchHelp, wearHint } from './controls';
 import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 
 // Inventory + crafting panel (opened with E or Tab, or by right-clicking a chest). Sizes are in
@@ -31,25 +33,26 @@ import { drawSlot, drawStack, shadowText, SLOT, SLOT_GAP } from './hud';
 // window is too small.
 //
 //   +-----------------------+  +------------------------------------+
-//   | Inventory     [trash] |  | Crafting          [ ] Craftable only|
+//   | Inventory     [trash] |  | Crafting [search...] [ ] Craftable  |
 //   | hotbar                |  | [Blocks][Light 2][Tools][...]      |
 //   | bag (3 rows)          |  |  recipe        recipe              |
 //   +-----------------------+  |  recipe        recipe              |
 //   +-----------------------+  |                                    |
-//   | Chest  [Loot][Dep][QS]|  |                                    |
-//   | 2 rows                |  |                                    |
-//   +-----------------------+  |                                    |
-//   +-----------------------+  |                                    |
-//   | Next goal     [Unpin] |  |                                    |
-//   | pinned recipe         |  |                                    |
-//   | next pickaxe + ore    |  | Near: Workbench, 1 chest           |
+//   | Chest  [Loot][Dep][QS]|  | Near: Workbench, 1 chest           |
+//   | 2 rows                |  +------------------------------------+
+//   +-----------------------+  +------------------------------------+
+//   +-----------------------+  | Gear                     2/4 worn  |
+//   | Next goal     [Unpin] |  | [ ][ ][ ][ ]  Reach     Safe fall  |
+//   | pinned recipe         |  |               Stations  Light ...  |
+//   | next pickaxe + ore    |  |                                    |
 //   +-----------------------+  +------------------------------------+
 //
 // The chest panel only shows while a chest is open (the goal box moves up into its place when
 // it's closed). Each recipe group has a tab (with how many of its recipes can be crafted right
-// now), and the panel is sized for the biggest group, so switching tabs moves nothing. Recipes
-// sit in two columns, or one long column when that lets everything be drawn bigger (tall,
-// narrow windows).
+// now), and the panel is sized for the biggest group, so switching tabs moves nothing. Typing in
+// the search box lists the matching recipes from every group instead. Recipes sit in two
+// columns, or one long column when that lets everything be drawn bigger (tall, narrow windows).
+// The gear box (Phase 16) has the accessory slots and what the stats come to with them.
 
 interface Rect {
   x: number;
@@ -75,8 +78,17 @@ interface Layout {
   tabs: { group: RecipeGroup; rect: Rect }[];
   /** The recipes being shown: the open tab's (all of them, or only the craftable ones). */
   recipes: { recipe: Recipe; rect: Rect }[];
+  /** Matching recipes that didn't fit (searching only). */
+  hidden: number;
+  /** The recipe search box. */
+  search: Rect;
   /** Top of the "Near:" line at the bottom of the crafting panel. */
   footerY: number;
+  /** The gear box, its accessory slots, and the top-left of its two columns of stats. */
+  gear: Rect;
+  gearSlots: Rect[];
+  statsX: number[];
+  statsY: number;
   /** The next-goal box, its Unpin button and its next-pickaxe line (click to pin that pickaxe). */
   goal: Rect;
   unpin: Rect;
@@ -102,10 +114,15 @@ const TAB_GAP = 3; // between tabs, and under them
 const FOOTER = 9;
 const PANEL_GAP = 8;
 const GOAL_H = PAD * 2 + TITLE + 18 + 16; // title, the pinned recipe (icon and two lines), the next pickaxe (two lines)
+const STAT_ROWS = 4; // the gear box's stats, in two columns
+const STAT_LINE = 7;
+const GEAR_H = PAD * 2 + TITLE + Math.max(SLOT, STAT_ROWS * STAT_LINE);
+const SEARCH_X = 40; // the search box starts this far into the crafting panel's title row
+const ACCESSORY_COUNT = ITEM_IDS.filter(isAccessory).length;
 /** Monospace text at 5 units is about this many units per character (sizes the buttons). */
 const CHAR_W = 3;
 
-const GROUP_NAMES: Record<RecipeGroup, string> = { blocks: 'Blocks', light: 'Light', tools: 'Tools', materials: 'Materials', stations: 'Stations' };
+const GROUP_NAMES: Record<RecipeGroup, string> = { blocks: 'Blocks', light: 'Light', tools: 'Tools', gear: 'Gear', materials: 'Materials', stations: 'Stations' };
 /** A tab's width: its group's name, with room for a count of what can be crafted. */
 const tabWidth = (group: RecipeGroup): number => (GROUP_NAMES[group].length + 3) * CHAR_W + 6;
 const TABS_W = RECIPE_GROUPS.reduce((w, g) => w + tabWidth(g), 0) + (RECIPE_GROUPS.length - 1) * TAB_GAP;
@@ -146,7 +163,7 @@ function computeLayout(width: number, height: number, scale: number, shown: read
     const craftW = PAD * 2 + Math.max(cols * RECIPE_W + (cols - 1) * RECIPE_GAP, TABS_W);
     const craftH = PAD * 2 + TITLE + TAB_H + TAB_GAP + Math.ceil(MOST_IN_A_GROUP / cols) * RECIPE_H + FOOTER;
     const totalW = leftW + PANEL_GAP + craftW;
-    const totalH = Math.max(leftH, craftH);
+    const totalH = Math.max(leftH, craftH + PANEL_GAP + GEAR_H);
     const u = Math.max(1, Math.min(scale, Math.floor(width / (totalW + 8)), Math.floor(height / (totalH + 40))));
     return { cols, craftW, craftH, totalW, totalH, u };
   };
@@ -191,14 +208,28 @@ function computeLayout(width: number, height: number, scale: number, shown: read
     tabX += tabWidth(group) + TAB_GAP;
   }
   const listY = PAD + TITLE + TAB_H + TAB_GAP;
-  const recipes: Layout['recipes'] = shown.map((recipe, i) => {
+  // Searching can match more recipes than the biggest group: the rest are counted, not drawn.
+  const capacity = Math.ceil(MOST_IN_A_GROUP / cols) * cols;
+  const recipes: Layout['recipes'] = shown.slice(0, capacity).map((recipe, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
     return { recipe, rect: at(craftX + PAD + col * (RECIPE_W + RECIPE_GAP), listY + row * RECIPE_H, RECIPE_W, RECIPE_H - 1) };
   });
 
+  const gearY = craftH + PANEL_GAP;
+  const gearSlots: Rect[] = [];
+  for (let i = 0; i < GEAR_SLOTS; i++) gearSlots.push(at(craftX + PAD + i * (SLOT + SLOT_GAP), gearY + PAD + TITLE, SLOT, SLOT));
+  const statsLeft = PAD + GEAR_SLOTS * (SLOT + SLOT_GAP) + 6;
+  const statsW = (craftW - statsLeft - PAD) / 2;
+
   return {
     u,
+    hidden: Math.max(0, shown.length - capacity),
+    search: at(craftX + SEARCH_X, 3, craftW - SEARCH_X - PAD - FILTER_W - 6, 9),
+    gear: at(craftX, gearY, craftW, GEAR_H),
+    gearSlots,
+    statsX: [x0 + (craftX + statsLeft) * u, x0 + (craftX + statsLeft + statsW) * u],
+    statsY: y0 + (gearY + PAD + TITLE) * u,
     inventory: at(0, 0, leftW, invH),
     chest: at(0, chestY, leftW, chestH),
     crafting: at(craftX, 0, craftW, craftH),
@@ -235,6 +266,8 @@ export interface PanelState {
   pickaxeTier: number;
   /** How the world was generated: where its ores are found (and whether it has emberite). */
   profile: GenProfile;
+  /** The player's stats with the gear worn now (Phase 16). */
+  stats: PlayerStats;
 }
 
 /** What a left click in the panel did. */
@@ -246,7 +279,31 @@ export type PanelClick =
   | { kind: 'filter' }
   | { kind: 'tab' }
   /** Pin a recipe as the goal (by the item it makes), or unpin it (null). */
-  | { kind: 'pin'; item: ItemId | null };
+  | { kind: 'pin'; item: ItemId | null }
+  /** An accessory went on or came off. */
+  | { kind: 'gear' }
+  /** The click asked for something that can't be done: the game says why. */
+  | { kind: 'refused'; text: string }
+  /** The search box: typing into it now. */
+  | { kind: 'search' };
+
+/** What to tell the player when an accessory can't go on. */
+function wearRefusal(problem: Exclude<WearProblem, null> | 'full', item: ItemId): string {
+  const name = itemDef(item).name;
+  if (problem === 'notGear') return `${name} isn't an accessory: only accessories go in the gear slots`;
+  if (problem === 'wearing') return `You already wear ${name.toLowerCase().startsWith('the') ? '' : 'a '}${name.toLowerCase()}: one of each`;
+  return `All ${GEAR_SLOTS} gear slots are taken: take one off first, or click a gear slot holding ${name.toLowerCase()} to swap`;
+}
+
+/** Recipes whose output, or one of whose ingredients, has `text` in its name; outputs first. */
+export function searchRecipes(text: string): Recipe[] {
+  const query = text.trim().toLowerCase();
+  if (!query) return [];
+  const has = (item: ItemId): boolean => itemDef(item).name.toLowerCase().includes(query);
+  const byOutput = RECIPES.filter((r) => has(r.output));
+  const byIngredient = RECIPES.filter((r) => !byOutput.includes(r) && r.ingredients.some((i) => has(i.item)));
+  return [...byOutput, ...byIngredient];
+}
 
 export class InventoryPanel {
   open = false;
@@ -254,13 +311,42 @@ export class InventoryPanel {
   craftableOnly = false;
   /** The recipe group whose tab is open. */
   tab: RecipeGroup = RECIPE_GROUPS[0];
+  /** The recipe search: while it isn't empty, the list shows its matches from every group. */
+  search = '';
+  /** Typing into the search box (keys type instead of acting, except the confirm and pause keys). */
+  searching = false;
+
+  /** Start typing into the search box. */
+  startSearch(): void {
+    this.searching = true;
+    startTyping(this.search, RECIPE_SEARCH_MAX);
+  }
+
+  /** Stop typing into the search box, keeping what's typed; `clear` empties it too. */
+  stopSearch(clear = false): void {
+    if (this.searching) stopTyping();
+    this.searching = false;
+    if (clear) this.search = '';
+  }
+
+  /** One step while the search box is being typed in: confirm (Enter) keeps the search, pause (Esc) clears it. */
+  updateSearch(confirm: boolean, cancel: boolean): void {
+    if (!this.searching) return;
+    this.search = typedText() ?? this.search;
+    if (confirm) this.stopSearch();
+    else if (cancel) this.stopSearch(true);
+  }
 
   /** Is canvas pixel (mx, my) over the panel? Clicks there don't reach the world. */
   covers(canvas: HTMLCanvasElement, scale: number, mx: number, my: number, state: PanelState): boolean {
     if (!this.open) return false;
     const layout = this.layout(canvas.width, canvas.height, scale, state);
     return (
-      hit(layout.inventory, mx, my) || hit(layout.crafting, mx, my) || hit(layout.goal, mx, my) || (state.chest !== null && hit(layout.chest, mx, my))
+      hit(layout.inventory, mx, my) ||
+      hit(layout.crafting, mx, my) ||
+      hit(layout.goal, mx, my) ||
+      hit(layout.gear, mx, my) ||
+      (state.chest !== null && hit(layout.chest, mx, my))
     );
   }
 
@@ -276,9 +362,21 @@ export class InventoryPanel {
   click(canvas: HTMLCanvasElement, scale: number, mx: number, my: number, shift: boolean, state: PanelState): PanelClick | null {
     const { inventory, chest } = state;
     const layout = this.layout(canvas.width, canvas.height, scale, state);
+    if (hit(layout.search, mx, my)) {
+      if (!this.searching) this.startSearch();
+      return { kind: 'search' };
+    }
+    // A click anywhere else ends typing (keeping the search).
+    this.stopSearch();
     const slot = layout.slots.findIndex((r) => hit(r, mx, my));
     if (slot >= 0) {
-      // Shift-click moves the stack into the open chest, or between hotbar and bag.
+      const stack = inventory.slots[slot];
+      // Shift-click wears an accessory (with no chest open), or moves the stack into the open
+      // chest, or between hotbar and bag.
+      if (shift && !inventory.cursor && stack && isAccessory(stack.item) && !chest) {
+        const problem = inventory.wearFromSlot(slot);
+        return problem ? { kind: 'refused', text: wearRefusal(problem, stack.item) } : { kind: 'gear' };
+      }
       if (shift && !inventory.cursor) {
         if (chest) moveToChest(inventory, slot, chest);
         else inventory.quickMove(slot);
@@ -286,6 +384,18 @@ export class InventoryPanel {
         inventory.clickSlot(slot);
       }
       return { kind: 'slot' };
+    }
+    const gearSlot = layout.gearSlots.findIndex((r) => hit(r, mx, my));
+    if (gearSlot >= 0) {
+      const worn = inventory.gear[gearSlot];
+      if (shift && !inventory.cursor) {
+        if (!worn) return null;
+        return inventory.takeOff(gearSlot) ? { kind: 'gear' } : { kind: 'refused', text: `No room in your inventory to take off the ${itemDef(worn.item).name.toLowerCase()}` };
+      }
+      const held = inventory.cursor;
+      const problem = inventory.clickGear(gearSlot);
+      if (problem && held) return { kind: 'refused', text: wearRefusal(problem, held.item) };
+      return held || worn ? { kind: 'gear' } : null;
     }
     if (chest) {
       const chestSlot = layout.chestSlots.findIndex((r) => hit(r, mx, my));
@@ -308,6 +418,7 @@ export class InventoryPanel {
     const tab = layout.tabs.find((t) => hit(t.rect, mx, my));
     if (tab) {
       this.tab = tab.group;
+      this.search = '';
       return { kind: 'tab' };
     }
     if (state.pinned && hit(layout.unpin, mx, my)) return { kind: 'pin', item: null };
@@ -329,7 +440,7 @@ export class InventoryPanel {
     /** Tooltip for whatever the mouse is over. Slot tooltips hide while a stack is held. */
     let tip: TipLine[] | null = null;
     const slotTip = (stack: ItemStack | null): void => {
-      if (stack && !inventory.cursor) tip = itemTip(stack.item);
+      if (stack && !inventory.cursor) tip = itemTip(stack.item, state);
     };
 
     // Inventory grid and the trash slot.
@@ -361,16 +472,27 @@ export class InventoryPanel {
       }
     }
 
-    // Recipes in tabs, with the filter toggle and what's nearby.
+    // Recipes in tabs, with the search box, the filter toggle and what's nearby.
     drawPanel(ctx, layout.crafting, u);
     panelTitle(ctx, 'Crafting', layout.crafting, u);
+    const overSearch = hit(layout.search, mx, my);
+    drawSearchBox(ctx, layout.search, this.searching ? (typedText() ?? this.search) : this.search, this.searching, overSearch, u);
+    if (overSearch) {
+      tip = [
+        { text: 'Search recipes', color: WHITE, big: true },
+        { text: 'Click and type: lists every recipe that makes', color: LIGHT },
+        { text: 'or uses something with that in its name.', color: LIGHT },
+        { text: searchHelp(), color: GREY },
+      ];
+    }
     const overFilter = hit(layout.filter, mx, my);
     drawCheckbox(ctx, layout.filter, 'Craftable only', this.craftableOnly, overFilter, u);
     if (overFilter) tip = [{ text: 'Craftable only', color: WHITE, big: true }, { text: 'Show only what you can craft right now.', color: LIGHT }];
+    const searched = this.search.trim() !== '';
     for (const { group, rect } of layout.tabs) {
       const craftable = RECIPES.filter((r) => r.group === group && canCraft(state.inventory, r, state.stations, state.chests)).length;
       const over = hit(rect, mx, my);
-      drawTab(ctx, rect, GROUP_NAMES[group], craftable, group === this.tab, over, u);
+      drawTab(ctx, rect, GROUP_NAMES[group], craftable, group === this.tab && !searched, over, u);
       if (over) {
         const can = craftable > 0 ? `You can craft ${craftable} of these right now.` : 'Nothing here you can craft right now.';
         tip = [{ text: GROUP_NAMES[group], color: WHITE, big: true }, { text: can, color: LIGHT }];
@@ -381,7 +503,8 @@ export class InventoryPanel {
     ctx.textBaseline = 'top';
     if (layout.recipes.length === 0) {
       const top = layout.crafting.y + (PAD + TITLE + TAB_H + TAB_GAP + 2) * u;
-      shadowText(ctx, 'Nothing you can craft here yet.', layout.crafting.x + PAD * u, top, GREY, u);
+      const none = searched ? `No recipe makes or uses "${this.search.trim()}".` : 'Nothing you can craft here yet.';
+      shadowText(ctx, none, layout.crafting.x + PAD * u, top, GREY, u);
     }
     for (const { recipe, rect } of layout.recipes) {
       const over = hit(rect, mx, my);
@@ -395,7 +518,11 @@ export class InventoryPanel {
     ctx.font = `${5 * u}px monospace`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    shadowText(ctx, `Near: ${near.join(', ') || 'no stations or chests'}`, layout.crafting.x + PAD * u, layout.footerY, GREY, u);
+    const more = layout.hidden > 0 ? `   +${layout.hidden} more: type more to narrow it` : '';
+    shadowText(ctx, `Near: ${near.join(', ') || 'no stations or chests'}${more}`, layout.crafting.x + PAD * u, layout.footerY, GREY, u);
+
+    const gearTip = drawGearBox(ctx, itemAtlas, layout, state, mx, my);
+    if (gearTip) tip = gearTip;
 
     if (tip) drawTooltip(ctx, tip, mx, my, u);
     if (inventory.cursor) drawStack(ctx, itemAtlas, inventory.cursor, mx - 8 * u, my - 8 * u, 16, u);
@@ -403,9 +530,9 @@ export class InventoryPanel {
   }
 
   private layout(width: number, height: number, scale: number, state: PanelState): Layout {
-    const shown = RECIPES.filter(
-      (r) => r.group === this.tab && (!this.craftableOnly || canCraft(state.inventory, r, state.stations, state.chests)),
-    );
+    const text = this.searching ? (typedText() ?? this.search) : this.search;
+    const listed = text.trim() ? searchRecipes(text) : RECIPES.filter((r) => r.group === this.tab);
+    const shown = listed.filter((r) => !this.craftableOnly || canCraft(state.inventory, r, state.stations, state.chests));
     return computeLayout(width, height, scale, shown, state.chest !== null);
   }
 }
@@ -477,6 +604,92 @@ function drawTrashCan(ctx: CanvasRenderingContext2D, r: Rect, u: number): void {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   at(8, 9, 1, 6);
   at(11, 9, 1, 6);
+}
+
+/** The recipe search box: what's typed (with a caret while typing), or a grey prompt. */
+function drawSearchBox(ctx: CanvasRenderingContext2D, r: Rect, text: string, typing: boolean, hovered: boolean, u: number): void {
+  ctx.fillStyle = typing ? 'rgba(255, 255, 255, 0.55)' : hovered ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.22)';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = 'rgba(10, 10, 16, 0.95)';
+  ctx.fillRect(r.x + u, r.y + u, r.w - 2 * u, r.h - 2 * u);
+  ctx.font = `${5 * u}px monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const x = r.x + 3 * u;
+  const y = r.y + 2 * u;
+  if (!text && !typing) {
+    shadowText(ctx, 'Search recipes', x, y, GREY, u);
+    return;
+  }
+  shadowText(ctx, text, x, y, WHITE, u);
+  // A blinking caret (UI time, like the other panel animations).
+  if (typing && Math.floor(performance.now() / 500) % 2 === 0) {
+    ctx.fillStyle = WHITE;
+    ctx.fillRect(x + ctx.measureText(text).width + u, y - u, u, 6 * u);
+  }
+}
+
+/**
+ * The gear box (Phase 16): the accessory slots, how many are worn, and the stats they add up to
+ * (the ones gear changed in green). Returns a tooltip if the mouse is over a slot or the stats.
+ */
+function drawGearBox(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement, layout: Layout, state: PanelState, mx: number, my: number): TipLine[] | null {
+  const { u, gear } = layout;
+  const { inventory } = state;
+  let tip: TipLine[] | null = null;
+  drawPanel(ctx, gear, u);
+  panelTitle(ctx, 'Gear', gear, u);
+  const worn = inventory.gear.filter((s) => s).length;
+  ctx.font = `${5 * u}px monospace`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  shadowText(ctx, `${worn} of ${GEAR_SLOTS} worn (${ACCESSORY_COUNT} kinds to pick from)`, gear.x + gear.w - PAD * u, gear.y + 5 * u, GREY, u);
+  layout.gearSlots.forEach((r, i) => {
+    const over = hit(r, mx, my);
+    const stack = inventory.gear[i];
+    drawSlot(ctx, itemAtlas, stack, r.x, r.y, u, over ? 'hover' : 'normal');
+    if (!stack) drawGearOutline(ctx, r, u);
+    if (!over || inventory.cursor?.item === stack?.item) return;
+    if (stack) tip = itemTip(stack.item, state, true);
+    else if (!inventory.cursor) {
+      tip = [
+        { text: 'Gear slot', color: WHITE, big: true },
+        { text: 'Click with an accessory held to wear it.', color: LIGHT },
+        { text: wearHint(), color: LIGHT },
+        { text: `You can wear ${GEAR_SLOTS}, one of each. Gear crafts at`, color: GREY },
+        { text: 'a workbench (the Gear tab).', color: GREY },
+      ];
+    }
+  });
+  const lines = statLines(state.stats);
+  ctx.textAlign = 'left';
+  ctx.font = `${5 * u}px monospace`;
+  lines.forEach((line, i) => {
+    const x = layout.statsX[Math.floor(i / STAT_ROWS)];
+    const y = layout.statsY + (i % STAT_ROWS) * STAT_LINE * u;
+    shadowText(ctx, `${line.label}:`, x, y, GREY, u);
+    shadowText(ctx, line.text, x + ctx.measureText(`${line.label}: `).width, y, line.changed ? GREEN : LIGHT, u);
+  });
+  const statsArea: Rect = { x: layout.statsX[0], y: layout.statsY, w: gear.x + gear.w - layout.statsX[0], h: STAT_ROWS * STAT_LINE * u };
+  if (!tip && hit(statsArea, mx, my)) {
+    tip = [
+      { text: 'Your stats', color: WHITE, big: true },
+      { text: 'What your gear adds up to. Green ones are', color: LIGHT },
+      { text: 'changed by what you wear.', color: LIGHT },
+    ];
+  }
+  return tip;
+}
+
+/** A faint outline of an accessory in an empty gear slot. */
+function drawGearOutline(ctx: CanvasRenderingContext2D, r: Rect, u: number): void {
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+  const at = (x: number, y: number, w: number, h: number): void => ctx.fillRect(r.x + x * u, r.y + y * u, w * u, h * u);
+  at(7, 5, 6, 1);
+  at(6, 6, 1, 6);
+  at(13, 6, 1, 6);
+  at(7, 12, 6, 1);
+  at(9, 13, 2, 3);
 }
 
 /**
@@ -628,13 +841,38 @@ function detailLines(item: ItemId): TipLine[] {
   return (itemDef(item).details ?? []).map((text) => ({ text, color: LIGHT }));
 }
 
-/** Name, what it does, what it places and where it's crafted. */
-function itemTip(item: ItemId): TipLine[] {
+/**
+ * For an accessory: what wearing it (or taking it off, for the one in a gear slot: `worn`) would
+ * change, from the stats with the gear worn now, and why it can't go on if it can't.
+ */
+function gearLines(item: ItemId, state: PanelState, worn: boolean): TipLine[] {
+  const { inventory } = state;
+  const modifier = itemDef(item).accessory;
+  if (!modifier) return [];
+  const mods = inventory.gearModifiers();
+  if (!worn && inventory.wearing(item)) return [{ text: 'You already wear one (one of each).', color: GREY }];
+  if (worn) {
+    const without = computeStats(inventory.gear.flatMap((s) => (s && s.item !== item ? [itemDef(s.item).accessory ?? {}] : [])));
+    return [
+      { text: 'Worn. Taking it off:', color: GREEN },
+      ...statChanges(state.stats, without).map((text) => ({ text: `  ${text}`, color: LIGHT })),
+      { text: wearHint(), color: GREY },
+    ];
+  }
+  const lines: TipLine[] = [{ text: 'Wearing it:', color: GREEN }, ...statChanges(state.stats, computeStats([...mods, modifier])).map((text) => ({ text: `  ${text}`, color: LIGHT }))];
+  if (inventory.gear.every((s) => s)) lines.push({ text: `All ${GEAR_SLOTS} gear slots are taken: swap one for it.`, color: RED });
+  else lines.push({ text: wearHint(), color: GREY });
+  return lines;
+}
+
+/** Name, what it does, what it places and where it's crafted. `worn`: it's the one in a gear slot. */
+function itemTip(item: ItemId, state: PanelState, worn = false): TipLine[] {
   const def = itemDef(item);
   const lines: TipLine[] = [
     { text: def.name, color: WHITE, big: true },
     { text: def.description, color: LIGHT },
     ...detailLines(item),
+    ...gearLines(item, state, worn),
   ];
   if (def.pickaxeTier !== undefined) lines.push({ text: `Mining speed ${PICKAXES[def.pickaxeTier].speed}x`, color: LIGHT });
   const places = placesLine(item);
@@ -652,6 +890,7 @@ function recipeTip(recipe: Recipe, state: PanelState): TipLine[] {
     { text: recipe.count > 1 ? `${def.name} x${recipe.count}` : def.name, color: WHITE, big: true },
     { text: def.description, color: LIGHT },
     ...detailLines(recipe.output),
+    ...gearLines(recipe.output, state, false),
   ];
   if (def.pickaxeTier !== undefined) lines.push({ text: `Mining speed ${PICKAXES[def.pickaxeTier].speed}x`, color: LIGHT });
   const places = placesLine(recipe.output);

@@ -2,8 +2,8 @@
 
 All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13, the
 guidance slice, Phase 14a (the strata world), Phase 14b (the strata's rules and the Heart of
-the Deep) and Phase 15 (lifts and the camp) are on `develop` (the dev site). **Phase 16 (gear
-and tools) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
+the Deep), Phase 15 (lifts and the camp) and Phase 16 (gear and tools) are on `develop` (the dev
+site). **Phase 17 (structures and loot) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
 has acceptance criteria to check before moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
 targets; release status is separate from implementation status.
 
@@ -193,7 +193,7 @@ recipe expansion. These additions do not renumber phases.
 | Player map pins | Guidance slice | A few named pins for veins, alternate routes and places to revisit. Save them per world, respect fog of war, and allow one selected pin to show direction and distance without forcing the map open. Built in the guidance slice. |
 | Action feedback | During Arc 3 (flexible) | Visible mining swing, hovered tile names, and specific tier hints such as "Requires copper pickaxe" (today's hint just says "Need better pickaxe"). Invalid building explains the reason. Shipped: support previews (12) and the lantern drawn in the player's hand (13). |
 | Accessible controls and display | During Arc 3 (flexible) | Remappable actions (a screen over 11a's action table) with reset-to-default and conflict feedback; independent UI/text scaling; visual equivalents for sound warnings. Persist preferences per device and update displayed key hints. Introduce visual hazard cues with each hazard. Shipped: the reduced-flash setting (11b). |
-| Crafting grows with content | By 16 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. Shipped: a tab per recipe group (Blocks, Light, Tools, Materials, Stations), each with how many of its recipes can be crafted now, and the panel sized for the biggest group (14a). Still to do: search. |
+| Crafting grows with content | By 16 | Scrollable categories or tabs, search and a readable minimum text size as recipes grow. Keep the pinned recipe and missing ingredients easy to find on smaller desktop windows. Shipped: a tab per recipe group (Blocks, Light, Tools, Materials, Stations), each with how many of its recipes can be crafted now, and the panel sized for the biggest group (14a); a Gear tab and a search box that lists every recipe making or using what's typed (16). |
 
 ### Phase 11a: Session foundations and save safety
 
@@ -648,6 +648,50 @@ satchel, and lifts and the camp are what make the deeper strata practical.
 - Show drill fuel and rope length before use. Expand crafting navigation from the companion
   work before the larger recipe list makes text too small.
 
+- As built:
+  - **Gear** (`systems/inventory.ts`, `systems/stats.ts`): 4 gear slots apart from the hotbar and
+    bag, one of each accessory. What's worn isn't counted, crafted with, stacked away or put in
+    a satchel, and is kept on death. Stats are recomputed from the worn gear every step (gear
+    only changes in the panel, while the world is paused). New stats: `lightRadius`,
+    `heatHurtInterval` and `wallGrip`. Recipes (all at a workbench, in a new **Gear** tab):
+    miner's helmet (3 iron bars, 2 torches), toolbelt (4 copper bars, 6 planks), magnet charm
+    (2 iron bars, 2 sapphires), long-handled grip (3 gold bars, 6 wood), spring boots (3 iron
+    bars, 4 floatstone), padded boots (2 copper bars, 8 planks), heat ward (2 gold bars, 2
+    rubies) and climbing claws (4 iron bars, 2 wood). Gems and floatstone only come from strata
+    worlds, so older worlds can't make those three; none is needed to explore.
+  - The helmet is a moving light like the lantern (carried: keeps dread off, doesn't heal), and
+    the HUD names it. The heat ward doubles the time between heat burns (lava is unchanged). The
+    claws (`Player.gripsWall`): in the air, pushing against a wall slides down it at 90 px/s at
+    most, holding up clings still, S lets go, and Space leaps off away from it; a grip resets the
+    fall, so a slide never hurts. Spring boots add 70 px/s of jump (about 1.6 tiles higher).
+  - **The inventory panel**: a **Gear** box under the crafting panel with the 4 slots and the
+    stats they add up to (changed ones in green). Shift-click an accessory to wear it (with no
+    chest open) or a worn one to take it off; clicking with one held swaps it in. Tooltips on
+    an accessory say what wearing it, or taking it off, changes (before → after), and why it
+    can't go on (not an accessory, already worn, slots full). Closing the panel toasts each stat
+    that changed, so nothing about movement or reach changes unexplained. Taking gear off never
+    loses it: shift-click only works with room in the inventory, and a held one is put away (or
+    dropped at the player) like any held stack. The crafting panel got a **search box**.
+  - **Bombs** (`entities/bomb.ts`, `systems/tools.ts`; an iron bar and 4 coal make 3): thrown
+    like flares, they stick where they land and go off after 2 s of play, breaking the 3 x 3
+    around them that the thrower's best pickaxe (at the throw) could mine, never bedrock or
+    lava, as if mined (drops, felled trees, chests spilling, door halves, the Heart). 4 damage
+    to a player in the 5 x 5. At most 8 fused at once (another sets the oldest off).
+  - **Rope coil** (5 planks): hung from an empty spot with something solid (or a platform or
+    beam) above it, or something solid beside it, it unrolls a climbable rope ladder (tile 60)
+    straight down through open air, up to 20 tiles. The cursor outlines it and says how far it
+    reaches ("ends 7 m above the floor"). Breaking any rope tile rolls the whole rope up into
+    coils (one per 20 tiles, rounded up, so ropes never give back more than they took).
+  - **Drill** (8 emberite bars, 4 iron bars): held, it digs at tier 5 at least, at speed 9 (the
+    emberite pickaxe is 4.6), burning one coal from the inventory per 8 tiles, and does nothing
+    (with a hint) without coal. Kept on death like pickaxes. The hotbar shows the held tool's
+    note under its name: the drill's fuel in tiles, the rope's length, what a bomb can break.
+  - **Saves**: worn gear is `inventory.gear` and live bombs an optional `bombs` field; the rope
+    tile was appended, so no `SAVE_VERSION` bump. The drill's part-burnt coal isn't saved.
+  - Debug: **Shift+G** gives a gear kit (every accessory, 30 bombs, 10 rope coils, a drill and
+    40 coal). F3 has a gear line: what's worn, every stat, the wall grip, bombs and the drill's
+    charge.
+
 - [ ] Every accessory's effect shows in play and in F3. Bombs respect pickaxe tier.
 - [ ] Equipment choices are understandable without F3; removing gear never deletes inventory
       overflow or leaves the player trapped by an unexplained change in movement or reach.
@@ -907,10 +951,9 @@ Work through the phases in number order, with the companion polish in small slic
    with generation profiles keeping older worlds intact) and 13 (the dark: carried light holds
    dread off, only established light heals), the guidance slice (pinned recipe, map pins and
    quick torch), Phase 14a (distinct strata whose materials all have uses, and renewable wood),
-   Phase 14b (each stratum's rule and the Heart of the Deep) and Phase 15 (lifts and the camp: a
-   reliable way home).
-2. Phases 16–17: understandable equipment choices and useful discoveries. Expand crafting
-   navigation before the recipe list grows.
+   Phase 14b (each stratum's rule and the Heart of the Deep), Phase 15 (lifts and the camp: a
+   reliable way home) and Phase 16 (gear and tools, with recipe search).
+2. Phase 17: useful discoveries.
 3. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
    before expanding boons in 19 and objectives/mutators in 20. Meta progression and
    standardized dailies follow in 21.

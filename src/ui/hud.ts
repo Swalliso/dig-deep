@@ -75,8 +75,11 @@ export function drawSlot(
   if (stack) drawStack(ctx, itemAtlas, stack, x + 2 * u, y + 2 * u, 16, u);
 }
 
-/** Hotbar centred along the bottom: item icons, stack counts, selected slot highlighted. */
-export function drawHotbar(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement, inventory: Inventory, u: number): void {
+/**
+ * Hotbar centred along the bottom: item icons, stack counts, selected slot highlighted, and the
+ * selected item's name above it, with `note` (a tool's fuel or reach) under the name.
+ */
+export function drawHotbar(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement, inventory: Inventory, u: number, note: string | null = null): void {
   const { width, height } = ctx.canvas;
   const total = (HOTBAR_SIZE * SLOT + (HOTBAR_SIZE - 1) * SLOT_GAP) * u;
   const x0 = Math.round((width - total) / 2);
@@ -97,10 +100,16 @@ export function drawHotbar(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasE
   // Name of the selected item above the bar.
   const selected = inventory.selectedStack;
   if (selected) {
-    ctx.font = `${7 * u}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    shadowText(ctx, itemDef(selected.item).name, width / 2, y0 - 3 * u, '#fff', u);
+    let nameY = y0 - 3 * u;
+    if (note) {
+      ctx.font = `${5 * u}px monospace`;
+      shadowText(ctx, note, width / 2, nameY, '#d6d6d6', u);
+      nameY -= 7 * u;
+    }
+    ctx.font = `${7 * u}px monospace`;
+    shadowText(ctx, itemDef(selected.item).name, width / 2, nameY, '#fff', u);
   }
   ctx.restore();
 }

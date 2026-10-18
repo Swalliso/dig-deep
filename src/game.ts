@@ -5,10 +5,15 @@ import {
   BANNER_FADE,
   BANNER_TIME,
   BEAM_MAX_HEIGHT,
+  BOMB_DAMAGE,
+  BOMB_MAX,
   CLIMB_STEP_DISTANCE,
   DAMAGE_NUMBER_TIME,
   DEATH_SCREEN_DELAY,
   DIG_TICK_INTERVAL,
+  DRILL_SPEED,
+  DRILL_TIER,
+  DRILL_TILES_PER_COAL,
   DREAD_HEARTBEAT,
   DREAD_HEARTBEAT_SLOW,
   DREAD_PULSE_TIME,
@@ -34,6 +39,7 @@ import {
   LAND_FULL_SPEED,
   LANTERN_LIGHT,
   LAND_MIN_SPEED,
+  LIGHT_FALLOFF_AIR,
   LAVA_HURT,
   PICKAXES,
   PLANT_CHECK_INTERVAL,
@@ -42,6 +48,7 @@ import {
   PROTECTION_ALPHA,
   PROTECTION_BLINK,
   RESPAWN_PROTECTION,
+  ROPE_LENGTH,
   SATCHEL_SIZE,
   SPAN_MAX,
   SURFACE_LEVEL,
@@ -54,6 +61,7 @@ import {
   DEBUG,
   debugHelpLines,
   giveDebugKit,
+  giveGearKit,
   heartSpot,
   nextInstantMine,
   nextStratumSpot,
@@ -64,6 +72,7 @@ import {
   placeOreSampler,
   type InstantMine,
 } from './debug';
+import { bombTile, throwBomb, updateBombs, type Bomb } from './entities/bomb';
 import { flareLevel, throwFlare, updateFlares, type Flare } from './entities/flare';
 import { ItemDrop, updateDrops } from './entities/itemDrop';
 import { Player } from './entities/player';
@@ -72,7 +81,7 @@ import { Camera } from './render/camera';
 import { breakFlashAlpha, ScreenShake, type BreakFlash } from './render/juice';
 import { MapImage } from './render/mapImage';
 import { Particles } from './render/particles';
-import type { Renderer } from './render/renderer';
+import type { PlayerLooks, Renderer } from './render/renderer';
 import { campSpot, canPlace, itemForTile, overlapsPlayer, primaryAction, quickTorchSpot, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
 import { CaveIns, gravelDamage, type CaveInHooks, type SavedCaveIns } from './systems/caveIns';
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
@@ -93,13 +102,15 @@ import {
 import { goalStatus, recipeFor } from './systems/goal';
 import { deathCauseText, difficultyName, fallDamage, Health, type DamageCause, type Difficulty } from './systems/health';
 import { Inventory } from './systems/inventory';
-import { itemDef, type ItemId } from './systems/items';
+import { itemDef, keptOnDeath, type ItemId } from './systems/items';
 import { defaultStopName, Lifts, riderSpot, stopDepth, stopLanding, stopName, stopProblem, type Cage, type CageEvent, type LiftView, type StopSpot } from './systems/lifts';
 import { MapPins } from './systems/mapPins';
 import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { hintSeen, markHintSeen, type HintId } from './systems/hints';
 import { Heat, heatStatus, type HeatSafety } from './systems/heat';
 import { saveSettings, type Settings } from './systems/settings';
+import { computeStats, statChanges, type PlayerStats } from './systems/stats';
+import { blastBreaks, blastHits, blastTiles, drillTilesLeft, hangRope, rollUpRope, ropePlan, ropePlanText } from './systems/tools';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawStratumBanner, drawToasts, Toasts } from './ui/hud';
 import { goalHudLines } from './ui/guidance';
@@ -164,6 +175,8 @@ export interface GameStart {
   respawnAt?: RespawnChoice;
   /** Lift cages; defaults to none. Must belong to this world. */
   lifts?: Lifts;
+  /** Bombs thrown and not gone off yet; defaults to none. */
+  bombs?: Bomb[];
 }
 
 /** What the death screen says, shown until the player respawns. */
@@ -279,6 +292,14 @@ export class Game {
   private heatHintShown = false;
   private heartHintShown = false;
   private flareList: Flare[];
+  private bombList: Bomb[];
+  /**
+   * Tiles the drill can still break on the coal it's burning now (it takes another from the
+   * inventory when this runs out). Not saved: a reload loses at most part of one coal.
+   */
+  private drillCharge = 0;
+  /** The player's stats when the inventory panel opened, to say what changing gear did when it closes. */
+  private statsAtOpen: PlayerStats | null = null;
   /** Session clock time of the last heartbeat (dread near full), or -Infinity. */
   private lastBeatAt = -Infinity;
   /** The "dread" hint shows the first time dread builds up in a session. */
@@ -349,12 +370,14 @@ export class Game {
     this.satchels = start.satchels ?? [];
     this.dread = start.dread ?? new Dread();
     this.flareList = start.flares ?? [];
+    this.bombList = start.bombs ?? [];
     this.pinnedRecipe = start.pinnedRecipe ?? null;
     this.mapPins = start.mapPins ?? new MapPins();
     this.heartClaimedAt = start.heartClaimedAt ?? null;
     this.profile = findProfile(world.profile) ?? CLASSIC_PROFILE;
     this.stratum = new StratumTracker(world, ...this.playerTile());
     this.inventory = start.inventory ?? Inventory.withStartingItems();
+    this.player.stats = computeStats(this.inventory.gearModifiers());
     this.dropList = start.drops ?? [];
     this.tileEntities = start.tileEntities ?? new TileEntities(world);
     // Whatever removes a chest (mining, or a debug patch over it) spills its contents.
@@ -409,6 +432,11 @@ export class Game {
     return this.flareList;
   }
 
+  /** Bombs thrown and not gone off yet. */
+  get bombs(): readonly Bomb[] {
+    return this.bombList;
+  }
+
   /** Is Esc going to close something in the game (the panel, the map or the lift panel) rather than pause? */
   get capturesEscape(): boolean {
     return this.inventoryPanel.open || this.fullMap.open || this.liftPanel.open;
@@ -448,6 +476,8 @@ export class Game {
   update(dt: number): void {
     // A break flash lasts one drawn frame, paused or not.
     this.flashes = this.flashes.filter((f) => !f.drawn);
+    // Worn gear sets the stats (it only changes in the inventory panel, while the world is paused).
+    this.player.stats = computeStats(this.inventory.gearModifiers());
     // The step that leaves the death screen doesn't simulate, so the respawn key (Space) doesn't jump too.
     const dead = this.deathScreen !== null;
     if (dead) {
@@ -569,11 +599,12 @@ export class Game {
     if (actionPressed('quickStack')) this.quickStackNearby();
     // E / Tab toggles the inventory + crafting panel (Esc also closes it), opening the nearest
     // chest in reach alongside it. While it's open the world is paused and the mouse works the panel.
-    if (actionPressed('inventory') || (inventoryPanel.open && actionPressed('pause'))) {
+    // While the recipe search is being typed in, Esc only clears it (the panel handles that).
+    if (actionPressed('inventory') || (inventoryPanel.open && actionPressed('pause') && !inventoryPanel.searching)) {
       if (inventoryPanel.open) {
         this.closePanel();
       } else {
-        inventoryPanel.open = true;
+        this.openPanel();
         this.openChest = this.nearestChestInReach();
       }
     }
@@ -581,7 +612,11 @@ export class Game {
 
   private debugKeys(): void {
     const { world, player, toasts } = this;
-    if (actionPressed('debugGive')) {
+    // Shift+G: the gear kit (a Shift tapped in the same step counts too).
+    if (actionPressed('debugGive') && (actionDown('modifier') || actionPressed('modifier'))) {
+      giveGearKit(this.inventory);
+      toasts.show('Debug: gear kit added (every accessory, bombs, rope coils, a drill and coal)');
+    } else if (actionPressed('debugGive')) {
       giveDebugKit(this.inventory);
       toasts.show('Debug: materials added');
     }
@@ -694,8 +729,8 @@ export class Game {
     // door opens or closes. It never places or mines anything.
     if (actionPressed('interact') && !inventoryPanel.covers(canvas, scale, mouse.x, mouse.y, this.panelState())) {
       if (this.chestAt(tx, ty) && inReach(player, tx, ty)) {
+        if (!inventoryPanel.open) this.openPanel();
         this.openChest = { tx, ty };
-        inventoryPanel.open = true;
         sfx.uiClick();
       } else if (!inventoryPanel.open && !this.lifts.ride && !this.useBed(tx, ty) && !this.useCamp(tx, ty) && !this.useLiftStop(tx, ty)) {
         this.useDoor(tx, ty);
@@ -707,6 +742,7 @@ export class Game {
       const click = inventoryPanel.pinClick(canvas, scale, mouse.x, mouse.y, this.panelState());
       if (click?.kind === 'pin') this.pinRecipe(click.item);
     }
+    if (inventoryPanel.open) inventoryPanel.updateSearch(actionPressed('confirm'), actionPressed('pause'));
     if (inventoryPanel.open && actionPressed('click')) {
       const click = inventoryPanel.click(canvas, scale, mouse.x, mouse.y, actionDown('modifier'), this.panelState());
       if (click?.kind === 'crafted') {
@@ -714,9 +750,15 @@ export class Game {
         sfx.craft();
       } else if (click?.kind === 'pin') {
         this.pinRecipe(click.item);
+      } else if (click?.kind === 'gear') {
+        sfx.equip();
+      } else if (click?.kind === 'refused') {
+        toasts.show(click.text, 4);
       } else if (click) {
         sfx.uiClick();
       }
+    } else if (!inventoryPanel.open) {
+      inventoryPanel.stopSearch();
     }
   }
 
@@ -898,6 +940,7 @@ export class Game {
   endTyping(): void {
     this.fullMap.stopEditing(this.mapPins, true);
     this.liftPanel.stopRenaming();
+    this.inventoryPanel.stopSearch();
   }
 
   /** One step of the world: the player, mining and building, drops, and everything else timed. */
@@ -930,6 +973,10 @@ export class Game {
     if (actionPressed('quickTorch')) this.quickTorch();
     this.caveIns.update(dt, this.clock.time, TILE_UPDATE_BUDGET, this.caveInHooks);
     if (this.deathScreen) return; // crushed: the rest waits for the respawn
+    const bombs = updateBombs(this.bombList, dt, world);
+    this.bombList = bombs.live;
+    for (const bomb of bombs.exploded) this.explode(bomb);
+    if (this.deathScreen) return; // too close to a bomb
     this.trickleDust(dt);
     this.updateSatchels();
     this.growPlants(dt);
@@ -963,13 +1010,30 @@ export class Game {
       this.builtThisHold.clear();
       this.campRefusedThisHold = false;
     }
-    if (actionPressed('use') && this.leftAction === 'throw') this.throwFlareAt(tx, ty);
-    const held = this.leftAction === 'dig' && actionDown('use');
-    const tier = inventory.bestPickaxeTier();
+    if (actionPressed('use') && this.leftAction === 'throw') this.throwAt(tx, ty);
+    if (actionPressed('use') && this.leftAction === 'rope') this.hangRopeAt(tx, ty);
+    let held = this.leftAction === 'dig' && actionDown('use');
+    let tier = inventory.bestPickaxeTier();
+    // The drill (Phase 16) mines at least DRILL_TIER and much faster, while there's coal to burn.
+    const drill = inventory.selectedStack?.item === 'drill';
+    let speed: number | undefined;
+    if (drill && held) {
+      if (drillTilesLeft(this.drillCharge, inventory.count('coal')) > 0) {
+        tier = Math.max(tier, DRILL_TIER);
+        speed = DRILL_SPEED;
+      } else {
+        mining.say('The drill needs coal', tx, ty);
+        held = false;
+      }
+    }
     const instant = this.instantMine !== 'off';
-    const broken = mining.update(dt, world, player, tx, ty, held, tier, instant);
-    if (broken) this.onTileBroken(broken);
-    else this.digTick(dt, held && !instant && checkMine(world, player, tx, ty, tier) === 'ok', tx, ty);
+    const broken = mining.update(dt, world, player, tx, ty, held, tier, instant, speed);
+    if (broken) {
+      if (speed !== undefined) this.burnDrillFuel();
+      this.onTileBroken(broken);
+    } else {
+      this.digTick(dt, held && !instant && checkMine(world, player, tx, ty, tier) === 'ok', tx, ty, speed !== undefined);
+    }
     if (held) {
       for (const [dx, dy] of brushNeighbours(this.instantMine)) {
         const extra = mining.breakInstantly(world, player, tx + dx, ty + dy, tier);
@@ -1010,9 +1074,10 @@ export class Game {
     renderer.drawFallingBlocks(this.caveIns.falling, alpha, camX, camY);
     renderer.drawDrops(this.drops, alpha, camX, camY);
     renderer.drawFlares(this.flareList, alpha, this.clock.time, camX, camY);
+    renderer.drawBombs(this.bombList, alpha, this.clock.time, camX, camY);
     renderer.drawSatchels(this.satchels, this.clock.time, camX, camY);
     // Dead: the player isn't drawn (they're already back at the bed, off screen).
-    if (!this.deathScreen) renderer.drawPlayer(player, px, py, camX, camY, this.playerAlpha(), inventory.selectedStack?.item === 'lantern');
+    if (!this.deathScreen) renderer.drawPlayer(player, px, py, camX, camY, this.playerAlpha(), this.playerLooks());
     renderer.drawCages(this.lifts.cages, alpha, camX, camY);
     renderer.drawParticles(this.particles, camX, camY);
     if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
@@ -1041,7 +1106,7 @@ export class Game {
     if (this.inventoryPanel.open) {
       this.inventoryPanel.draw(renderer.ctx, renderer.itemAtlas, renderer.scale, mouse.x, mouse.y, this.panelState());
     } else {
-      drawHotbar(renderer.ctx, renderer.itemAtlas, inventory, renderer.scale);
+      drawHotbar(renderer.ctx, renderer.itemAtlas, inventory, renderer.scale, this.toolNote());
       if (this.settings.showMinimap && !this.fullMap.open) drawMinimap(renderer.ctx, this.mapImage, this.mapMarkers(glowX, glowY), renderer.scale);
     }
     drawToasts(renderer.ctx, this.toasts, renderer.scale);
@@ -1099,7 +1164,7 @@ export class Game {
       // Heat takes the safety line over while it matters (it's a zone, not another meter).
       const heatLine = heatStatus(this.heatSafety, this.heat);
       if (dread.level > 0 || safety !== 'established' || heatLine) {
-        const carrier = this.inventory.selectedStack?.item === 'lantern' ? 'Lantern' : 'Flare';
+        const carrier = this.inventory.selectedStack?.item === 'lantern' ? 'Lantern' : player.stats.lightRadius > 0 ? 'Helmet' : 'Flare';
         const status = heatLine ?? dreadStatus(safety, dread.level, health.hp < player.stats.maxHealth, carrier);
         y = drawDreadMeter(renderer.ctx, dread.level, status, this.settings.reducedFlashes ? 0 : this.heartbeat(), y, u);
       }
@@ -1168,6 +1233,39 @@ export class Game {
     const key = `${tx0},${ty0},${tx1},${ty1},${this.world.revision}`;
     if (this.heatView?.key !== key) this.heatView = { key, field: heatField(this.world, tx0, ty0, tx1, ty1) };
     return this.heatView.field;
+  }
+
+  /** What the player has on: the held lantern and the worn gear that shows. */
+  private playerLooks(): PlayerLooks {
+    const { inventory } = this;
+    const boots = inventory.wearing('spring_boots') ? 'spring_boots' : inventory.wearing('padded_boots') ? 'padded_boots' : null;
+    const icon = boots && itemDef(boots).icon;
+    return {
+      lantern: inventory.selectedStack?.item === 'lantern',
+      helmet: inventory.wearing('miner_helmet'),
+      boots: icon && typeof icon === 'object' ? icon.color : null,
+      claws: inventory.wearing('climbing_claws'),
+    };
+  }
+
+  /**
+   * A line under the held item's name on the hotbar for the tools (Phase 16), so what they'll do
+   * shows before they're used: the drill's fuel, the rope's length, what a bomb breaks.
+   */
+  private toolNote(): string | null {
+    const { inventory } = this;
+    const item = inventory.selectedStack?.item;
+    if (item === 'drill') {
+      const coal = inventory.count('coal');
+      const left = drillTilesLeft(this.drillCharge, coal);
+      return left > 0 ? `Fuel: ${coal} coal, about ${left} tiles of drilling` : 'No coal: the drill needs coal to run';
+    }
+    if (item === 'rope_coil') return `Hangs a rope ladder up to ${ROPE_LENGTH} m down from an edge`;
+    if (item === 'bomb') {
+      const tier = inventory.bestPickaxeTier();
+      return tier >= 0 ? `Blasts 3 x 3: what your ${PICKAXES[tier].name.toLowerCase()} pickaxe can mine` : 'Blasts 3 x 3, but breaks nothing without a pickaxe';
+    }
+    return null;
   }
 
   /** How opaque to draw the player: protection blinks it, or (Reduced flashes) shows it see-through. */
@@ -1276,6 +1374,11 @@ export class Game {
       for (const felled of fellTreeAbove(this.world, tx, ty, tile)) this.shatter(felled.tx, felled.ty, felled.tile);
     }
     if (tile === Tile.HeartCore && this.heartClaimedAt === null) this.claimHeart(tx, ty);
+    // Breaking any part of a rope ladder rolls the whole rope back up into coils.
+    if (tile === Tile.Rope) {
+      const coils = rollUpRope(this.world, tx, ty);
+      this.dropList.push(new ItemDrop('rope_coil', coils, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
+    }
   }
 
   /**
@@ -1315,14 +1418,29 @@ export class Game {
       pinned: this.pinnedRecipe,
       pickaxeTier: this.inventory.bestPickaxeTier(),
       profile: this.profile,
+      stats: player.stats,
     };
   }
 
+  private openPanel(): void {
+    this.inventoryPanel.open = true;
+    this.statsAtOpen = this.player.stats;
+  }
+
+  /**
+   * Close the inventory panel: a held stack is put away (what doesn't fit drops at the player),
+   * and if changing gear changed any stats, a toast says how, so nothing changes unexplained.
+   */
   private closePanel(): void {
     this.inventoryPanel.open = false;
+    this.inventoryPanel.stopSearch();
     this.openChest = null;
     const leftover = this.inventory.returnCursor();
     if (leftover) this.dropAtPlayer(leftover.item, leftover.count);
+    const before = this.statsAtOpen;
+    this.statsAtOpen = null;
+    const after = computeStats(this.inventory.gearModifiers());
+    for (const change of before ? statChanges(before, after) : []) this.toasts.show(`Gear: ${change}`, 4);
   }
 
   /** The chest in reach nearest the player, for E to open with the inventory, or null. */
@@ -1488,8 +1606,10 @@ export class Game {
     this.lifts.pickup = null;
     this.liftPanel.hide();
     const lines = [deathCauseText(cause)];
-    const kept = inventory.slots.some((s) => s && itemDef(s.item).pickaxeTier !== undefined);
-    lines.push(kept ? 'You kept your hotbar and every pickaxe.' : 'You kept your hotbar.');
+    const kept = ['your hotbar'];
+    if (inventory.gear.some((s) => s)) kept.push('your gear');
+    if (inventory.slots.some((s) => s && keptOnDeath(s.item))) kept.push(inventory.count('drill') > 0 ? 'your pickaxes and drill' : 'every pickaxe');
+    lines.push(`You kept ${kept.length > 1 ? `${kept.slice(0, -1).join(', ')} and ${kept[kept.length - 1]}` : kept[0]}.`);
     if (satchel) {
       const dx = (satchel.x + SATCHEL_SIZE / 2 - (spot.x + PLAYER_WIDTH / 2)) / TILE_SIZE;
       const dy = (satchel.y + SATCHEL_SIZE / 2 - (spot.y + PLAYER_HEIGHT / 2)) / TILE_SIZE;
@@ -1542,18 +1662,19 @@ export class Game {
   }
 
   /**
-   * Carried light: the held lantern is a moving light on the player's tile, and each burning
-   * flare one on its own tile. The light map only relights one when it moves to another tile
+   * Carried light: the held lantern and the worn miner's helmet are moving lights on the player's
+   * tile, and each burning flare one on its own tile. The light map only relights one when it moves to another tile
    * or changes brightness.
    */
   private updateCarriedLight(): void {
     const { lightMap } = this;
-    if (this.inventory.selectedStack?.item === 'lantern') {
-      const [tx, ty] = this.playerTile();
-      lightMap.setMovingLight('lantern', tx, ty, LANTERN_LIGHT);
-    } else {
-      lightMap.removeMovingLight('lantern');
-    }
+    const [tx, ty] = this.playerTile();
+    if (this.inventory.selectedStack?.item === 'lantern') lightMap.setMovingLight('lantern', tx, ty, LANTERN_LIGHT);
+    else lightMap.removeMovingLight('lantern');
+    // The miner's helmet (Phase 16): carried light like the lantern's, while it's worn.
+    const helmet = this.player.stats.lightRadius;
+    if (helmet > 0) lightMap.setMovingLight('helmet', tx, ty, helmet * LIGHT_FALLOFF_AIR);
+    else lightMap.removeMovingLight('helmet');
     const burning = new Set<number>();
     for (const flare of this.flareList) {
       burning.add(flare.id);
@@ -1624,7 +1745,7 @@ export class Game {
         8,
       );
     }
-    if (this.heat.update(dt, this.clock.time, this.heatSafety, normal)) this.burn(HEAT_HURT, { kind: 'heat' });
+    if (this.heat.update(dt, this.clock.time, this.heatSafety, normal, player.stats.heatHurtInterval)) this.burn(HEAT_HURT, { kind: 'heat' });
     if (lava && normal) this.burn(LAVA_HURT, { kind: 'lava' });
   }
 
@@ -1633,6 +1754,61 @@ export class Game {
     const before = this.health.hp;
     this.hurt(amount, cause);
     if (this.health.hp < before || this.deathScreen) sfx.sizzle();
+  }
+
+  /** Throw the held flare or bomb toward tile (tx, ty)'s centre. */
+  private throwAt(tx: number, ty: number): void {
+    const item = this.inventory.selectedStack?.item;
+    if (item === 'flare') this.throwFlareAt(tx, ty);
+    else if (item === 'bomb') this.throwBombAt(tx, ty);
+  }
+
+  /** Throw one of the held bombs from the player toward tile (tx, ty)'s centre. */
+  private throwBombAt(tx: number, ty: number): void {
+    const { player, inventory } = this;
+    inventory.removeFromSlot(inventory.selected, 1);
+    this.bombList.push(throwBomb(player.centerX, player.y + 8, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE, inventory.bestPickaxeTier()));
+    // Too many fused at once: the oldest goes off now.
+    if (this.bombList.length > BOMB_MAX) this.explode(this.bombList.shift()!);
+    sfx.bombThrow();
+  }
+
+  /**
+   * A bomb goes off: every tile in the 3 x 3 around it that the thrower's best pickaxe could mine
+   * breaks (with drops, felled trees and the rest, as if mined), and the player is hurt if close.
+   */
+  private explode(bomb: Bomb): void {
+    const { world, player } = this;
+    const [tx, ty] = bombTile(bomb);
+    for (const [x, y] of blastTiles(world, tx, ty, bomb.tier)) {
+      // An earlier break in this blast may have taken it already (a door's other half, a rope).
+      if (!blastBreaks(world, x, y, bomb.tier)) continue;
+      const tile = world.getTile(x, y);
+      world.setTile(x, y, Tile.Air);
+      this.onTileBroken({ tx: x, ty: y, tile });
+    }
+    this.particles.blast(bomb.x, bomb.y);
+    if (!this.settings.reducedFlashes) {
+      for (let y = ty - 1; y <= ty + 1; y++) for (let x = tx - 1; x <= tx + 1; x++) this.flashes.push({ tx: x, ty: y, alpha: 0.7, drawn: false });
+    }
+    this.shake.hit(6);
+    sfx.explosion(this.pan(tx));
+    if (!this.deathScreen && blastHits(tx, ty, player.x, player.y)) this.hurt(BOMB_DAMAGE, { kind: 'bomb' });
+  }
+
+  /** Hang a rope ladder from (tx, ty) with the held rope coil, or say why it can't hang there. */
+  private hangRopeAt(tx: number, ty: number): void {
+    const { world, player, inventory } = this;
+    if (inventory.selectedStack?.item !== 'rope_coil') return;
+    const plan = ropePlan(world, player, tx, ty);
+    if (!plan) {
+      const why = !inReach(player, tx, ty) ? 'Too far away to hang a rope there' : 'A rope hangs from an empty spot with something solid right above it or beside it, like the lip of a shaft';
+      this.toasts.show(why, 4);
+      return;
+    }
+    hangRope(world, tx, ty, plan.length);
+    inventory.removeFromSlot(inventory.selected, 1);
+    sfx.rope(this.pan(tx));
   }
 
   /** Throw one of the held flares from the player toward tile (tx, ty)'s centre. */
@@ -1791,16 +1967,31 @@ export class Game {
     if (extra) this.dropList.push(new ItemDrop(extra, 1, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
   }
 
-  /** Dig ticks every DIG_TICK_INTERVAL while `digging` (holding the mine button on a minable tile). */
-  private digTick(dt: number, digging: boolean, tx: number, ty: number): void {
+  /**
+   * Dig ticks every DIG_TICK_INTERVAL while `digging` (holding the mine button on a minable tile),
+   * or the drill's whir twice as often.
+   */
+  private digTick(dt: number, digging: boolean, tx: number, ty: number, drilling = false): void {
     if (!digging) {
       this.digTickIn = 0; // the first hit on a tile ticks straight away
       return;
     }
     this.digTickIn -= dt;
     if (this.digTickIn > 0) return;
-    this.digTickIn += DIG_TICK_INTERVAL;
-    sfx.dig(tileDef(this.world.getTile(tx, ty)).hardness, this.pan(tx));
+    const hardness = tileDef(this.world.getTile(tx, ty)).hardness;
+    if (drilling) {
+      this.digTickIn += DIG_TICK_INTERVAL / 2;
+      sfx.drill(hardness, this.pan(tx));
+    } else {
+      this.digTickIn += DIG_TICK_INTERVAL;
+      sfx.dig(hardness, this.pan(tx));
+    }
+  }
+
+  /** The drill broke a tile: it burns a coal from the inventory every DRILL_TILES_PER_COAL tiles. */
+  private burnDrillFuel(): void {
+    if (this.drillCharge <= 0 && this.inventory.remove('coal', 1)) this.drillCharge = DRILL_TILES_PER_COAL;
+    this.drillCharge = Math.max(0, this.drillCharge - 1);
   }
 
   /** Jump, landing and footstep sounds, and dust when landing hard. Call after the player moves. */
@@ -1860,8 +2051,20 @@ export class Game {
       if (this.caveIns.isEnabled && isSupport(here)) this.drawRemovalWarning(tx, ty, here, camX, camY);
       return;
     }
-    // Empty tile: a faint outline where the selected block could be placed.
+    // A rope coil: the rope it would unroll, and how far it reaches (Phase 16).
     const stack = this.inventory.selectedStack;
+    if (stack?.item === 'rope_coil' && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty)) {
+      const plan = ropePlan(world, this.player, tx, ty);
+      if (!plan) {
+        renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+        renderer.drawFloatingText('A rope hangs from an edge: something solid above or beside', (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
+        return;
+      }
+      for (let i = 0; i < plan.length; i++) renderer.drawTileOutline(tx, ty + i, i === 0 ? '#ffffff' : 'rgba(255, 255, 255, 0.35)', camX, camY);
+      renderer.drawFloatingText(ropePlanText(plan), (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffe9b0', 1, camX, camY);
+      return;
+    }
+    // Empty tile: a faint outline where the selected block could be placed.
     const tile = stack ? itemDef(stack.item).placeTile : null;
     const camp = tile === Tile.CampTopLeft ? this.campAt() : null;
     if (camp && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty)) {
@@ -2029,6 +2232,19 @@ export class Game {
     return `Lifts: ${lifts.cages.length} cage${lifts.cages.length === 1 ? '' : 's'} (${moving} moving), ${ride}   camp ${camp ? `(${camp.tx}, ${camp.ty})` : 'none'}   respawn at ${this.respawnAt}`;
   }
 
+  /** F3: the worn gear and the stats it changes (Phase 16), the claws' grip and the tools in use. */
+  private gearLine(): string {
+    const { inventory, player } = this;
+    const worn = inventory.gear.flatMap((s) => (s ? [itemDef(s.item).name] : []));
+    const s = player.stats;
+    const wall = player.onWall === 0 ? 'no' : player.onWall > 0 ? 'right' : 'left';
+    return (
+      `Gear: ${worn.join(', ') || 'none'}   reach ${s.reach}  stations ${s.stationRange}  pickup ${s.dropPullRange}  jump ${s.jumpVelocity}  ` +
+      `safe fall ${s.safeFallTiles}  light ${s.lightRadius}  heat every ${s.heatHurtInterval} s  grip ${s.wallGrip} (on wall: ${wall})   ` +
+      `bombs ${this.bombList.length}  drill charge ${this.drillCharge}`
+    );
+  }
+
   /** How many planted saplings and sprouts are waiting to grow. */
   private plantCount(): number {
     let n = 0;
@@ -2062,6 +2278,7 @@ export class Game {
       this.rulesLine(tx, ty),
       `Cave-ins ${this.caveIns.isEnabled ? 'on' : 'off (Cozy)'}   shaking ${this.caveIns.warnings.size}   falling ${this.caveIns.falling.length}   rechecks queued ${this.tileUpdates.size}`,
       this.liftLine(),
+      this.gearLine(),
       ...overlayHelpLines(),
       ...debugLines,
     ]);

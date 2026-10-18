@@ -78,10 +78,10 @@ src/input.ts     the action table (every key binding), keyboard + mouse state
 src/debug.ts     ?debug testing shortcuts
 src/world/       tiles, chunked storage, generation and strata, lighting, supports, heat, plants,
                  tile entities, doors, beds, the camp, lift rails and stops, explored map
-src/entities/    player physics, item drops, flares
+src/entities/    player physics, item drops, flares, bombs
 src/systems/     items, inventory, mining, building, crafting, chests, saves and backups, health,
-                 death, dread, heat, cave-ins, lifts, goal and map pins, settings, clock, stats,
-                 hints
+                 death, dread, heat, cave-ins, lifts, goal and map pins, settings, clock, stats
+                 (and the gear they come from), tools (bomb blasts, rope coils, drill fuel), hints
 src/render/      camera, textures, renderer, parallax, particles, juice, map image
 src/ui/          HUD, vitals, menus and panels, the lift panel, map, controls and key hints, guidance
 src/audio/sfx.ts every sound effect and stratum ambience (Web Audio)

@@ -9,6 +9,7 @@ import {
   WORLD_WIDTH,
 } from './config';
 import { DEBUG, debugState } from './debug';
+import { bombsFromSave } from './entities/bomb';
 import { flaresFromSave } from './entities/flare';
 import { Game, type FrameStats } from './game';
 import { actionPressed, consumeWheel, endInputStep, initInput } from './input';
@@ -171,12 +172,12 @@ function applySettings(): void {
 
 /**
  * Health, difficulty, bed, satchels, cave-ins, dread, flares, the pinned recipe, the map pins,
- * when the Heart of the Deep was claimed, and the respawn choice and lift cages (Phase 15):
- * the game's saved state beyond the player and inventory.
+ * when the Heart of the Deep was claimed, the respawn choice and lift cages (Phase 15), and
+ * bombs (Phase 16): the game's saved state beyond the player and inventory.
  */
 function survival(game: Game): SurvivalState {
-  const { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt, respawnAt, lifts } = game;
-  return { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt, respawnAt, lifts };
+  const { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt, respawnAt, lifts, bombs } = game;
+  return { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt, respawnAt, lifts, bombs };
 }
 
 /** The game as a save, right now. */
@@ -324,6 +325,7 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
             heartClaimedAt: typeof save.heartClaimedAt === 'number' && Number.isFinite(save.heartClaimedAt) ? save.heartClaimedAt : null,
             respawnAt: save.respawnAt === 'camp' ? 'camp' : 'bed',
             lifts: new Lifts(world, save.lifts),
+            bombs: bombsFromSave(save.bombs),
           }
         : { difficulty },
     );

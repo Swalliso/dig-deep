@@ -473,6 +473,23 @@ function ladder(img: ImageData): void {
   }
 }
 
+/** A rope ladder (Phase 16): two twisted ropes down the sides with thin wooden rungs. */
+function rope(img: ImageData): void {
+  const c = rgb(tileDef(Tile.Rope).color);
+  const rung: RGB = [140, 100, 60];
+  for (let y = 0; y < S; y++) {
+    const twist = y % 3 === 0 ? 0.75 : 1.05;
+    put(img, 4, y, c, twist);
+    put(img, 5, y, c, 0.8);
+    put(img, 10, y, c, twist);
+    put(img, 11, y, c, 0.8);
+  }
+  for (const y of [3, 11]) {
+    for (let x = 4; x < 12; x++) put(img, x, y, rung, x === 4 || x === 11 ? 0.8 : 1.1);
+    for (let x = 6; x < 10; x++) put(img, x, y + 1, rung, 0.7);
+  }
+}
+
 /** A thin plank along the top of the tile, held by two small brackets. */
 function platform(img: ImageData, rng: Rng): void {
   const c = rgb(tileDef(Tile.Platform).color);
@@ -748,6 +765,7 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.CampTopRight: return campPart(img, rng, 1, 0);
     case Tile.CampBottomLeft: return campPart(img, rng, 0, 1);
     case Tile.CampBottomRight: return campPart(img, rng, 1, 1);
+    case Tile.Rope: return rope(img);
   }
 }
 
@@ -873,6 +891,148 @@ function campIcon(img: ImageData, color: string): void {
   }
 }
 
+// --- Phase 16: accessories and tools ---
+
+/** Fill pixel rows: each entry is [y, x0, x1] (inclusive), all with one color and shade. */
+function rows(img: ImageData, c: RGB, spans: [number, number, number][], shade = 1): void {
+  for (const [y, x0, x1] of spans) for (let x = x0; x <= x1; x++) put(img, x, y, c, shade);
+}
+
+/** A miner's helmet: a hard hat with a brim and a lamp shining at its front. */
+function helmetIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  rows(img, c, [[4, 6, 9], [5, 4, 11], [6, 3, 12], [7, 3, 12], [8, 3, 12], [9, 3, 12]]);
+  rows(img, c, [[4, 6, 7], [5, 4, 6], [6, 3, 4]], 1.25);
+  rows(img, c, [[10, 1, 14]], 0.75);
+  rows(img, c, [[9, 7, 8], [8, 7, 8], [7, 7, 8], [6, 7, 8], [5, 7, 8]], 0.85); // the ridge
+  const lamp: RGB = [255, 244, 190];
+  rows(img, [70, 72, 80], [[6, 11, 13], [7, 11, 13], [8, 11, 13]]);
+  put(img, 12, 7, lamp);
+  put(img, 14, 7, lamp, 0.8);
+  put(img, 15, 6, lamp, 0.6);
+  put(img, 15, 8, lamp, 0.6);
+}
+
+/** A toolbelt: a leather strap with a buckle and a hammer and a pouch hanging from it. */
+function beltIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  rows(img, c, [[6, 0, 15], [7, 0, 15]], 1.1);
+  rows(img, c, [[8, 0, 15]], 0.7);
+  rows(img, [242, 201, 76], [[5, 6, 9], [9, 6, 9]]);
+  put(img, 6, 6, [242, 201, 76]);
+  put(img, 6, 7, [242, 201, 76]);
+  put(img, 9, 6, [242, 201, 76]);
+  put(img, 9, 7, [242, 201, 76]);
+  rows(img, c, [[9, 1, 4], [10, 1, 4], [11, 1, 4], [12, 2, 3]], 0.9); // pouch
+  const iron: RGB = [160, 165, 175];
+  rows(img, [107, 74, 43], [[9, 12, 12], [10, 12, 12], [11, 12, 12], [12, 12, 12]]); // hammer handle
+  rows(img, iron, [[13, 10, 14], [14, 10, 14]]);
+}
+
+/** A charm: a gem in a metal ring, hanging from a cord. */
+function charmIcon(img: ImageData, color: string): void {
+  const cord: RGB = [120, 90, 60];
+  for (const [x, y] of [[3, 1], [4, 2], [5, 3], [6, 4], [12, 1], [11, 2], [10, 3], [9, 4]] as [number, number][]) put(img, x, y, cord);
+  const iron: RGB = [190, 194, 202];
+  rows(img, iron, [[5, 6, 9], [13, 6, 9]]);
+  for (let y = 6; y < 13; y++) {
+    put(img, 4, y, iron, 0.85);
+    put(img, 11, y, iron, 0.85);
+  }
+  put(img, 5, 5, iron);
+  put(img, 10, 5, iron);
+  put(img, 5, 13, iron, 0.8);
+  put(img, 10, 13, iron, 0.8);
+  const c = rgb(color);
+  rows(img, c, [[7, 6, 9], [8, 5, 10], [9, 5, 10], [10, 6, 9], [11, 7, 8]]);
+  put(img, 6, 7, [255, 255, 255]);
+}
+
+/** A long-handled grip: a long wooden shaft with a metal clamp and a padded handle. */
+function gripIcon(img: ImageData, color: string): void {
+  const wood: RGB = [150, 106, 62];
+  for (let i = 0; i < 13; i++) {
+    put(img, 1 + i, 14 - i, wood, 1.05);
+    put(img, 2 + i, 14 - i, wood, 0.75);
+  }
+  const c = rgb(color);
+  rows(img, c, [[1, 12, 14], [2, 12, 14], [3, 11, 13]]);
+  rows(img, [60, 44, 36], [[12, 2, 3], [13, 1, 3], [14, 1, 2]]); // wrapped handle
+}
+
+/** A boot, in the given color, with a darker sole. */
+function bootsIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  rows(img, c, [[2, 4, 9], [3, 4, 9], [4, 4, 9], [5, 4, 9], [6, 4, 9], [7, 4, 9], [8, 4, 10], [9, 4, 12], [10, 4, 13], [11, 4, 13]]);
+  rows(img, c, [[2, 4, 9]], 1.25);
+  for (let y = 3; y < 11; y++) put(img, 4, y, c, 1.15);
+  rows(img, [40, 34, 30], [[12, 3, 14], [13, 3, 14]]);
+}
+
+/** A ward: a ruby in a gold amulet, with a little flame mark. */
+function wardIcon(img: ImageData, color: string): void {
+  const gold: RGB = [242, 201, 76];
+  rows(img, gold, [[2, 6, 9], [3, 4, 11], [12, 4, 11], [13, 6, 9]]);
+  for (let y = 4; y < 12; y++) {
+    put(img, 3, y, gold, 0.85);
+    put(img, 12, y, gold, 0.85);
+  }
+  const c = rgb(color);
+  rows(img, c, [[4, 6, 9], [5, 5, 10], [6, 4, 11], [7, 4, 11], [8, 4, 11], [9, 5, 10], [10, 5, 10], [11, 6, 9]]);
+  rows(img, [255, 190, 90], [[6, 7, 8], [7, 7, 7], [8, 7, 8], [9, 8, 8]]);
+  put(img, 5, 5, [255, 255, 255], 0.9);
+}
+
+/** Climbing claws: three hooked metal blades on a strap. */
+function clawsIcon(img: ImageData, color: string): void {
+  rows(img, [120, 84, 52], [[9, 3, 12], [10, 3, 12], [11, 3, 12]]);
+  const c = rgb(color);
+  for (const x0 of [3, 7, 11]) {
+    for (let y = 2; y < 9; y++) put(img, x0, y, c, y < 4 ? 1.25 : 1);
+    put(img, x0 - 1, 2, c, 1.1);
+    put(img, x0 - 2, 3, c, 0.9);
+  }
+}
+
+/** A bomb: a round black body with a shine, a cap and a lit fuse. */
+function bombIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  rows(img, c, [[5, 6, 9], [6, 4, 11], [7, 3, 12], [8, 3, 12], [9, 3, 12], [10, 3, 12], [11, 4, 11], [12, 4, 11], [13, 6, 9]]);
+  rows(img, c, [[6, 5, 6], [7, 4, 5]], 1.8);
+  rows(img, [120, 120, 130], [[4, 7, 8]]);
+  put(img, 9, 3, [160, 130, 90]);
+  put(img, 10, 2, [160, 130, 90]);
+  put(img, 11, 1, [255, 220, 120]);
+  put(img, 12, 0, [255, 255, 220]);
+  put(img, 12, 2, [255, 160, 60]);
+}
+
+/** A rope coil: loops of rope seen from the side. */
+function ropeIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  for (const [cy, r] of [[8, 6], [8, 4], [8, 2]] as [number, number][]) {
+    for (let a = 0; a < 40; a++) {
+      const x = Math.round(8 + Math.cos((a / 40) * Math.PI * 2) * r);
+      const y = Math.round(cy + Math.sin((a / 40) * Math.PI * 2) * r * 0.8);
+      put(img, Math.min(S - 1, Math.max(0, x)), Math.min(S - 1, Math.max(0, y)), c, a % 4 < 2 ? 1.1 : 0.8);
+    }
+  }
+  rows(img, c, [[14, 12, 15]], 0.9); // the loose end
+}
+
+/** A drill: a metal body with a handle and a spiral bit pointing right. */
+function drillIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  rows(img, c, [[4, 2, 9], [5, 1, 10], [6, 1, 10], [7, 1, 10], [8, 2, 9]]);
+  rows(img, c, [[4, 2, 9]], 1.3);
+  rows(img, [50, 50, 58], [[9, 3, 6], [10, 4, 6], [11, 4, 6], [12, 4, 6], [13, 3, 7]]); // handle
+  const bit: RGB = [200, 204, 212];
+  rows(img, bit, [[5, 11, 12], [6, 11, 14], [7, 11, 12]]);
+  put(img, 15, 6, bit, 0.8);
+  put(img, 12, 5, bit, 0.65);
+  put(img, 13, 7, bit, 0.65);
+}
+
 /** Item icons: ITEM_IDS[i] lives at x = i * TILE_SIZE. Tile items reuse their tile texture. */
 export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement {
   const atlas = document.createElement('canvas');
@@ -894,6 +1054,16 @@ export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement 
     else if (icon.shape === 'flare') flareIcon(img, icon.color);
     else if (icon.shape === 'gem') gemIcon(img, icon.color);
     else if (icon.shape === 'camp') campIcon(img, icon.color);
+    else if (icon.shape === 'helmet') helmetIcon(img, icon.color);
+    else if (icon.shape === 'belt') beltIcon(img, icon.color);
+    else if (icon.shape === 'charm') charmIcon(img, icon.color);
+    else if (icon.shape === 'grip') gripIcon(img, icon.color);
+    else if (icon.shape === 'boots') bootsIcon(img, icon.color);
+    else if (icon.shape === 'ward') wardIcon(img, icon.color);
+    else if (icon.shape === 'claws') clawsIcon(img, icon.color);
+    else if (icon.shape === 'bomb') bombIcon(img, icon.color);
+    else if (icon.shape === 'rope') ropeIcon(img, icon.color);
+    else if (icon.shape === 'drill') drillIcon(img, icon.color);
     else pickaxeIcon(img, icon.color);
     ctx.putImageData(img, i * S, 0);
   });

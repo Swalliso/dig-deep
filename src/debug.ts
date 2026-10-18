@@ -90,6 +90,27 @@ const KIT: ReadonlyArray<[ItemId, number]> = [
   ['crossbeam', 99],
 ];
 
+/** Phase 16's gear kit (Shift+G): every accessory, and the tools with fuel for the drill. */
+const GEAR_KIT: ReadonlyArray<[ItemId, number]> = [
+  ['miner_helmet', 1],
+  ['toolbelt', 1],
+  ['magnet_charm', 1],
+  ['long_grip', 1],
+  ['spring_boots', 1],
+  ['padded_boots', 1],
+  ['heat_ward', 1],
+  ['climbing_claws', 1],
+  ['bomb', 30],
+  ['rope_coil', 10],
+  ['drill', 1],
+  ['coal', 40],
+];
+
+/** Add the gear kit. Anything that doesn't fit is skipped. */
+export function giveGearKit(inventory: Inventory): void {
+  for (const [item, count] of GEAR_KIT) inventory.add(item, count);
+}
+
 /** Add the materials kit. Anything that doesn't fit is skipped. */
 export function giveDebugKit(inventory: Inventory): void {
   for (const [item, count] of KIT) inventory.add(item, count);
@@ -227,7 +248,7 @@ export function heartSpot(world: World): { tx: number; ty: number } | null {
 
 export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean, god: boolean): string[] {
   return [
-    `DEBUG  ${mainKey('debugGive')}: give materials   ${mainKey('debugLighting')}: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
+    `DEBUG  ${mainKey('debugGive')}: give materials (${mainKey('modifier')}+${mainKey('debugGive')}: gear kit)   ${mainKey('debugLighting')}: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
     `       ${mainKey('debugFly')}: fly ${flying ? 'ON' : 'off'} (${keyPairs('climbUp', 'climbDown', undefined, '/')}, ${mainKey('modifier')} fast)   ${mainKey('debugInstantMine')}: instant mine ${instantMine}`,
     `       ${mainKey('debugOres')}: ore patch at the cursor   ${mainKey('debugLadderShaft')}: ${LADDER_SHAFT_LENGTH} m ladder shaft down from the cursor   ${mainKey('debugRevealMap')}: reveal the map`,
     `       ${mainKey('debugGodMode')}: god mode ${god ? 'ON' : 'off'} (and heal)   ${mainKey('debugHurt')}: take 2 damage (fly up and turn fly off to test falls)`,
