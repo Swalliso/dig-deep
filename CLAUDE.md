@@ -2,7 +2,7 @@
 
 Side-view 2D mining/building sandbox that runs in the browser. The original design lives in
 `SPEC.md` (phases 1–7, all done); what comes next is planned in `ROADMAP.md` (phases 8+). This
-file is the short version plus the working rules.
+file holds only what every session needs; topic details live in `.claude/rules/` (see the end).
 
 ## How we work
 
@@ -14,6 +14,10 @@ file is the short version plus the working rules.
   exact steps to check that phase's acceptance criteria and stop.
 - Each phase is built on its own branch, `feature/phase-N-short-name`, made from `develop`.
   The user commits on that branch after every working phase.
+- **Where things get written down**: what a phase built goes in its ROADMAP.md "As built" notes
+  and its PR description, not here. Keep this file to rules every session needs; put details
+  that only matter when touching certain files in the matching `.claude/rules/` file (or a new
+  one with a `paths:` list), so they load only when those files are opened.
 - **Branches and deployment** (repo github.com/Swalliso/dig-deep):
 
   | Branch | Role | Deploys to |
@@ -26,336 +30,108 @@ file is the short version plus the working rules.
   Every push to `main` or `develop` runs `.github/workflows/deploy.yml`, which tests and builds
   both branches (develop with `npm run build:dev`) and publishes them as one Pages site, so
   pushing either branch publishes. `ci.yml` runs tests plus both builds on PRs and on feature and
-  hotfix pushes. **Only push, open PRs or merge when the user asks**, and never touch `main`
+  hotfix pushes; its runner is much slower than a dev PC, so keep each test well under Vitest's
+  5 s timeout. **Only push, open PRs or merge when the user asks**, and never touch `main`
   without being asked for a release or hotfix. Commits in this repo use the GitHub no-reply
   address (set in the local git config).
 - **Dev-site builds** (`--mode develop`, see `src/channel.ts`) save under `dig-deep-dev:` keys,
   title the page "Dig Deep (dev)" and show a DEV BUILD tag on the title screen. Both sites share
   the swalliso.github.io origin, so every IndexedDB/localStorage key must go through
   `storageKey()`; the live keys (`dig-deep:save`) must never change.
+- **Debug mode**: `?debug` in the URL turns on testing shortcuts (`src/debug.ts`; the full list is
+  in `.claude/rules/debug.md` and README.md). Each phase adds shortcuts for anything slow to reach
+  and mentions them in its test steps.
 
 ## Changes from SPEC.md (agreed with the user)
 
-These override the spec. Don't revert them.
+These override the spec. Don't revert them. Details are in the rules file named after each.
 
-- **Mining damage persists per tile, for a while.** The spec resets break progress when the
-  cursor moves to another tile; instead each tile keeps its damage (and cracks) even if the
-  cursor moves away or the button is released. After `DAMAGE_REPAIR_DELAY` (3 s) without a
-  hit it heals back to full over `DAMAGE_REPAIR_TIME`, so a stray hit doesn't leave a tile
-  cracked forever.
-- **Trees fall.** Breaking a trunk tile also breaks the trunk above it and the tree's canopy
-  (wood drops, leaves just burst); the stump below the cut stays.
-- **Player glow.** A faint ~3-tile glow around the player (`PLAYER_GLOW`) so you can see where
-  to put a torch in a pitch-black cave. It's applied when drawing the darkness overlay only;
-  the light map (and "caves are dark") is unaffected, so it never keeps dread away. It's drawn
-  like any other light, with no special tint: the dread meter and the status line under it are
-  what tell the player they're unsafe (agreed with the user in Phase 13).
-- **Light rules (Phase 13's light design gate, decided with the user).** Any light at the
-  player's tile of at least `DREAD_SAFE_LIGHT` keeps dread from rising and drains it, carried
-  light (the held lantern, flares) included. Health only regenerates in *established* light:
-  the light map without moving lights (sky, torches, glowing tiles). No fuel or other meter for
-  now; a balance pass (maybe lantern fuel) is backlogged in ROADMAP.md.
-- **Mouse: left uses what's held, right interacts.** A left press decides what its hold does
-  (`primaryAction` in `systems/building.ts`): holding a block over an empty spot places it
-  (hold to sweep), anything else digs with the best carried pickaxe, and held tools will get
-  their own actions. Right-click only interacts (chests, doors, later beds and lift stops); it
-  never digs or places. In the crafting panel it pins a recipe, and on the full map it adds or
-  picks a map pin (the `pin` action). E or Tab also opens the nearest chest in reach. The spec had left mine
-  and right place; a tester found right-click doing both placing and interacting confusing.
-- **Jump corner correction.** A jump whose head clips a ceiling edge on one side only, by at
-  most `JUMP_CORNER_CORRECTION` (6 px), slides sideways past it and keeps rising, so jumping
-  into a one-tile hole doesn't need perfect alignment. Only if the shifted box is clear; a
-  head-on hit still stops the jump, and jump height is unchanged. Not on ladders or in fly mode.
-- **S drops through platforms.** Pressing S while standing on a platform drops through it
-  (ROADMAP's Phase 10 had S + Space, which still works). Holding S keeps dropping through the
-  platforms below; letting go stops on the next one. S held since before landing (falling or
-  off a ladder) doesn't drop, so only a fresh press starts a drop.
-- **Diagonal light**, **"Height: N m"** above the surface level, and the floating "Need better
-  pickaxe" hint (instead of a toast) were all reviewed and kept.
-- **Saving soon after changes.** Besides the spec's 60 s autosave and save-on-pause, anything
-  that changed is saved within `SAVE_CHANGES_AFTER` (2 s), because browsers drop IndexedDB
-  writes made while a page unloads. Deleting a world from the Worlds screen asks for a second
-  click.
-
-## Debug mode
-
-Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
-**G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
-chests, two beds, a lantern, flares, glowshrooms, glow crystals, saplings, mushroom spores, gem
-lamps, and stacks of ladders, platforms, doors, gravel, beams and crossbeams), **F**
-toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
-**I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
-bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
-(fullbright) for exploring, **O** puts a 7 x 2 patch of every ore and gem at the cursor (for
-ore sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, **V** reveals the
-whole map, **H** toggles god mode (and heals), **J** deals 2 damage (to test falls, fly up
-with F and turn fly off), **B** puts a 3 x 3 block of gravel at the cursor (in the open it
-shakes and falls at once; in rock it's a pocket to dig under), **U** fills the dread meter
-(again: empties it), **Y** goes to the top of the next stratum in a strata world (from the Magma
-Layer, back to the spawn; it carves a pocket if there's no open space near the top), **P**
-makes every planted sapling and mushroom sprout grow now (if it has room), **X** stands the
-player on the roof of the Heart of the Deep's chamber (strata v2 worlds) and **Z** puts 4 lava
-tiles at the cursor (to try heat and insulation anywhere). The kit also has floatstone. Debug mode also opens the F3 overlay at start, the title screen gets a button
-that marks the most recent world as an older version (to test the version-mismatch screen), and
-the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
-mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
-and `window.digDeep` exposes the running game for scripted browser checks (`screen`, `game`,
-`pausedBy`, `lastSavedAt`, `state`, `save()`, `backupText()`, `importBackup(text)`). All cheats
-live in `src/debug.ts`; their keys are the `debug*` actions in `src/input.ts`. When a new phase
-adds something slow to reach by playing, add a shortcut there and mention it in the phase's
-test steps.
+- Mining damage persists per tile and heals after 3 s without a hit (`player-and-input.md`).
+- Trees fall: breaking a trunk also breaks the trunk above it and the canopy (wood drops, leaves
+  burst); the stump below the cut stays.
+- Left mouse uses what's held (place a held block, otherwise dig); right-click only interacts
+  (`player-and-input.md`).
+- Jump corner correction, and S drops through platforms (`player-and-input.md`).
+- Light: a faint player glow that's only drawn; carried light holds dread off, only established
+  light heals (`lighting.md`).
+- Diagonal light, "Height: N m" above the surface level, and the floating "Need better pickaxe"
+  hint were reviewed and kept.
+- Saving soon after changes: besides the 60 s autosave and save-on-pause, anything that changed
+  is saved within `SAVE_CHANGES_AFTER` (2 s), because browsers drop IndexedDB writes made while a
+  page unloads. Deleting a world asks for a second click.
 
 ## Stack
 
-| Piece     | Choice                                                    |
-| --------- | --------------------------------------------------------- |
-| Language  | TypeScript, `strict` mode                                 |
-| Build     | Vite (`npm run dev`, `npm run build`)                     |
-| Rendering | Plain HTML5 Canvas 2D. No game engine.                    |
-| Noise     | `simplex-noise`                                           |
-| Tests     | Vitest (`npm test`), files in `tests/`                    |
-| Saves     | `idb-keyval` (IndexedDB), added in Phase 6                |
-| Art       | Procedural pixel art generated in code; no external assets |
+TypeScript (`strict`), Vite (`npm run dev`, `npm run build`, `npm run build:dev`), plain HTML5
+Canvas 2D with no game engine, `simplex-noise`, Vitest (`npm test`, files in `tests/`),
+`idb-keyval` for IndexedDB saves, and procedural pixel art and sound generated in code (no
+external assets).
 
 ## Folder layout
 
 ```
-index.html           page shell, menu styles, favicon link
-vite.config.ts       base './' so dist/ works from any folder on any static host; dev-site title
-                     and noindex for `--mode develop`
-.github/workflows/   deploy.yml (main + develop → Pages), ci.yml (PRs, feature/hotfix branches)
-public/favicon.svg   pixel-art favicon (copied into dist/ as is)
-public/og-image.png  1200x630 link-preview image (Discord/Slack/etc., via the og:/twitter: tags in
-                     index.html, which use absolute swalliso.github.io URLs). Rendered with the
-                     game's own renderer: seed 42, view centred on tile x 821 from row 112, with a
-                     shaft, three torches and a few ores added, then upscaled 2x nearest-neighbour
-README.md            how to play, develop, branches and deploys
-SPEC.md              original design and phases 1–7
-ROADMAP.md           post-MVP design and phases 8+
-src/
-  main.ts            boot, screens (title → loading → playing ⇄ paused), world slots, game
-                     loop, saving
-  game.ts            one play session: world, player, inventory, mining, lighting, sounds, map,
-                     HUD
-  config.ts          every tunable number
-  channel.ts         live vs dev-site build, storageKey() for every saved key
-  input.ts           the action table (every key binding) and keyboard + mouse state, read
-                     through actionDown/actionPressed; typing mode (naming a map pin)
-  debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining, next
-                     stratum)
-  util/rng.ts        seeded PRNG (shared by world gen and textures)
-  audio/
-    sfx.ts           every sound effect and each stratum's ambience (a looping bed plus events),
-                     synthesized with Web Audio (no audio files); starts on the first click or
-                     key press
-  world/
-    tiles.ts         tile registry (id, name, hardness, min tier, color, drop, chance drop,
-                     solid, climbable, one-way, light, plant), floor checks
-    world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile, the world's
-                     generation profile and stratum boundaries
-    generate.ts      generation profiles (frozen 'classic', 'gravel' and 'strata' v1; 'strata'
-                     v2 for new worlds); seeded terrain, strata, caves, crystal caverns, ores,
-                     gravel pockets, trees, giant mushrooms, glowshrooms, glow crystals,
-                     floatstone, the Heart of the Deep's chamber, hot rock, lava pools, bedrock,
-                     spawn
-    strata.ts        the strata table (name, depths, rock, look, ambience, rule), which stratum a
-                     tile is in, the banner's text, the stratum tracker (with hysteresis); damp
-                     torch light and the floatstone field (Phase 14b)
-    heat.ts          heat fields: lava and hot rock heat nearby tiles, kept out by insulating
-                     tiles; worked out on demand for a box (the player, the screen)
-    plants.ts        saplings and mushroom sprouts: where they can be planted, growing trees and
-                     giant mushrooms (also used by generation), growing the ones due
-    supports.ts      loose tiles and what holds them up: firm ground, anchored beams (posts) and
-                     crossbeams/platforms (spans); the support preview
-    tileUpdates.ts   active tile updates: a queue of tiles to recheck after a change next to them,
-                     worked through with a per-step budget
-    trees.ts         felling: cutting a trunk (or a giant mushroom's stem) removes what's above
-                     the cut
-    lighting.ts      per-tile light: sky columns + torches + glowing tiles, spread with falloff,
-                     incremental relight; moving lights (lantern, flares) in their own patches
-    tileEntities.ts  per-tile data (chest contents, when a planted sapling grows), keyed by
-                     ty * width + tx, removed when the tile changes
-    doors.ts         doors: two tiles each (open and closed are separate tile ids), toggling,
-                     finding the other half
-    beds.ts          beds: two tiles side by side (the respawn point), finding the other half
-    explored.ts      which tiles the player has seen (the map's fog of war), per chunk
-  entities/
-    player.ts        movement, jump, tile collision, auto step-up, ladder climbing, one-way
-                     platforms
-    itemDrop.ts      dropped items: fall, fly to the player within 2 tiles, picked up on touch
-    flare.ts         thrown flares: flight, sticking to a tile, burn time, saved form
-  systems/
-    items.ts         item registry (name, max stack, tile it places, icon, pickaxe tier)
-    inventory.ts     40 slots (10 hotbar + 30 bag), stacking, cursor stack, shift-move,
-                     trash slot, pick block, best pickaxe, starting items
-    mining.ts        reach + tier checks, break progress, crack stage, hints
-    building.ts      placement rules (empty, in reach, supported, not on the player), door
-                     placement, drag-build lines, middle-click pick, quick torch's spot
-    caveIns.ts       shaking and falling gravel: warnings, falling blocks, landing, damage, Cozy,
-                     saved state; beams that lose their footing break
-    hints.ts         one-time hints already seen (per device, localStorage)
-    clock.ts         the session clock (seconds of simulated play) and what can pause it
-    stats.ts         PlayerStats: base values from config plus gear/boon modifiers (reach,
-                     station range, drop pull, run/jump, max health, safe fall height)
-    health.ts        HP, hurt protection and regeneration (on the session clock), difficulty
-                     (Cozy/Normal), fall damage
-    dread.ts         the dread meter (rises in the dark, hurts when full), light safety (dark /
-                     carried / established) and the HUD status line
-    heat.ts          heat exposure: a grace in hot zones, then burns; its HUD status line (it
-                     takes over the dread meter's line)
-    death.ts         satchels (the bag left on death) and collecting them, the respawn point
-                     (bed, or a safe fallback near spawn)
-    crafting.ts      recipe table and groups (the panel's tabs), station range checks, craft()
-                     (inventory first, then nearby chests)
-    goal.ts          the pinned recipe (next goal): its ingredient counts and station, where
-                     raw materials are found (from the world's profile), the next pickaxe to
-                     suggest
-    mapPins.ts       the player's named map pins (explored tiles only, MAP_PIN_MAX) and the
-                     tracked one
-    chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
-    save.ts          save format (seed + changed chunks, RLE) + world slots in IndexedDB via
-                     idb-keyval (each save stored with a small world-list entry)
-    backup.ts        world backup files: export a save as JSON, check one before importing
-    settings.ts      player settings (master, effects and ambience volumes, screen shake, reduced
-                     flashes, pixel scale, FPS counter) in localStorage
-  render/
-    camera.ts        camera position, clamping
-    textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
-    renderer.ts      sky, parallax background, underground backdrop (per stratum in strata
-                     worlds), cached chunk canvases, light overlay, colored glow around glowing
-                     tiles, entities, ore glints, break flashes
-    parallax.ts      background layers built per world from its seed as repeating strips: the
-                     surface's clouds, mountains and hills, and each stratum's underground set
-                     (ledges with stalactites, mushrooms, crystals or basalt columns, repeating
-                     both ways); scroll math (layer sets in config.ts)
-    particles.ts     cosmetic break particles and landing dust (Math.random is fine here)
-    juice.ts         screen shake, break flash strength, where and when ores glint
-    mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
-  ui/
-    hud.ts           hotbar, toasts, depth meter, a stratum's entry banner, F3 debug overlay,
-                     slot/stack drawing helpers
-    vitals.ts        hearts, the protection bar, the way to a satchel, the death screen
-    controls.ts      the controls list for the Controls screen and every on-screen key hint
-                     (F3 help, map help, tooltips), built from the action table; a test keeps
-                     README.md's table matching it and every row short enough to fit
-    menus.ts         inventory + chest + crafting panel (a tab per recipe group) with tooltips
-                     (canvas); title, worlds, new world, controls, settings, pause (HTML in #ui)
-    map.ts           full-screen map (M: pan, zoom, markers, pins and the pin editor) and the
-                     corner minimap (N)
-    guidance.ts      the pinned recipe's lines on the HUD
-tests/               Vitest unit tests (world gen, inventory, crafting, settings, juice, ...)
+src/main.ts      boot, screens (title → loading → playing ⇄ paused), world slots, loop, saving
+src/game.ts      one play session: world, player, systems, HUD
+src/config.ts    every tunable number
+src/channel.ts   live vs dev-site build, storageKey()
+src/input.ts     the action table (every key binding), keyboard + mouse state
+src/debug.ts     ?debug testing shortcuts
+src/world/       tiles, chunked storage, generation and strata, lighting, supports, heat, plants,
+                 tile entities, doors, beds, explored map
+src/entities/    player physics, item drops, flares
+src/systems/     items, inventory, mining, building, crafting, chests, saves and backups, health,
+                 death, dread, heat, cave-ins, goal and map pins, settings, clock, stats, hints
+src/render/      camera, textures, renderer, parallax, particles, juice, map image
+src/ui/          HUD, vitals, menus and panels, map, controls and key hints, guidance
+src/audio/sfx.ts every sound effect and stratum ambience (Web Audio)
+tests/           Vitest unit tests
 ```
 
-`util/rng.ts`, `render/textures.ts` and `systems/items.ts` are small additions to the spec's
-layout. Item ids are string keys of `ITEMS` (`'dirt'`, `'copper_ore'`, ...); tiles name the item
-they drop.
+Item ids are string keys of `ITEMS` (`'dirt'`, `'copper_ore'`, ...); tiles name the item they
+drop.
 
 ## Conventions
 
 - **Coordinates**: tile coords are integers named `tx`, `ty`. World pixel coords are floats named
-  `x`, `y`. `TILE_SIZE = 16`. `ty` grows downward (row 0 is the top of the sky).
-- **Depth**: `depth = ty - SURFACE_LEVEL` (`SURFACE_LEVEL = 120`), so 1 tile = 1 m and 0 m is the
-  average surface. Ore depth ranges in the spec use this depth. Deepstone starts at absolute
-  row 350, as the generation section says (in strata worlds, give or take its wander, that's
-  where the Geode Depths start).
-- **Tunables**: every tunable number (gravity, speeds, world size, gen parameters) lives in
-  `src/config.ts`. Per-tile data (hardness, min tier, color, drop) lives in the tile registry.
-- **World**: 1000 x 600 tiles, stored as 32 x 32 chunks. Out-of-bounds reads return Bedrock.
-  The same seed must always produce the identical world, so all randomness in generation
-  goes through the seeded RNG. Never use `Math.random()` in generation.
-- **Strata**: worlds made with the `strata` generation profile (every new world since Phase
-  14a) are five depth bands, `STRATA` in `world/strata.ts`: Topsoil, Stone Caverns, Fungal
-  Hollows, Geode Depths, Magma Layer. Each boundary wanders per column and is kept in
-  `world.strataTops` (regenerated from the seed, never saved); `stratumAt(world, tx, ty)` says
-  which stratum a tile is in, and -1 in worlds made with an older profile, which get no stratum
-  banner, ambience or stratum backdrop either. Each stratum has its own rock, and its ores
-  (`OreSpec.stratum`) replace only that rock inside its boundaries. Each stratum's rock and ores
-  need at most the pickaxe made from the strata above it, so there are no circular
-  requirements (a test walks it). Each has a rule (Phase 14b, `Stratum.rule` names it on the
-  banner): in the Fungal Hollows damp air dims torches (`torchLight`, used by the light map),
-  near floatstone (Geode Depths caverns) gravity is lighter and falls are cushioned
-  (`Player.floating`, set by the game each step), and in the Magma Layer lava and hot rock make
-  hot zones (`world/heat.ts`: heat spreads a level less per tile through anything that doesn't
-  insulate; bricks, heartstone and closed doors do) that burn after a grace (`systems/heat.ts`).
-  Lava is a liquid tile: walk-through, can't be dug or built in, hurts on touch, doesn't flow.
-  Strata v2 worlds (new since 14b; v1 is frozen) also have floatstone, hot rock, lava and the
-  Heart of the Deep (`world.heart`, regenerated from the seed); breaking the Heart is the
-  Sandbox's goal. Cozy worlds take no damage from any of it.
-- **Loop**: fixed-timestep `update(dt)` at 60 Hz; `render()` once per `requestAnimationFrame`.
-  Moving things (player, camera) keep `prevX`/`prevY`, and render interpolates between the
-  last two update steps so motion stays smooth on high-refresh screens. Keyboard edge
-  presses (`wasPressed`) are cleared after each update step.
+  `x`, `y`. `TILE_SIZE = 16`. `ty` grows downward (row 0 is the top of the sky). Depth in metres
+  is `ty - SURFACE_LEVEL` (120).
+- **Tunables**: every tunable number lives in `src/config.ts`. Per-tile data (hardness, min tier,
+  color, drop) lives in the tile registry (`world/tiles.ts`). Tile ids are `Uint8`: append new
+  tiles and keep existing ids stable.
+- **World**: 1000 x 600 tiles, stored as 32 x 32 chunks. Out-of-bounds reads return Bedrock. The
+  same seed must always produce the identical world, so all randomness in generation goes through
+  the seeded RNG (`util/rng.ts`). Never use `Math.random()` in generation. New generation goes in
+  a new generation profile; released profiles never change (`world-gen.md`).
+- **Loop**: fixed-timestep `update(dt)` at 60 Hz; `render()` once per `requestAnimationFrame`,
+  interpolating moving things between the last two steps. Keyboard edge presses (`wasPressed`)
+  are cleared after each update step.
 - **Pausing**: the inventory panel, the full map, the pause menu and losing window focus (or
-  hiding the tab) all pause the world. `Game.update` still handles input for the HUD, the
-  panel and the map every step, but only calls `simulate()` while neither is open, and main.ts
-  doesn't call `update` at all while the pause menu is up. Everything timed in the world
-  (physics, drops, mining damage and healing, ore glints, later hazards) takes its time from
-  the simulation step and `Game.clock` (`systems/clock.ts`), never from `Date.now()` or
-  `performance.now()`. Toasts and UI animations run on real time. Focus loss needs an explicit
-  resume, except in debug mode, where it doesn't pause. A stratum's ambience is quieter while
-  the panel, the map or the death screen pauses the world, fades out on the pause menu and the
-  title screen, and its events (drips, chimes) are timed on the session clock; planted saplings
-  grow on the session clock too.
-- **Input**: game code reads keys only through actions (`actionDown('jump')`,
-  `actionPressed('inventory')`) from the table in `input.ts`. Any text that names a key builds
-  it with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test
-  rebinds every action and checks no default key name is left in the hints. While a map pin's
-  name is being typed (`startTyping` in `input.ts`), key presses edit the text instead of
-  reaching the actions, except the `confirm` and `pause` keys, which end the typing; the game
-  ends typing whenever the map closes or the pause menu opens.
-- **Physics**: player intent comes in as a plain `PlayerControls` object, so physics can be
-  unit-tested without the DOM. Movement is split into steps of at most `MAX_MOVE_STEP` px,
-  resolved X then Y, so nothing tunnels through tiles.
-- **Rendering**: `imageSmoothingEnabled = false`, integer camera positions, 2x or 3x pixel scale
-  chosen by window size. Only draw what's on screen; chunk images are cached and redrawn only
-  when one of their tiles changes (tracked with per-chunk version numbers).
-- **Lighting**: `World.onTileChange` (a list of listeners; tile entities and the map image listen too) tells the
-  `LightMap` about every tile change; it relights only the box within light reach of the
-  changes (plus any stretch of a column whose sky light moved), once per update step. Light
-  sources are tiles with `TileDef.light` (gem lamps shine past LIGHT_MAX, which only means the
-  tiles near them are fully lit for longer; a torch in the Fungal Hollows' damp air gives
-  `torchLight()` instead, which depends only on where it is). Moving lights (`setMovingLight`: the held lantern,
-  flares) are kept apart from that established light, each in a small patch relit only when it
-  moves to another tile or a tile in its patch changes; `level()` is the max of both and
-  `established()` leaves moving lights out. Light has no color: glowing tiles' colored glow
-  (`TileDef.glowColor`) is drawn on top by the renderer only. Tests check incremental relighting (with moving
-  lights) against a full recompute; keep them passing when touching lighting.
-- **Saves**: a save is the seed plus only the chunks changed since generation (the rest is
-  regenerated), so **bump `SAVE_VERSION` in `systems/save.ts` whenever world generation, tile
-  ids, chunk/world size or the save format change**; old saves then show "Save from an older
-  version" instead of loading wrong. Items lying on the ground are saved (as an optional
-  `drops` field; adding optional fields like that needs no version bump; heat exposure isn't
-  saved, so a reload starts its few seconds of grace again). Chest contents are
-  saved the same way, as an optional `tileEntities` field (planted saplings and mushroom
-  sprouts are tile entities too, with the session clock time they grow), and so are the map's
-  explored tiles
-  (`explored`, per chunk, RLE), and so is the session clock (`playTime`), and so are the pinned
-  recipe (`pinnedRecipe`, by the item it makes), the map pins (`mapPins`) and when the Heart of
-  the Deep was claimed (`heartClaimedAt`; the world list marks a claimed world). A stack held on the
-  mouse is saved as if put away; whatever doesn't fit is saved as a drop at the player, so
-  saving never loses it. Particles, half-mined tile damage and the trash slot aren't saved.
-  Autosave's change check compares `savedState()` (everything but tiles, map and play time)
-  plus the world's and map's revisions, so new saved state goes in `savedState()`; a test
-  enforces it. Cave-ins (shaking tiles, falling blocks, queued rechecks) are saved as an
-  optional `caveIns` field, so a reload mid-collapse loses and duplicates nothing. Dread
-  (`dread`, in percent so autosave notices it) and burning flares (`flares`, with their time
-  left) are optional fields too. Save & quit only leaves once the write succeeds. Backups (`systems/backup.ts`)
-  are the save as JSON with Uint8Arrays as `{ "$bytes": base64 }`; imports must pass
-  `checkSave` and `findSaveProblem` before anything is written, and replacing a world needs a
-  second click. Each world is a slot: its save under `saveKeyFor(id)` (world 1 keeps the original
-  `dig-deep:save` key so older saves carry over) plus a small `WorldMeta` entry written with it
-  in one transaction, so the title screen lists worlds without loading every save. Each save
-  records its world's **generation profile** (`profile`: name and version; missing = classic)
-  and loading regenerates with it, so existing worlds never pick up new generation. A profile
-  must never change what it generates once released (tests pin classic's and gravel's world
-  hashes): new
-  generation goes in a new profile, and `NEW_WORLD_PROFILE` picks what new worlds get. A
-  profile this version doesn't know reads as a save from a newer version. Keeping
-  old worlds working is nice but never a constraint (testers know breaking changes may come):
-  when it would hold a feature back, bump `SAVE_VERSION` instead. See ROADMAP.md's "World
-  compatibility" row.
-- **Performance**: build things efficiently: never do per-frame work over the whole world,
-  give anything that can pile up a per-step budget, and keep world generation around 2 s. Frame
-  rate isn't a gate for a phase, though; dedicated performance passes come later, measured on
-  the reference device in README.md.
+  hiding the tab) all pause the world. `Game.update` still handles input for the HUD, the panel
+  and the map every step, but only calls `simulate()` while neither is open, and main.ts doesn't
+  call `update` at all while the pause menu is up. Everything timed in the world (physics, drops,
+  mining damage, hazards, plant growth, ambience events) takes its time from the simulation step
+  and `Game.clock` (`systems/clock.ts`), never from `Date.now()` or `performance.now()`. Toasts
+  and UI animations run on real time. Focus loss needs an explicit resume, except in debug mode.
+- **Input**: game code reads keys only through actions from the table in `input.ts`, and any text
+  that names a key is built with the helpers in `ui/controls.ts` (`player-and-input.md`).
+- **Saves**: bump `SAVE_VERSION` in `systems/save.ts` whenever world generation, tile ids,
+  chunk/world size or the save format change. New saved state goes in `savedState()` (a test
+  enforces it), as optional fields that need no version bump. Breaking old worlds is acceptable
+  when keeping them would hold a feature back (`saves.md`).
+- **Performance**: never do per-frame work over the whole world, give anything that can pile up a
+  per-step budget, and keep world generation around 2 s. Frame rate isn't a gate for a phase;
+  performance passes come later, measured on the reference device in README.md.
 - Keep modules small and focused. Prefer plain functions and data over class hierarchies.
+
+## Topic rules (`.claude/rules/`)
+
+Each file loads automatically when Claude opens one of the files listed in its `paths:`.
+
+| File | Covers |
+| --- | --- |
+| `debug.md` | every debug shortcut, `window.digDeep` |
+| `saves.md` | save format, optional fields, backups, world slots |
+| `world-gen.md` | depth, generation profiles, strata and their rules |
+| `lighting.md` | light map, moving lights, the light rules, player glow |
+| `player-and-input.md` | physics, jump and drop rules, mining damage, mouse, actions, typing |
+| `rendering-and-audio.md` | drawing rules, textures, parallax, ambience, the og image |
