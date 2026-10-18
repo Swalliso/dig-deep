@@ -208,7 +208,7 @@ console (`screen`, `game`, `pausedBy`, `save()`, `backupText()`, `importBackup(t
 scripted checks.
 
 `SPEC.md` is the original design spec, `ROADMAP.md` plans what comes next, and `CLAUDE.md`
-describes the code layout and conventions. All tunable numbers (physics, mining, lighting,
+describes the code layout and conventions, with topic details in `.claude/rules/`. All tunable numbers (physics, mining, lighting,
 world generation) live in `src/config.ts`.
 
 **Performance reference.** Performance passes are measured on the developer's Windows 11 PC
