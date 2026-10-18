@@ -168,6 +168,17 @@ export const FALLBACK_SEARCH = 40; // tiles
 // A satchel (the bag contents left where you died) is picked up by touching it.
 export const SATCHEL_SIZE = 10; // px square
 
+// --- Lifts and the camp (Phase 15) ---
+// A lift cage rides a column of lift rail between the lift stops placed beside it. It speeds up
+// to LIFT_SPEED (ladders climb at about 9 tiles/s) and slows down to stop level with a stop.
+export const LIFT_SPEED = 800; // px/s (50 tiles/s: a 300 m ride takes about 7 s)
+export const LIFT_ACCEL = 640; // px/s² (40 tiles/s², both speeding up and slowing down)
+export const LIFT_MIN_SPEED = 32; // px/s; the slowest it creeps in the last pixels before a stop
+export const LIFT_RATTLE_DISTANCE = 96; // px travelled per rattle of the cage on its rail
+export const LIFT_RAILS_PER_BAR = 16; // lift rails crafted from one iron bar (and 2 planks)
+export const LIFT_PANEL_ROWS = 9; // stops listed at once in the lift panel (the wheel scrolls)
+export const LIFT_STOP_NAME_MAX = 18; // characters
+
 // --- Cave-ins and supports (Phase 12) ---
 // Gravel is loose: it rests only on what's directly below it. A tile change rechecks the tiles
 // around it (src/world/tileUpdates.ts, at most TILE_UPDATE_BUDGET rechecks per step), and a
@@ -375,6 +386,7 @@ export const SFX_VOLUMES = {
   flare: 0.4,
   sizzle: 0.4,
   heart: 0.6,
+  lift: 0.4,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile

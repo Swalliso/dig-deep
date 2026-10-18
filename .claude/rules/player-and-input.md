@@ -32,7 +32,7 @@ paths:
 - **Mouse**: a left press decides what its hold does (`primaryAction` in `systems/building.ts`):
   holding a block over an empty spot places it (hold to sweep), anything else digs with the best
   carried pickaxe, and held tools get their own actions. Right-click only interacts (chests,
-  doors, beds, later lift stops); it never digs or places. In the crafting panel it pins a
+  doors, beds, the camp, lift stops); it never digs or places. In the crafting panel it pins a
   recipe, and on the full map it adds or picks a map pin (the `pin` action). E or Tab also opens
   the nearest chest in reach. (The spec had left mine and right place; a tester found right-click
   doing both placing and interacting confusing.)
@@ -42,6 +42,10 @@ paths:
   with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test
   rebinds every action and checks no default key name is left in the hints, and a test keeps
   README.md's controls table matching the Controls screen with every row short enough to fit.
-- **Typing mode**: while a map pin's name is being typed (`startTyping` in `input.ts`), key
-  presses edit the text instead of reaching the actions, except the `confirm` and `pause` keys,
-  which end the typing; the game ends typing whenever the map closes or the pause menu opens.
+- **Lift rides** (Phase 15): while riding, the player is attached to the cage (`Player.rideTo`
+  each step instead of `update`), so there's no moving-platform physics; digging and building
+  are off. Lift rail is climbable like a ladder.
+- **Typing mode**: while a map pin's or lift stop's name is being typed (`startTyping` in
+  `input.ts`), key presses edit the text instead of reaching the actions, except the `confirm`
+  and `pause` keys, which end the typing; the game ends typing whenever the map or the lift panel
+  closes or the pause menu opens.

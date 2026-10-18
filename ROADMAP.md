@@ -1,8 +1,9 @@
 # Dig Deep – Roadmap after the MVP
 
 All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13, the
-guidance slice, Phase 14a (the strata world) and Phase 14b (the strata's rules and the Heart of
-the Deep) are on `develop` (the dev site). **Phase 15 (lifts and the camp) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
+guidance slice, Phase 14a (the strata world), Phase 14b (the strata's rules and the Heart of
+the Deep) and Phase 15 (lifts and the camp) are on `develop` (the dev site). **Phase 16 (gear
+and tools) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
 has acceptance criteria to check before moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
 targets; release status is separate from implementation status.
 
@@ -88,7 +89,7 @@ phase that needs it, and that phase says so.
 | Foundation | Phase | What changes |
 | --- | --- | --- |
 | Procedural audio (`src/audio/sfx.ts`) | 8 | Sounds synthesized with Web Audio, so no asset files (like the procedural textures). Audio starts on the first click, as browsers require. |
-| Tile entities (`src/world/tileEntities.ts`) | 9 | Data stored per tile (chest contents, planted saplings' grow times from 14a, later lift stops and torch timers), keyed by `ty * width + tx` and cleared when the tile changes. `World.onTileChange` becomes a list of listeners. Saved in an optional `tileEntities` field, so no version bump. |
+| Tile entities (`src/world/tileEntities.ts`) | 9 | Data stored per tile (chest contents, planted saplings' grow times from 14a, lift stop names and the camp from 15, later torch timers), keyed by `ty * width + tx` and cleared when the tile changes. `World.onTileChange` becomes a list of listeners. Saved in an optional `tileEntities` field, so no version bump. |
 | Save slots | 10 | Several sandbox worlds, plus a run slot and a meta-profile slot later on. The existing save key becomes slot 1, so current saves carry over. |
 | Session clock and saved state | 11a | Define when simulation pauses, then use that clock for damage, regeneration and later hazards (`Game.time` already counts play time for the ore glints; build on it). Save per-world state such as difficulty now, and health, respawn, satchels and fall progress in 11b; include their changes in autosave detection. Later phases extend this contract with their own state. |
 | Input actions (`src/input.ts`) | 11a | Logical actions (move left, jump, climb, map, quick stack…) bound to keys in one table, instead of key codes spread through `game.ts`. The F3 help, the Controls screen, tooltips and hints read their key names from it, so the remapping screen in the companion work only edits the table. |
@@ -570,6 +571,42 @@ satchel, and lifts and the camp are what make the deeper strata practical.
 - Name stops, show their depths and indicate an obstructed or disconnected rail before a trip.
   Camp relocation clearly confirms the new respawn point.
 
+- As built:
+  - **Lift rail** (tile 50; an iron bar and 2 planks make 16 at a workbench, so a 300 m lift is
+    about 19 iron bars) is walk-through and **climbable like a ladder**, so the rail column is
+    built and climbed without a ladder beside it. A lift is an unbroken run of rail in one column
+    (`world/lifts.ts`); a gap splits it into two lifts.
+  - **Lift stops** (tile 51; an iron bar and 4 planks) go on a floor right beside the rail (the
+    left rail wins if there's one on both sides). Each is a tile entity with its name: new stops
+    are named "Surface" (near the surface level or under the open sky), else after their stratum
+    (or "Stop" in older worlds), numbered when the name is taken on that rail.
+  - **The cage** (`systems/lifts.ts`) costs nothing: a rail gets one at the stop where it's first
+    used, and joined rails keep one. It speeds up at 40 tiles/s² to 50 tiles/s and brakes to stop
+    level with a stop, so a 300 m ride takes about 7 s (a ladder about 34 s). It rattles every 6
+    tiles, clunks when it sets off and chimes on arrival. While riding, the player is attached to
+    it (`Player.rideTo`), digging and building are off and the HUD says where the ride goes.
+  - **The lift panel** (`ui/liftPanel.ts`, right-click a stop; it pauses the world like the
+    inventory) lists every stop on the rail column with its name and depth, where the cage is,
+    and each stop's status before a trip: rideable, *blocked* (no room to step out or no floor),
+    *no room above the rail* (the cage is two tiles tall) or *rail broken at N m* for a stop
+    beyond a gap. Clicking a stop rides there; if the cage is elsewhere it's called and the player
+    boards when it arrives, if they're still by the stop. The stop it was opened at can be renamed.
+  - A cage that reaches a break mid-trip stops there and leaves the rider holding the rail; one
+    whose rail is removed under it is gone (the next use makes another).
+  - **Camp kit** (a workbench, a furnace, a bed and 2 iron bars): a 2 x 2 tent and stove (tiles
+    52–55) on solid ground that counts as a workbench and a furnace. Setting it up makes it the
+    respawn point (floater, chime and toast); right-clicking it does again after using a bed.
+    Breaking any part packs up all of it into one camp kit. One camp at a time (the cursor says
+    where the other one is). Respawning prefers whichever of the bed and the camp was set last
+    and falls back to the other, then near the world spawn; the death screen says which.
+  - **Saves**: lift cages are an optional `lifts` field, the respawn choice an optional
+    `respawnAt`, stop names and the camp are tile entities, and tile ids were appended, so no
+    `SAVE_VERSION` bump. A save made mid-ride stores the player at the stop the ride ends at and
+    the cage there, so a reload during travel loads with the trip done.
+  - Lift stops (with their names) and the camp show on the map and the minimap.
+  - Debug: R builds a 300 m lift down from the cursor with a stop every 100 m; the kit has lift
+    rails, stops and a camp kit. F3 shows the cages, the ride, the camp and the respawn choice.
+
 - [ ] Can build a 300 m lift and ride it both ways.
 - [ ] The camp crafts like both stations and sets the respawn point.
 - [ ] Save/reload during travel or camp relocation leaves the player at a valid location with
@@ -858,10 +895,11 @@ Work through the phases in number order, with the companion polish in small slic
 1. Done: Phases 11a and 11b (pausing, saves, health and recovery), 12 (cave-ins and supports,
    with generation profiles keeping older worlds intact) and 13 (the dark: carried light holds
    dread off, only established light heals), the guidance slice (pinned recipe, map pins and
-   quick torch), Phase 14a (distinct strata whose materials all have uses, and renewable wood)
-   and Phase 14b (each stratum's rule and the Heart of the Deep).
-2. Phases 15–17: a reliable way home first (lifts and the camp), then understandable equipment
-   choices and useful discoveries. Expand crafting navigation before the recipe list grows.
+   quick torch), Phase 14a (distinct strata whose materials all have uses, and renewable wood),
+   Phase 14b (each stratum's rule and the Heart of the Deep) and Phase 15 (lifts and the camp: a
+   reliable way home).
+2. Phases 16–17: understandable equipment choices and useful discoveries. Expand crafting
+   navigation before the recipe list grows.
 3. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
    before expanding boons in 19 and objectives/mutators in 20. Meta progression and
    standardized dailies follow in 21.

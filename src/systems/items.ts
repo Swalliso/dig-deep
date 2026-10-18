@@ -8,18 +8,20 @@ import {
   FLARE_TIME,
   LAMP_LIGHT,
   LANTERN_LIGHT,
+  LIFT_SPEED,
   LIGHT_FALLOFF_AIR,
   MAX_STACK,
   PLANT_GROW_MAX,
   PLANT_GROW_MIN,
   SPAN_MAX,
   SUPPORT_REACH,
+  TILE_SIZE,
   TORCH_LIGHT,
 } from '../config';
 import { Tile, type TileId } from '../world/tiles';
 
 /** A tile texture, or a shape drawn in code with a material color. */
-export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed' | 'lantern' | 'flare' | 'gem'; color: string };
+export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed' | 'lantern' | 'flare' | 'gem' | 'camp'; color: string };
 
 export interface ItemDef {
   name: string;
@@ -102,7 +104,7 @@ export const ITEMS = {
   iron_ore: material('Iron ore', Tile.IronOre, 'Smelt into iron bars at a furnace.'),
   gold_ore: material('Gold ore', Tile.GoldOre, 'Smelt into gold bars at a furnace.'),
   copper_bar: bar('Copper bar', '#d9783a'),
-  iron_bar: bar('Iron bar', '#c9ccd2', 'Metal for the iron pickaxe and the lantern.'),
+  iron_bar: bar('Iron bar', '#c9ccd2', 'Metal for the iron pickaxe, the lantern and lifts.'),
   gold_bar: bar('Gold bar', '#f2c94c', 'Metal for the gold pickaxe and gem lamps.'),
   wooden_pickaxe: pickaxe('Wooden pickaxe', 0, '#b88a52', 'Mines dirt, stone and coal.'),
   stone_pickaxe: pickaxe('Stone pickaxe', 1, '#8d8d92', 'Also mines copper ore and mudstone.'),
@@ -205,6 +207,29 @@ export const ITEMS = {
   heart_of_the_deep: {
     ...block('Heart of the Deep', Tile.HeartCore, 'The prize at the bottom of the world.'),
     details: [`It glows ${HEART_LIGHT / LIGHT_FALLOFF_AIR} tiles around wherever you put it.`],
+  },
+  // Phase 15: lifts and the camp.
+  lift_rail: {
+    ...block('Lift rail', Tile.LiftRail, 'Build a column of it for a lift cage to ride. You can climb it too.'),
+    details: [
+      `The cage rides at up to ${LIFT_SPEED / TILE_SIZE} tiles a second (a ladder climbs`,
+      'about 9), between the lift stops beside the rail.',
+      'A gap in the rail splits it into two lifts.',
+    ],
+  },
+  lift_stop: {
+    ...block('Lift stop', Tile.LiftStop, 'Goes beside a lift rail, on a floor. Right-click it to ride.'),
+    details: ['It calls the cage, and lists every stop on the', 'rail with its depth. You can rename it there.'],
+  },
+  // Placed as the top-left part; building.ts adds the other three.
+  camp_kit: {
+    ...block('Camp kit', Tile.CampTopLeft, 'A camp to set up: a workbench, a furnace and a bed in one.'),
+    details: [
+      'Needs a 2 x 2 space on solid ground. Setting it up',
+      'makes it your respawn point. Break it to pack it up',
+      'and set it up again deeper down. One camp at a time.',
+    ],
+    icon: { shape: 'camp', color: '#c08a3e' },
   },
 } satisfies Record<string, ItemDef>;
 

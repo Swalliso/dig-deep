@@ -22,7 +22,7 @@ and pick **Normal** or **Cozy**).
 | Throw a held flare                 | Left mouse at a spot      |
 | Pick block onto hotbar             | Middle mouse              |
 | Quick torch (keeps what you hold)  | T                         |
-| Open chest, use door or bed        | Right-click it            |
+| Use chest, door, bed, camp, lift   | Right-click it            |
 | Climb a ladder                     | W / S or ↑ / ↓ on it      |
 | Drop through a platform            | S (hold to keep dropping) |
 | Map / minimap                      | M / N                     |
@@ -39,8 +39,8 @@ and pick **Normal** or **Cozy**).
 
 - **Left mouse uses what you're holding.** Holding a block and pointing at an empty spot places
   it (hold and sweep to build a row); pointing at a tile digs it with your best pickaxe,
-  whatever is selected. **Right mouse interacts**: it opens chests and doors, and never digs or
-  places. In the crafting panel it pins a recipe, and on the map it adds a pin.
+  whatever is selected. **Right mouse interacts**: it opens chests and doors, sets your bed or
+  camp as the respawn point and calls a lift at a lift stop, and never digs or places. In the crafting panel it pins a recipe, and on the map it adds a pin.
 - **T places a torch** from anywhere in your inventory without changing what you hold: at the
   cursor, or when that spot can't take one, right next to you. It tells you when you have no
   torches or there's nowhere to put one.
@@ -127,6 +127,21 @@ and pick **Normal** or **Cozy**).
   (your hotbar and every pickaxe stay with you). Satchels stay until you collect them, show on
   the map and in the top-left corner, and keep whatever doesn't fit in your inventory. With no
   bed, or a blocked one, you wake up near the world spawn.
+- **Lifts**: a column of **lift rail** (an iron bar and 2 planks make 16, at a workbench) with
+  **lift stops** beside it (an iron bar and 4 planks each) is a lift. You can climb the rail
+  like a ladder while you build it. A stop goes on a floor right beside the rail. Right-click a
+  stop to open the lift panel: it lists every stop on that rail with its name and depth, where
+  the cage is, and whether you can get there (it warns about a broken rail, or something in the
+  way where you'd step out). Click a stop to ride: the cage comes to fetch you if it's elsewhere
+  (wait by the stop), then carries you there at up to 50 tiles a second, about five times
+  faster than a ladder. New stops are named after their layer; rename the one you're at from
+  the panel. Stops show on the map with their names.
+- **The camp** (a workbench, a furnace, a bed and 2 iron bars make a camp kit, at a workbench) is
+  a 2 x 2 tent and stove that works as a workbench, a furnace and a bed in one. Setting it up on
+  solid ground makes it your respawn point (right-click it to make it your respawn point again
+  after using a bed). Break it to pack it up into a camp kit and set it up again deeper down.
+  You can have one camp at a time; it shows on the map. If your camp is packed up or blocked when
+  you die, you wake up in your bed (and the other way round).
 - **Gravel** (lumpy, light grey) is loose: it rests only on what's right under it. Dig that
   out and the gravel shakes for a moment, with dust trickling down and an orange outline, then
   falls, and it hurts if it lands on you. Gravel hanging from a cave ceiling (pebbles dangle
@@ -160,7 +175,7 @@ and pick **Normal** or **Cozy**).
   you can take the last one back. Recipes are in tabs (Blocks, Light, Tools, Materials,
   Stations), each showing how many of its recipes you can craft right now, and **Craftable
   only** hides recipes you can't make yet.
-- The world stands still while the inventory, the map or the pause menu is open. Switching to
+- The world stands still while the inventory, the map, the lift panel or the pause menu is open. Switching to
   another window or tab pauses the game too; press **Resume** (or Esc) to carry on.
 - The game saves to your browser (IndexedDB) automatically: within a couple of seconds of any
   change, every 60 seconds, and when you pause. Each world has its own save; delete one from
@@ -197,9 +212,10 @@ Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing
 falls if nothing holds it up), **U** fills the dread meter (press again to empty it), **Y**
 takes you to the top of the next stratum (from the Magma Layer, back to the spawn), **P**
 makes planted saplings and spores grow now, **X** stands you on the roof of the Heart of the
-Deep's chamber and **Z** puts 4 lava tiles at the cursor (to try heat anywhere). The kit includes
-a lantern, flares, glowshrooms, glow crystals, saplings, mushroom spores, gem lamps, floatstone
-and the strata's rocks, ores and gems. The
+Deep's chamber, **Z** puts 4 lava tiles at the cursor (to try heat anywhere) and **R** builds a
+300 m lift down from the cursor, with a stop every 100 m. The kit includes a lantern, flares,
+glowshrooms, glow crystals, saplings, mushroom spores, gem lamps, floatstone, lift rails and
+stops, a camp kit and the strata's rocks, ores and gems. The
 title screen also
 gets a button that marks your most recent world as an older version, and the pause menu a
 **Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't

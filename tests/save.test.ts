@@ -32,6 +32,7 @@ import {
   type SavedTileEntity,
 } from '../src/systems/save';
 import { createRng, randInt } from '../src/util/rng';
+import { Lifts } from '../src/systems/lifts';
 import { MapPins } from '../src/systems/mapPins';
 import { ExploredMap } from '../src/world/explored';
 import { generateWorld } from '../src/world/generate';
@@ -357,6 +358,8 @@ describe('save reliability', () => {
       pinnedRecipe: 'torch' as const,
       mapPins: new MapPins(),
       heartClaimedAt: 12.5,
+      respawnAt: 'camp' as const,
+      lifts: new Lifts(),
     };
     const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5, survival });
     const state = savedState(player, inventory, [], new TileEntities(world), survival);

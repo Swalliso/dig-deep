@@ -1,8 +1,10 @@
 import { DEBUG_STRATUM_SEARCH_COLUMNS, DEBUG_STRATUM_SEARCH_ROWS } from './config';
 import type { Inventory } from './systems/inventory';
 import type { ItemId } from './systems/items';
+import { defaultStopName } from './systems/lifts';
 import { keyPairs, mainKey } from './ui/controls';
 import { STRATA, stratumAt, stratumTopRow } from './world/strata';
+import type { TileEntities } from './world/tileEntities';
 import { isSolid, ORE_TILES, Tile } from './world/tiles';
 import type { World } from './world/world';
 
@@ -45,11 +47,15 @@ export function brushNeighbours(mode: InstantMine): [number, number][] {
 /**
  * Enough of every material to craft every recipe, plus both stations, some chests, the dark's
  * kit (a lantern, flares, glowshrooms and glow crystals), saplings and spores to plant, gem lamps,
- * floatstone and a stack of ladders, platforms, doors, beds, gravel, beams and crossbeams ready to place.
+ * floatstone, lift rails and stops, a camp kit and a stack of ladders, platforms, doors, beds,
+ * gravel, beams and crossbeams ready to place.
  */
 const KIT: ReadonlyArray<[ItemId, number]> = [
   // First, so they always fit.
   ['lantern', 1],
+  ['lift_rail', 200],
+  ['lift_stop', 6],
+  ['camp_kit', 1],
   ['flare', 20],
   ['glowshroom', 20],
   ['glow_crystal', 10],
@@ -128,6 +134,39 @@ export function placeLadderShaft(world: World, tx: number, ty: number): number {
   return length;
 }
 
+/** Length of the debug lift, and how far apart its stops are. */
+export const LIFT_SHAFT_LENGTH = 300;
+export const LIFT_SHAFT_STOP_EVERY = 100;
+
+/**
+ * Lift shaft: a column of lift rail from (tx, ty) straight down for LIFT_SHAFT_LENGTH tiles
+ * (stopping above bedrock), with a lift stop on its right at the top, every
+ * LIFT_SHAFT_STOP_EVERY tiles and at the bottom. Each stop gets a two-tile-wide landing
+ * carved beside the rail, with a stone floor if it has none. Returns the shaft's length.
+ */
+export function placeLiftShaft(world: World, entities: TileEntities, tx: number, ty: number): number {
+  let length = 0;
+  while (length < LIFT_SHAFT_LENGTH && world.inBounds(tx, ty + length) && world.getTile(tx, ty + length + 1) !== Tile.Bedrock) {
+    world.setTile(tx, ty + length, Tile.LiftRail);
+    length++;
+  }
+  if (length === 0) return 0;
+  if (isSolid(world.getTile(tx, ty - 1))) world.setTile(tx, ty - 1, Tile.Air); // headroom for the cage at the top
+  const rows = new Set<number>();
+  for (let d = 0; d < length; d += LIFT_SHAFT_STOP_EVERY) rows.add(ty + d);
+  rows.add(ty + length - 1);
+  for (const sy of rows) {
+    for (const x of [tx + 1, tx + 2]) {
+      world.setTile(x, sy, Tile.Air);
+      world.setTile(x, sy - 1, Tile.Air);
+      if (!isSolid(world.getTile(x, sy + 1))) world.setTile(x, sy + 1, Tile.Stone);
+    }
+    world.setTile(tx + 1, sy, Tile.LiftStop);
+    entities.set(tx + 1, sy, { kind: 'liftStop', name: defaultStopName(world, entities, tx + 1, sy) });
+  }
+  return length;
+}
+
 /** A spot the player fits in: the tile their feet are in (open, with the one above it open and solid ground under it). */
 function fitsPlayer(world: World, tx: number, ty: number): boolean {
   return world.inBounds(tx, ty - 1) && !isSolid(world.getTile(tx, ty)) && !isSolid(world.getTile(tx, ty - 1)) && isSolid(world.getTile(tx, ty + 1));
@@ -195,5 +234,6 @@ export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbr
     `       ${mainKey('debugGravel')}: 3 x 3 gravel at the cursor (falls if nothing holds it up)   ${mainKey('debugDread')}: fill or empty dread`,
     `       ${mainKey('debugNextStratum')}: top of the next stratum (from the bottom one, back to spawn)   ${mainKey('debugGrowPlants')}: grow planted saplings and spores now`,
     `       ${mainKey('debugHeart')}: go to the Heart of the Deep   ${mainKey('debugLava')}: ${LAVA_POOL_WIDTH} lava tiles at the cursor`,
+    `       ${mainKey('debugLiftShaft')}: ${LIFT_SHAFT_LENGTH} m lift down from the cursor (a stop every ${LIFT_SHAFT_STOP_EVERY} m)`,
   ];
 }

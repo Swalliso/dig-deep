@@ -14,8 +14,19 @@ export interface PlantData {
   growAt: number;
 }
 
-/** Data kept for one tile. Each kind belongs to one tile type (lift stops, torch timers later). */
-export type TileEntity = ChestData | PlantData;
+/** A lift stop (Phase 15): its name, shown in the lift panel and on the map. */
+export interface LiftStopData {
+  kind: 'liftStop';
+  name: string;
+}
+
+/** The camp (Phase 15), on its top-left tile. It holds nothing; it marks where the one camp is. */
+export interface CampData {
+  kind: 'camp';
+}
+
+/** Data kept for one tile. Each kind belongs to one tile type (torch timers later). */
+export type TileEntity = ChestData | PlantData | LiftStopData | CampData;
 
 /**
  * Per-tile data, keyed by `ty * width + tx`. When a tile changes (broken, replaced, anything),

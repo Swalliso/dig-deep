@@ -22,6 +22,7 @@ import {
   type StratumLook,
 } from '../config';
 import type { Flare } from '../entities/flare';
+import type { Cage } from '../systems/lifts';
 import type { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
 import type { FallingBlock } from '../systems/caveIns';
@@ -629,6 +630,36 @@ export class Renderer {
       ctx.fillRect(x + 3, y + 2, S - 6, 2); // the tied neck
       ctx.fillStyle = '#ffe066';
       ctx.fillRect(x + 1, y + 6, S - 2, 1); // strap
+    }
+  }
+
+  /**
+   * Lift cages (Phase 15), interpolated between steps: a steel frame two tiles tall around the
+   * rail, with a floor, a roof hung from a short cable, and thin bars the rider shows through.
+   * Drawn after the player, so a rider is inside it.
+   */
+  drawCages(cages: readonly Cage[], alpha: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    for (const cage of cages) {
+      const x = cage.tx * TILE_SIZE - 2 - camX;
+      const floor = Math.round(cage.prevY + (cage.y - cage.prevY) * alpha) - camY;
+      const top = floor - 2 * TILE_SIZE - 1;
+      const w = TILE_SIZE + 4;
+      if (x + w < 0 || x > this.viewWidth || floor < 0 || top - 8 > this.viewHeight) continue;
+      ctx.fillStyle = '#2a2d33';
+      ctx.fillRect(x + w / 2 - 1, top - 8, 2, 8); // the cable
+      ctx.fillStyle = '#5c6169';
+      ctx.fillRect(x, top, w, 3); // roof
+      ctx.fillRect(x, floor - 3, w, 3); // floor
+      ctx.fillRect(x, top, 2, floor - top);
+      ctx.fillRect(x + w - 2, top, 2, floor - top);
+      ctx.fillStyle = '#9aa1aa';
+      ctx.fillRect(x, top, w, 1);
+      ctx.fillRect(x, floor - 3, w, 1);
+      ctx.fillStyle = 'rgba(154, 161, 170, 0.45)';
+      for (let bx = x + 5; bx < x + w - 3; bx += 4) ctx.fillRect(bx, top + 3, 1, floor - top - 6);
+      ctx.fillStyle = '#e0b040';
+      ctx.fillRect(x + w / 2 - 1, top + 3, 2, 2); // a small lamp under the roof
     }
   }
 

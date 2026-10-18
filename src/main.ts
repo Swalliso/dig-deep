@@ -40,6 +40,7 @@ import {
   type WorldMeta,
 } from './systems/save';
 import { restoreBed, restoreSatchels } from './systems/death';
+import { Lifts } from './systems/lifts';
 import { Dread } from './systems/dread';
 import { restorePinnedRecipe } from './systems/goal';
 import { MapPins } from './systems/mapPins';
@@ -169,18 +170,18 @@ function applySettings(): void {
 }
 
 /**
- * Health, difficulty, bed, satchels, cave-ins, dread, flares, the pinned recipe, the map pins and
- * when the Heart of the Deep was claimed:
+ * Health, difficulty, bed, satchels, cave-ins, dread, flares, the pinned recipe, the map pins,
+ * when the Heart of the Deep was claimed, and the respawn choice and lift cages (Phase 15):
  * the game's saved state beyond the player and inventory.
  */
 function survival(game: Game): SurvivalState {
-  const { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt } = game;
-  return { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt };
+  const { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt, respawnAt, lifts } = game;
+  return { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt, respawnAt, lifts };
 }
 
 /** The game as a save, right now. */
 function currentSave(game: Game, slot: Slot): SaveData {
-  return createSave(game.world, game.player, game.inventory, game.drops, game.tileEntities, {
+  return createSave(game.world, game.savedPlayer, game.inventory, game.drops, game.tileEntities, {
     explored: game.explored,
     name: slot.name,
     playTime: game.clock.time,
@@ -211,7 +212,7 @@ function autosave(game: Game): void {
  * are rounded to whole pixels, so a still player or a resting item doesn't count as a change.
  */
 function snapshot(game: Game): string {
-  const state = savedState(game.player, game.inventory, game.drops, game.tileEntities, survival(game));
+  const state = savedState(game.savedPlayer, game.inventory, game.drops, game.tileEntities, survival(game));
   const rounded = JSON.stringify(state, (_key, value: unknown) => (typeof value === 'number' ? Math.round(value) : value));
   return `${game.world.revision}|${game.explored.revision}|${rounded}`;
 }
@@ -321,6 +322,8 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
             pinnedRecipe: restorePinnedRecipe(save.pinnedRecipe),
             mapPins: MapPins.fromSave(save.mapPins, world),
             heartClaimedAt: typeof save.heartClaimedAt === 'number' && Number.isFinite(save.heartClaimedAt) ? save.heartClaimedAt : null,
+            respawnAt: save.respawnAt === 'camp' ? 'camp' : 'bed',
+            lifts: new Lifts(world, save.lifts),
           }
         : { difficulty },
     );

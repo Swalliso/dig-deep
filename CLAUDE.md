@@ -77,12 +77,13 @@ src/channel.ts   live vs dev-site build, storageKey()
 src/input.ts     the action table (every key binding), keyboard + mouse state
 src/debug.ts     ?debug testing shortcuts
 src/world/       tiles, chunked storage, generation and strata, lighting, supports, heat, plants,
-                 tile entities, doors, beds, explored map
+                 tile entities, doors, beds, the camp, lift rails and stops, explored map
 src/entities/    player physics, item drops, flares
 src/systems/     items, inventory, mining, building, crafting, chests, saves and backups, health,
-                 death, dread, heat, cave-ins, goal and map pins, settings, clock, stats, hints
+                 death, dread, heat, cave-ins, lifts, goal and map pins, settings, clock, stats,
+                 hints
 src/render/      camera, textures, renderer, parallax, particles, juice, map image
-src/ui/          HUD, vitals, menus and panels, map, controls and key hints, guidance
+src/ui/          HUD, vitals, menus and panels, the lift panel, map, controls and key hints, guidance
 src/audio/sfx.ts every sound effect and stratum ambience (Web Audio)
 tests/           Vitest unit tests
 ```
@@ -105,8 +106,8 @@ drop.
 - **Loop**: fixed-timestep `update(dt)` at 60 Hz; `render()` once per `requestAnimationFrame`,
   interpolating moving things between the last two steps. Keyboard edge presses (`wasPressed`)
   are cleared after each update step.
-- **Pausing**: the inventory panel, the full map, the pause menu and losing window focus (or
-  hiding the tab) all pause the world. `Game.update` still handles input for the HUD, the panel
+- **Pausing**: the inventory panel, the full map, the lift panel, the pause menu and losing
+  window focus (or hiding the tab) all pause the world. `Game.update` still handles input for the HUD, the panel
   and the map every step, but only calls `simulate()` while neither is open, and main.ts doesn't
   call `update` at all while the pause menu is up. Everything timed in the world (physics, drops,
   mining damage, hazards, plant growth, ambience events) takes its time from the simulation step

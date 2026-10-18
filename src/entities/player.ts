@@ -131,6 +131,26 @@ export class Player {
     this.walkedOff = false;
   }
 
+  /**
+   * Riding a lift cage (Phase 15): this step the player is wherever the cage puts them, at
+   * (x, y) world px, with no physics. A ride is never a fall.
+   */
+  rideTo(x: number, y: number): void {
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.grounded = false;
+    this.climbing = false;
+    this.jumped = false;
+    this.landingSpeed = 0;
+    this.fallTop = null;
+    this.fallLanded = 0;
+    this.walkedOff = false;
+  }
+
   get centerX(): number {
     return this.x + W / 2;
   }

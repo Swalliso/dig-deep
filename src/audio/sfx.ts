@@ -481,6 +481,41 @@ export function bedSet(): void {
   });
 }
 
+/** A lift cage sets off (Phase 15): a clunk as the brake lets go, then the motor winding up. */
+export function liftStart(pan = 0): void {
+  play({ volume: SFX_VOLUMES.lift, pan, key: 'liftStart' }, (v) => {
+    noiseBurst(v, { filter: 'bandpass', freq: 500, q: 4, attack: 0.002, decay: 0.08, gain: 0.9 });
+    tone(v, { type: 'triangle', freq: 120, to: 90, attack: 0.002, decay: 0.1, gain: 0.5 });
+    tone(v, { type: 'sawtooth', freq: 70, to: 140, delay: 0.05, attack: 0.15, decay: 0.6, gain: 0.07 });
+  });
+}
+
+/** The cage clacking over a rail joint while it rides. */
+export function liftRattle(pan = 0): void {
+  play({ volume: SFX_VOLUMES.lift * 0.5, pan, key: 'liftRattle' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'bandpass', freq: 2200 * p, q: 5, attack: 0.001, decay: 0.03, gain: 0.6 });
+    tone(v, { type: 'square', freq: 340 * p, attack: 0.001, decay: 0.025, gain: 0.08 });
+  });
+}
+
+/** A lift cage pulls in level with a stop: the brake, then a two-note bell. */
+export function liftArrive(pan = 0): void {
+  play({ volume: SFX_VOLUMES.lift, pan, key: 'liftArrive' }, (v) => {
+    noiseBurst(v, { filter: 'lowpass', freq: 900, attack: 0.002, decay: 0.12, gain: 0.7 });
+    tone(v, { type: 'sine', freq: 988, delay: 0.08, attack: 0.005, decay: 0.5, gain: 0.35 });
+    tone(v, { type: 'sine', freq: 784, delay: 0.26, attack: 0.005, decay: 0.7, gain: 0.35 });
+  });
+}
+
+/** A lift stop's call button: a click and a short rising chime. */
+export function liftCall(): void {
+  play({ volume: SFX_VOLUMES.lift, key: 'liftCall' }, (v) => {
+    noiseBurst(v, { filter: 'highpass', freq: 3000, attack: 0.001, decay: 0.02, gain: 0.5 });
+    tone(v, { type: 'triangle', freq: 660, to: 880, delay: 0.03, attack: 0.005, decay: 0.18, gain: 0.35 });
+  });
+}
+
 /** A menu button or an inventory slot was clicked. */
 export function uiClick(): void {
   play({ volume: SFX_VOLUMES.ui, key: 'ui' }, (v) => {

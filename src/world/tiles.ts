@@ -78,6 +78,13 @@ export const Tile = {
   Floatstone: 47,
   Heartstone: 48,
   HeartCore: 49,
+  // Phase 15: lifts (a rail column with stops beside it) and the camp, a 2 x 2 object.
+  LiftRail: 50,
+  LiftStop: 51,
+  CampTopLeft: 52,
+  CampTopRight: 53,
+  CampBottomLeft: 54,
+  CampBottomRight: 55,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -196,6 +203,14 @@ const defs: TileDef[] = [
   // The Heart of the Deep's chamber: only the emberite pickaxe breaks its walls.
   { id: Tile.Heartstone, name: 'Heartstone', hardness: 4.0, minTier: 5, color: '#5a1426', drop: 'heartstone', solid: true, material: 'stone', light: HEARTSTONE_LIGHT, glowColor: '#c4183c', insulates: true },
   { id: Tile.HeartCore, name: 'Heart of the Deep', hardness: 1.5, minTier: 0, color: '#ff3d5a', drop: 'heart_of_the_deep', solid: false, material: 'ore', light: HEART_LIGHT, glowColor: '#ff6a3d' },
+  // Phase 15. A lift rail is climbed like a ladder; the cage rides it (see systems/lifts.ts).
+  { id: Tile.LiftRail, name: 'Lift rail', hardness: 0.4, minTier: 0, color: '#8f969e', drop: 'lift_rail', solid: false, material: 'ore', climbable: true },
+  { id: Tile.LiftStop, name: 'Lift stop', hardness: 0.4, minTier: 0, color: '#e0b040', drop: 'lift_stop', solid: false, material: 'ore' },
+  // Any part of the camp drops the camp kit; breaking one part packs up the rest (see camp.ts).
+  { id: Tile.CampTopLeft, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
+  { id: Tile.CampTopRight, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
+  { id: Tile.CampBottomLeft, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
+  { id: Tile.CampBottomRight, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
 ];
 
 /** Indexed by tile id. */
