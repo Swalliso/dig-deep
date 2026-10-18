@@ -69,16 +69,22 @@ describe.each(SEEDS)('strata world from seed %i', (seed) => {
   });
 
   it('keeps each boundary near its nominal depth and in order, with Topsoil reaching below the dirt', () => {
+    // Problems are collected and checked once: an expect per tile is far too slow on CI runners.
     const { tops, jitter } = STRATA_GEN;
+    const problems: string[] = [];
     for (let tx = 0; tx < world.width; tx++) {
       const first = world.strataTops[0][tx];
-      expect(first - SURFACE_LEVEL).toBeGreaterThanOrEqual(tops[0] - jitter);
-      for (let ty = first; ty < world.height; ty++) expect([Tile.Dirt, Tile.Grass]).not.toContain(world.getTile(tx, ty));
+      if (first - SURFACE_LEVEL < tops[0] - jitter) problems.push(`Topsoil ends too high at column ${tx}`);
+      for (let ty = first; ty < world.height; ty++) {
+        const tile = world.getTile(tx, ty);
+        if (tile === Tile.Dirt || tile === Tile.Grass) problems.push(`soil below Topsoil at (${tx}, ${ty})`);
+      }
       for (let k = 1; k < tops.length; k++) {
-        expect(Math.abs(world.strataTops[k][tx] - SURFACE_LEVEL - tops[k])).toBeLessThanOrEqual(jitter);
-        expect(world.strataTops[k][tx]).toBeGreaterThan(world.strataTops[k - 1][tx]);
+        if (Math.abs(world.strataTops[k][tx] - SURFACE_LEVEL - tops[k]) > jitter) problems.push(`boundary ${k} strays at column ${tx}`);
+        if (world.strataTops[k][tx] <= world.strataTops[k - 1][tx]) problems.push(`boundary ${k} out of order at column ${tx}`);
       }
     }
+    expect(problems).toEqual([]);
   });
 
   it("fills each stratum with its own rock: dirt over stone in Topsoil, then stone, mudstone, deepstone and basalt", () => {
@@ -120,19 +126,21 @@ describe.each(SEEDS)('strata world from seed %i', (seed) => {
     expect(strataWith(counts, Tile.MushroomCap)).toEqual([2]);
     expect(counts[2][Tile.Glowshroom]).toBeGreaterThan(250);
     let mushrooms = 0;
+    const problems: string[] = [];
     for (let ty = 0; ty < world.height; ty++) {
       for (let tx = 0; tx < world.width; tx++) {
         const tile = world.getTile(tx, ty);
-        if (tile === Tile.Glowshroom) expect(world.getTile(tx, ty + 1)).toBe(Tile.Mudstone);
+        if (tile === Tile.Glowshroom && world.getTile(tx, ty + 1) !== Tile.Mudstone) problems.push(`glowshroom off mudstone at (${tx}, ${ty})`);
         if (tile !== Tile.MushroomStem || world.getTile(tx, ty + 1) === Tile.MushroomStem) continue;
         // The bottom of a stem stands on mudstone, with a cap on its top.
         mushrooms++;
-        expect(world.getTile(tx, ty + 1)).toBe(Tile.Mudstone);
+        if (world.getTile(tx, ty + 1) !== Tile.Mudstone) problems.push(`stem off mudstone at (${tx}, ${ty})`);
         let top = ty;
         while (world.getTile(tx, top - 1) === Tile.MushroomStem) top--;
-        expect(world.getTile(tx, top - 1)).toBe(Tile.MushroomCap);
+        if (world.getTile(tx, top - 1) !== Tile.MushroomCap) problems.push(`stem without a cap at (${tx}, ${top})`);
       }
     }
+    expect(problems).toEqual([]);
     expect(mushrooms).toBeGreaterThan(15);
   });
 
@@ -162,12 +170,14 @@ describe('the strata profile', () => {
     expect(strata.surface).toEqual(gravel.surface);
     expect([strata.spawnTx, strata.spawnTy]).toEqual([gravel.spawnTx, gravel.spawnTy]);
     const above = [Tile.Dirt, Tile.Grass, Tile.Wood, Tile.Leaves];
+    const changed: string[] = [];
     for (let ty = 0; ty < strata.height; ty++) {
       for (let tx = 0; tx < strata.width; tx++) {
         const was = gravel.getTile(tx, ty);
-        if ((above as number[]).includes(was)) expect(strata.getTile(tx, ty)).toBe(was);
+        if ((above as number[]).includes(was) && strata.getTile(tx, ty) !== was) changed.push(`(${tx}, ${ty})`);
       }
     }
+    expect(changed).toEqual([]);
   });
 
   it('generates in under 2 seconds', () => {
