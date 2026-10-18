@@ -29,10 +29,13 @@ paths:
   - lift cages (`lifts`, Phase 15), each parked where it was or where it was heading, and
     `respawnAt: 'camp'` when the camp was set as the respawn point after the bed; lift stop names
     and the camp (on its top-left tile) are tile entities
+  - worn gear (`inventory.gear`, Phase 16; restored only as accessories, one of each) and bombs
+    not gone off yet (`bombs`, with their fuses and the thrower's pickaxe tier)
 - A save made during a lift ride stores the player standing at the stop the ride ends at
   (`Game.savedPlayer`) and the cage there, so a reload mid-trip loads with the trip done.
-- Not saved: particles, half-mined tile damage, the trash slot, and heat exposure (a reload
-  starts its few seconds of grace again).
+- Not saved: particles, half-mined tile damage, the trash slot, heat exposure (a reload starts
+  its few seconds of grace again) and the drill's charge on the coal it's burning (a reload loses
+  at most part of one coal).
 - A stack held on the mouse is saved as if put away; whatever doesn't fit is saved as a drop at
   the player, so saving never loses it.
 - Autosave's change check compares `savedState()` (everything but tiles, map and play time) plus

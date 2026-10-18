@@ -25,6 +25,7 @@ export type DamageCause =
   | { kind: 'dread' }
   | { kind: 'heat' }
   | { kind: 'lava' }
+  | { kind: 'bomb' }
   | { kind: 'debug' };
 
 /** "You fell 24 m." */
@@ -34,6 +35,7 @@ export function deathCauseText(cause: DamageCause): string {
   if (cause.kind === 'dread') return 'The dark got to you.';
   if (cause.kind === 'heat') return 'The heat got to you.';
   if (cause.kind === 'lava') return 'You touched lava.';
+  if (cause.kind === 'bomb') return 'You were too close to a bomb.';
   return 'Debug damage finished you off.';
 }
 

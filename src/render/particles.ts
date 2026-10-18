@@ -87,6 +87,45 @@ export class Particles {
     }
   }
 
+  /** A bomb's blast at (x, y) world px (Phase 16): a burst of fire and sparks, then smoke drifting up. */
+  blast(x: number, y: number): void {
+    const fire = ['#fff3c4', '#ffcf5a', '#ff8a3a', '#e0482a'];
+    for (let i = 0; i < 36; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = PARTICLE_SPEED * (0.8 + Math.random() * 1.4);
+      const life = PARTICLE_LIFETIME * (0.4 + Math.random() * 0.5);
+      this.list.push({
+        x: x + (Math.random() - 0.5) * 8,
+        y: y + (Math.random() - 0.5) * 8,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life,
+        maxLife: life,
+        color: fire[i % fire.length],
+        size: Math.random() < 0.5 ? 1 : 2,
+        gravity: PARTICLE_GRAVITY * 0.4,
+        drag: 3,
+        fade: true,
+      });
+    }
+    for (let i = 0; i < 16; i++) {
+      const life = DUST_LIFETIME * (2 + Math.random() * 1.5);
+      this.list.push({
+        x: x + (Math.random() - 0.5) * 2.5 * TILE_SIZE,
+        y: y + (Math.random() - 0.5) * 2.5 * TILE_SIZE,
+        vx: (Math.random() - 0.5) * DUST_SPEED,
+        vy: -DUST_RISE * (1 + Math.random()),
+        life,
+        maxLife: life,
+        color: i % 2 === 0 ? '#5a5650' : '#7a746a',
+        size: 2,
+        gravity: 0,
+        drag: DUST_DRAG / 2,
+        fade: true,
+      });
+    }
+  }
+
   /** One speck of dust trickling down from under tile (tx, ty): shaking gravel's warning. */
   trickle(tx: number, ty: number, color: string): void {
     const life = 0.5 + Math.random() * 0.4;

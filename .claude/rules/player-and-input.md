@@ -42,10 +42,20 @@ paths:
   with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test
   rebinds every action and checks no default key name is left in the hints, and a test keeps
   README.md's controls table matching the Controls screen with every row short enough to fit.
+- **Climbing claws** (Phase 16, `wallGrip` stat): in the air, a move key pushing against a solid
+  tile beside the body grips the wall (`Player.onWall`): falling slows to `WALL_SLIDE_SPEED`,
+  holding up as well clings still, S lets go, and a jump press without up (Space) leaps off,
+  away from the wall. A grip resets `fallTop`, so a slide is never a fall. W is both jump and
+  climb up, so W clings like it climbs a ladder.
+- **Tools** (Phase 16): `primaryAction` digs with the drill (at least `DRILL_TIER`, at
+  `DRILL_SPEED`, while there's coal; one coal per `DRILL_TILES_PER_COAL` tiles), throws bombs
+  like flares and hangs a rope coil (once per press). Gear only changes in the inventory panel,
+  so stats are recomputed from the worn gear every step.
 - **Lift rides** (Phase 15): while riding, the player is attached to the cage (`Player.rideTo`
   each step instead of `update`), so there's no moving-platform physics; digging and building
   are off. Lift rail is climbable like a ladder.
-- **Typing mode**: while a map pin's or lift stop's name is being typed (`startTyping` in
-  `input.ts`), key presses edit the text instead of reaching the actions, except the `confirm`
-  and `pause` keys, which end the typing; the game ends typing whenever the map or the lift panel
+- **Typing mode**: while a map pin's or lift stop's name or the recipe search (Phase 16) is being
+  typed (`startTyping` in `input.ts`), key presses edit the text instead of reaching the actions,
+  except the `confirm` and `pause` keys, which end the typing (Esc clears the search rather than
+  closing the inventory); the game ends typing whenever the map, the lift panel or the inventory
   closes or the pause menu opens.

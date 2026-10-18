@@ -60,7 +60,8 @@ export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
     ['Dig', `Hold ${use} on a tile`],
     ['Place the held block', `${key('use')} on empty space`],
     ['Build a row', `Hold ${use} and sweep`],
-    ['Throw a held flare', `${key('use')} at a spot`],
+    ['Throw a held flare or bomb', `${key('use')} at a spot`],
+    ['Hang a held rope coil', `${key('use')} on an edge`],
     ['Pick block onto hotbar', key('pickBlock')],
     ['Quick torch (keeps what you hold)', list('quickTorch')],
     ['Use chest, door, bed, camp, lift', `${clickName('interact', table)} it`],
@@ -73,6 +74,7 @@ export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
     ['Quick stack to nearby chests', list('quickStack')],
     ['Inventory, crafting, nearest chest', list('inventory')],
     ['Move stack (hotbar ↔ bag ↔ chest)', `${key('modifier')}-click`],
+    ['Wear or take off an accessory', `${key('modifier')}-click it`],
     ['Craft 10', `${key('modifier')}-click a recipe`],
     ['Pin a recipe as your goal', `${clickName('pin', table)} the recipe`],
     ['Pause', list('pause')],
@@ -89,7 +91,7 @@ export function overlayHelpLines(table: ActionTable = ACTIONS): string[] {
   const list = (action: Action): string => keyList(action, table);
   return [
     `${keyPairs('moveLeft', 'moveRight', table, '/')}: move   ${list('jump')}: jump   ${keyPairs('climbUp', 'climbDown', table, '/')} on a ladder: climb   ${key('climbDown')} on a platform: drop through`,
-    `${key('use')}: dig, or place the held block on an empty spot (hold to sweep), or throw a held flare`,
+    `${key('use')}: dig, or place the held block on an empty spot (hold to sweep), or use the held tool (flare, bomb, rope coil, drill)`,
     `${key('interact')}: open chest or door, sleep in bed or camp (respawn there), ride a lift from a stop   ${key('pickBlock')}: pick block   ${list('quickTorch')}: quick torch`,
     `${hotbarRange(table)} or wheel: select   ${list('dropStack')}: drop stack   ${list('quickStack')}: quick stack to nearby chests`,
     `${list('inventory')}: inventory + crafting, with the nearest chest (${key('modifier').toLowerCase()}-click: move stack, craft 10; ${key('pin').toLowerCase()}: pin a recipe)`,
@@ -117,6 +119,16 @@ export function mapHelpText(table: ActionTable = ACTIONS): string {
 /** The pin editor's help line: 'Type a name · Enter: done · Esc: cancel'. */
 export function pinEditorHelp(table: ActionTable = ACTIONS): string {
   return `Type a name · ${mainKey('confirm', table)}: done · ${mainKey('pause', table)}: cancel`;
+}
+
+/** The recipe search box's tooltip line: 'Enter keeps the search, Esc clears it.' */
+export function searchHelp(table: ActionTable = ACTIONS): string {
+  return `${mainKey('confirm', table)} keeps the search, ${mainKey('pause', table)} clears it.`;
+}
+
+/** How to wear an accessory, for its tooltip: 'Shift-click: wear it'. */
+export function wearHint(table: ActionTable = ACTIONS): string {
+  return `${mainKey('modifier', table)}-click: wear it (or take it off)`;
 }
 
 /** The lift panel's help line: 'Left-click a stop to ride there · Esc: close'. */

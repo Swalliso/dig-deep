@@ -19,7 +19,8 @@ paths:
   campfire whose light is established, so the camp heals). Gem lamps shine past `LIGHT_MAX`,
   which only means the tiles near them are fully lit for longer. A torch in the Fungal Hollows' damp air
   gives `torchLight()` instead, which depends only on where it is.
-- **Moving lights** (`setMovingLight`: the held lantern, flares) are kept apart from that
+- **Moving lights** (`setMovingLight`: the held lantern, the worn miner's helmet (Phase 16, its
+  level from the player's `lightRadius` stat), flares) are kept apart from that
   established light, each in a small patch relit only when it moves to another tile or a tile in
   its patch changes. `level()` is the max of both, and `established()` leaves moving lights out.
 - Light has no color: glowing tiles' colored glow (`TileDef.glowColor`) is drawn on top by the

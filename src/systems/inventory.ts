@@ -1,5 +1,6 @@
-import { BAG_SIZE, HOTBAR_SIZE } from '../config';
-import { itemDef, type ItemId } from './items';
+import { BAG_SIZE, GEAR_SLOTS, HOTBAR_SIZE } from '../config';
+import { isAccessory, itemDef, type ItemId } from './items';
+import type { StatModifier } from './stats';
 
 export interface ItemStack {
   item: ItemId;
@@ -15,9 +16,18 @@ export const STARTING_ITEMS: ReadonlyArray<[ItemId, number]> = [
   ['torch', 10],
 ];
 
-/** Hotbar (slots 0..HOTBAR_SIZE-1) followed by the bag. Empty slots are null. */
+/** Why an accessory couldn't go into a gear slot (see Inventory.canWear). */
+export type WearProblem = 'notGear' | 'wearing' | null;
+
+/**
+ * Hotbar (slots 0..HOTBAR_SIZE-1) followed by the bag, and the gear slots (Phase 16) apart from
+ * them: what's worn there isn't counted, crafted with, stacked away or dropped on death.
+ * Empty slots are null.
+ */
 export class Inventory {
   readonly slots: Slots = new Array(HOTBAR_SIZE + BAG_SIZE).fill(null);
+  /** Worn accessories, at most one of each. */
+  readonly gear: Slots = new Array(GEAR_SLOTS).fill(null);
   /** Selected hotbar slot. */
   selected = 0;
   /** Stack picked up with the mouse in the inventory panel, if any. */
@@ -131,6 +141,71 @@ export class Inventory {
       this.cursor = this.trash;
       this.trash = null;
     }
+  }
+
+  /** What the worn accessories add to the player's stats. */
+  gearModifiers(): StatModifier[] {
+    return this.gear.flatMap((s) => (s ? [itemDef(s.item).accessory ?? {}] : []));
+  }
+
+  /** Is this accessory worn? */
+  wearing(item: ItemId): boolean {
+    return this.gear.some((s) => s?.item === item);
+  }
+
+  /**
+   * Can `item` go into gear slot `index` (replacing what's there)? Only accessories, and only
+   * one of each: 'wearing' if another gear slot already has one.
+   */
+  canWear(item: ItemId, index: number): WearProblem {
+    if (!isAccessory(item)) return 'notGear';
+    return this.gear.some((s, i) => i !== index && s?.item === item) ? 'wearing' : null;
+  }
+
+  /**
+   * Click on gear slot `index`: with nothing held, take the accessory off onto the mouse;
+   * holding an accessory, put it on (swapping with what's there). Returns why it couldn't, or
+   * null if it worked (or there was nothing to do).
+   */
+  clickGear(index: number): WearProblem {
+    const held = this.cursor;
+    if (!held) {
+      this.cursor = this.gear[index];
+      this.gear[index] = null;
+      return null;
+    }
+    const problem = this.canWear(held.item, index);
+    if (problem) return problem;
+    // Accessories don't stack (maxStack 1), so the held one swaps with what's worn there.
+    this.cursor = this.gear[index];
+    this.gear[index] = held;
+    return null;
+  }
+
+  /**
+   * Shift-click on an accessory in slot `index`: wear it in the first empty gear slot.
+   * Returns why it couldn't: 'notGear', 'wearing', or 'full' with every gear slot taken.
+   */
+  wearFromSlot(index: number): WearProblem | 'full' {
+    const stack = this.slots[index];
+    if (!stack) return null;
+    const free = this.gear.findIndex((s) => !s);
+    const problem = this.canWear(stack.item, free);
+    if (problem) return problem;
+    if (free < 0) return 'full';
+    this.gear[free] = { item: stack.item, count: 1 };
+    this.removeFromSlot(index, 1);
+    return null;
+  }
+
+  /** Shift-click on gear slot `index`: take it off into the inventory. False (and no change) if there's no room. */
+  takeOff(index: number): boolean {
+    const worn = this.gear[index];
+    if (!worn) return true;
+    if (!this.canAdd(worn.item)) return false;
+    this.add(worn.item, worn.count);
+    this.gear[index] = null;
+    return true;
   }
 
   /** Shift-click: move a stack from the hotbar to the bag or back, merging where it can. */

@@ -92,6 +92,8 @@ export const Tile = {
   DoorRightClosedBottom: 57,
   DoorRightOpenTop: 58,
   DoorRightOpenBottom: 59,
+  // Phase 16: a rope ladder, unrolled from a rope coil (see systems/tools.ts).
+  Rope: 60,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -224,6 +226,9 @@ const defs: TileDef[] = [
   { id: Tile.DoorRightClosedBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: true, material: 'wood', insulates: true },
   { id: Tile.DoorRightOpenTop, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
   { id: Tile.DoorRightOpenBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
+  // Climbed like a ladder. It drops nothing itself: breaking any part rolls the whole rope back
+  // up into coils (systems/tools.ts).
+  { id: Tile.Rope, name: 'Rope ladder', hardness: 0.2, minTier: 0, color: '#c9a66b', drop: null, solid: false, material: 'plant', climbable: true },
 ];
 
 /** Indexed by tile id. */

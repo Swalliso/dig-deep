@@ -1,6 +1,7 @@
 import { delMany, get, getMany, keys, set, setMany } from 'idb-keyval';
 import { storageKey } from '../channel';
 import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, LIFT_STOP_NAME_MAX, TILE_SIZE, WORLD_HEIGHT, WORLD_WIDTH } from '../config';
+import { savedBombs, type Bomb, type SavedBomb } from '../entities/bomb';
 import { savedFlares, type Flare, type SavedFlare } from '../entities/flare';
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
@@ -54,7 +55,8 @@ export interface SaveData {
    * reload mid-fall still lands as hard. fallTop is missing in older saves.
    */
   player: { x: number; y: number; fallTop?: number | null };
-  inventory: { slots: (ItemStack | null)[]; selected: number };
+  /** The hotbar and bag, the selected hotbar slot, and the worn accessories (`gear`, Phase 16; missing in older saves). */
+  inventory: { slots: (ItemStack | null)[]; selected: number; gear?: (ItemStack | null)[] };
   /**
    * Items lying on the ground (top-left in world px). A stack held on the mouse that didn't fit
    * in the inventory is saved here too, at the player. Missing in older saves.
@@ -91,6 +93,8 @@ export interface SaveData {
   heartClaimedAt?: number | null;
   /** Lift cages, each parked where it was or where it was heading (Phase 15). */
   lifts?: SavedLifts;
+  /** Bombs thrown and not gone off yet, with their fuses (Phase 16). */
+  bombs?: SavedBomb[];
 }
 
 /**
@@ -186,6 +190,8 @@ export interface SurvivalState {
   /** Phase 15. */
   respawnAt?: RespawnChoice;
   lifts?: Lifts;
+  /** Phase 16. */
+  bombs?: readonly Bomb[];
 }
 
 /**
@@ -243,6 +249,7 @@ export type SavedState = Pick<
   | 'heartClaimedAt'
   | 'respawnAt'
   | 'lifts'
+  | 'bombs'
 >;
 
 export function savedState(
@@ -259,7 +266,7 @@ export function savedState(
   if (overflow) saved.push({ ...overflow, x: player.centerX - DROP_SIZE / 2, y: player.centerY - DROP_SIZE / 2 });
   return {
     player: { x: player.x, y: player.y, fallTop: player.fallTop },
-    inventory: { slots, selected: inventory.selected },
+    inventory: { slots, selected: inventory.selected, gear: inventory.gear.map((s) => s && { ...s }) },
     drops: saved,
     tileEntities: entities ? savedTileEntities(entities) : [],
     ...(survival && {
@@ -276,6 +283,7 @@ export function savedState(
     ...(survival?.heartClaimedAt !== undefined && { heartClaimedAt: survival.heartClaimedAt }),
     ...(survival?.respawnAt === 'camp' && { respawnAt: 'camp' }),
     ...(survival?.lifts && { lifts: survival.lifts.saved() }),
+    ...(survival?.bombs && { bombs: savedBombs(survival.bombs) }),
   };
 }
 
@@ -356,10 +364,18 @@ export function restoreFallTop(save: SaveData): number | null {
   return typeof top === 'number' && Number.isFinite(top) ? top : null;
 }
 
-/** Rebuild the inventory, skipping anything that no longer exists. */
+/** Rebuild the inventory, skipping anything that no longer exists, and worn gear that isn't an accessory or is worn twice. */
 export function restoreInventory(save: SaveData): Inventory {
   const inventory = new Inventory();
   restoreSlots(save.inventory.slots, inventory.slots);
+  const gear = save.inventory.gear;
+  if (Array.isArray(gear)) {
+    const worn: Slots = new Array(inventory.gear.length).fill(null);
+    restoreSlots(gear, worn);
+    worn.forEach((s, i) => {
+      if (s && inventory.canWear(s.item, i) === null) inventory.gear[i] = { item: s.item, count: 1 };
+    });
+  }
   const selected = save.inventory.selected;
   inventory.selected = Number.isInteger(selected) && selected >= 0 && selected < HOTBAR_SIZE ? selected : 0;
   return inventory;
@@ -457,7 +473,9 @@ export function checkSave(raw: unknown): SaveStatus {
     (save.mapPins === undefined || (typeof save.mapPins === 'object' && save.mapPins !== null)) &&
     (save.heartClaimedAt === undefined || save.heartClaimedAt === null || typeof save.heartClaimedAt === 'number') &&
     (save.respawnAt === undefined || save.respawnAt === 'bed' || save.respawnAt === 'camp') &&
-    (save.lifts === undefined || (typeof save.lifts === 'object' && save.lifts !== null));
+    (save.lifts === undefined || (typeof save.lifts === 'object' && save.lifts !== null)) &&
+    (save.inventory.gear === undefined || Array.isArray(save.inventory.gear)) &&
+    (save.bombs === undefined || Array.isArray(save.bombs));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 

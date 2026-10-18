@@ -21,6 +21,7 @@ import {
   TILE_SIZE,
   type StratumLook,
 } from '../config';
+import type { Bomb } from '../entities/bomb';
 import type { Flare } from '../entities/flare';
 import type { Cage } from '../systems/lifts';
 import type { ItemDrop } from '../entities/itemDrop';
@@ -72,6 +73,17 @@ const LOOSE_PEBBLES: readonly [number, number, number][] = [
   [12, 0, 2],
   [9, 5, 1],
 ];
+
+/** What the player has on, for drawing: a held lantern, and worn gear (Phase 16). */
+export interface PlayerLooks {
+  lantern: boolean;
+  helmet: boolean;
+  /** The worn boots' color, or null for plain shoes. */
+  boots: string | null;
+  claws: boolean;
+}
+
+const NO_LOOKS: PlayerLooks = { lantern: false, helmet: false, boots: null, claws: false };
 
 export class Renderer {
   readonly canvas: HTMLCanvasElement;
@@ -438,6 +450,34 @@ export class Renderer {
     }
   }
 
+  /**
+   * Bombs (Phase 16), interpolated between steps: a dark ball with a shine and a fizzing fuse
+   * that blinks faster as it burns down.
+   */
+  drawBombs(bombs: readonly Bomb[], alpha: number, time: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    for (const b of bombs) {
+      const x = Math.round(b.prevX + (b.x - b.prevX) * alpha) - camX;
+      const y = Math.round(b.prevY + (b.y - b.prevY) * alpha) - camY;
+      ctx.fillStyle = '#1c1c22';
+      ctx.fillRect(x - 3, y - 2, 6, 5);
+      ctx.fillRect(x - 2, y - 3, 4, 7);
+      ctx.fillStyle = '#6a6a78';
+      ctx.fillRect(x - 2, y - 2, 1, 1);
+      ctx.fillStyle = '#8a8a96';
+      ctx.fillRect(x - 1, y - 4, 2, 1);
+      // Blinks twice a second, then ever faster in its last second.
+      const rate = b.fuse > 1 ? 4 : 4 + (1 - b.fuse) * 16;
+      const lit = Math.floor(time * rate + b.id) % 2 === 0;
+      ctx.fillStyle = lit ? '#fff3c4' : '#ff8a3a';
+      ctx.fillRect(x, y - 6, 1, 2);
+      if (lit) {
+        ctx.fillStyle = 'rgba(255, 200, 120, 0.7)';
+        ctx.fillRect(x + 1, y - 7, 1, 1);
+      }
+    }
+  }
+
   /** White flashes over tiles that just broke. Marks each one drawn. */
   drawFlashes(flashes: readonly BreakFlash[], camX: number, camY: number): void {
     const { ctx } = this;
@@ -681,7 +721,7 @@ export class Renderer {
   }
 
   /** Draw the player at top-left (x, y) in world px, `alpha` opaque. Call after drawWorld. */
-  drawPlayer(player: Player, x: number, y: number, camX: number, camY: number, alpha = 1, lantern = false): void {
+  drawPlayer(player: Player, x: number, y: number, camX: number, camY: number, alpha = 1, looks: PlayerLooks = NO_LOOKS): void {
     const { ctx } = this;
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -700,13 +740,15 @@ export class Renderer {
       ctx.fillRect(3, 20, 3, 8);
       ctx.fillRect(6, 20, 3, 8);
     }
-    ctx.fillStyle = '#2a2420';
+    // Shoes, or worn boots (Phase 16) up the shins.
+    ctx.fillStyle = looks.boots ?? '#2a2420';
+    const shoe = looks.boots ? 4 : 2;
     if (stride) {
-      ctx.fillRect(1, 26, 3, 2);
-      ctx.fillRect(8, 26, 4, 2);
+      ctx.fillRect(1, 28 - shoe, 3, shoe);
+      ctx.fillRect(8, 28 - shoe, 4, shoe);
     } else {
-      ctx.fillRect(3, 26, 3, 2);
-      ctx.fillRect(6, 26, 4, 2);
+      ctx.fillRect(3, 28 - shoe, 3, shoe);
+      ctx.fillRect(6, 28 - shoe, 4, shoe);
     }
 
     // Body and arm.
@@ -726,8 +768,24 @@ export class Renderer {
     ctx.fillStyle = '#1b1b24';
     ctx.fillRect(7, 5, 1, 2);
 
+    // A miner's helmet with its lamp at the front (Phase 16).
+    if (looks.helmet) {
+      ctx.fillStyle = '#f2c94c';
+      ctx.fillRect(2, 0, 8, 3);
+      ctx.fillStyle = '#c9a032';
+      ctx.fillRect(1, 3, 11, 1);
+      ctx.fillStyle = '#fff3c4';
+      ctx.fillRect(9, 1, 2, 2);
+    }
+    // Climbing claws on the hand (Phase 16).
+    if (looks.claws) {
+      ctx.fillStyle = '#c9ccd2';
+      ctx.fillRect(8, 18, 1, 2);
+      ctx.fillRect(9, 19, 1, 2);
+    }
+
     // A held lantern, hanging from the hand in front.
-    if (lantern) {
+    if (looks.lantern) {
       ctx.fillStyle = '#46484f';
       ctx.fillRect(9, 17, 1, 2);
       ctx.fillRect(8, 19, 5, 1);

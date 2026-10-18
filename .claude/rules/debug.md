@@ -11,7 +11,9 @@ Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testi
 **G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
 chests, two beds, a lantern, flares, glowshrooms, glow crystals, saplings, mushroom spores, gem
 lamps, floatstone, lift rails and stops, a camp kit, and stacks of ladders, platforms, doors,
-gravel, beams and crossbeams), **F** toggles fly mode (no gravity or collision; W/S or ↑/↓ for
+gravel, beams and crossbeams); **Shift+G** gives the gear kit (Phase 16: every accessory, 30
+bombs, 10 rope coils, a drill and 40 coal; a Shift tapped in the same step counts too), **F**
+toggles fly mode (no gravity or collision; W/S or ↑/↓ for
 up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting

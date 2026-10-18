@@ -32,6 +32,7 @@ import {
   type SavedTileEntity,
 } from '../src/systems/save';
 import { createRng, randInt } from '../src/util/rng';
+import { throwBomb } from '../src/entities/bomb';
 import { Lifts } from '../src/systems/lifts';
 import { MapPins } from '../src/systems/mapPins';
 import { ExploredMap } from '../src/world/explored';
@@ -360,6 +361,7 @@ describe('save reliability', () => {
       heartClaimedAt: 12.5,
       respawnAt: 'camp' as const,
       lifts: new Lifts(),
+      bombs: [throwBomb(10, 20, 100, 20, 2)],
     };
     const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5, survival });
     const state = savedState(player, inventory, [], new TileEntities(world), survival);

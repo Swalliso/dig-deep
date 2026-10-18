@@ -70,6 +70,17 @@ describe('recipes', () => {
       ['16 lift_rail', '1 iron_bar + 2 planks', 'workbench'], // Phase 15
       ['1 lift_stop', '1 iron_bar + 4 planks', 'workbench'], // Phase 15
       ['1 camp_kit', '1 workbench + 1 furnace + 1 bed + 2 iron_bar', 'workbench'], // Phase 15
+      ['3 bomb', '1 iron_bar + 4 coal', 'workbench'], // Phase 16
+      ['1 rope_coil', '5 planks', 'workbench'], // Phase 16
+      ['1 drill', '8 emberite_bar + 4 iron_bar', 'workbench'], // Phase 16
+      ['1 miner_helmet', '3 iron_bar + 2 torch', 'workbench'], // Phase 16
+      ['1 toolbelt', '4 copper_bar + 6 planks', 'workbench'], // Phase 16
+      ['1 magnet_charm', '2 iron_bar + 2 sapphire', 'workbench'], // Phase 16
+      ['1 long_grip', '3 gold_bar + 6 wood', 'workbench'], // Phase 16
+      ['1 spring_boots', '3 iron_bar + 4 floatstone', 'workbench'], // Phase 16
+      ['1 padded_boots', '2 copper_bar + 8 planks', 'workbench'], // Phase 16
+      ['1 heat_ward', '2 gold_bar + 2 ruby', 'workbench'], // Phase 16
+      ['1 climbing_claws', '4 iron_bar + 2 wood', 'workbench'], // Phase 16
     ]);
   });
 
@@ -78,7 +89,8 @@ describe('recipes', () => {
     expect(byGroup).toEqual({
       blocks: ['planks', 'stone_bricks', 'mudstone_bricks', 'deepstone_bricks', 'basalt_bricks', 'beam', 'crossbeam', 'ladder', 'platform', 'door', 'lift_rail'],
       light: ['torch', 'ruby_lamp', 'sapphire_lamp', 'lantern', 'flare'],
-      tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe', 'emberite_pickaxe'],
+      tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe', 'emberite_pickaxe', 'bomb', 'rope_coil', 'drill'],
+      gear: ['miner_helmet', 'toolbelt', 'magnet_charm', 'long_grip', 'spring_boots', 'padded_boots', 'heat_ward', 'climbing_claws'],
       materials: ['copper_bar', 'iron_bar', 'gold_bar', 'emberite_bar'],
       stations: ['workbench', 'furnace', 'chest', 'bed', 'lift_stop', 'camp_kit'],
     });

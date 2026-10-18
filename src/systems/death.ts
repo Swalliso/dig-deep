@@ -5,7 +5,7 @@ import { isWholeCamp } from '../world/camp';
 import { isFloor, isSolid } from '../world/tiles';
 import type { World } from '../world/world';
 import type { Inventory, ItemStack } from './inventory';
-import { ITEMS, itemDef, type ItemId } from './items';
+import { ITEMS, keptOnDeath, type ItemId } from './items';
 
 // Dying and coming back: the bag goes into a satchel where you died (the hotbar and every
 // pickaxe stay with you), and you respawn at your bed or your camp (whichever was set last), the
@@ -30,15 +30,15 @@ export interface BedSpot {
 export type RespawnChoice = 'bed' | 'camp';
 
 /**
- * Empty the bag (the slots after the hotbar) into a list of stacks, leaving pickaxes where they
- * are: the best carried pickaxe always mines, so losing it would strand the player. The hotbar
- * isn't touched.
+ * Empty the bag (the slots after the hotbar) into a list of stacks, leaving pickaxes (and the
+ * drill) where they are: the best carried pickaxe always mines, so losing it would strand the
+ * player. The hotbar and the worn gear aren't touched.
  */
 export function takeBag(inventory: Inventory): ItemStack[] {
   const taken: ItemStack[] = [];
   for (let i = HOTBAR_SIZE; i < inventory.slots.length; i++) {
     const stack = inventory.slots[i];
-    if (!stack || itemDef(stack.item).pickaxeTier !== undefined) continue;
+    if (!stack || keptOnDeath(stack.item)) continue;
     taken.push(stack);
     inventory.slots[i] = null;
   }

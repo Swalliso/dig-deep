@@ -9,7 +9,20 @@ import {
   LAMP_LIGHT,
   LANTERN_LIGHT,
   CAMP_LIGHT,
+  BOMB_DAMAGE,
+  BOMB_FUSE,
+  DRILL_SPEED,
+  DRILL_TILES_PER_COAL,
+  GRIP_REACH,
+  HEAT_WARD_INTERVAL,
+  HELMET_LIGHT,
   LIFT_SPEED,
+  MAGNET_RANGE,
+  PADDED_BOOTS_FALL,
+  PICKAXES,
+  ROPE_LENGTH,
+  SPRING_BOOTS_JUMP,
+  TOOLBELT_RANGE,
   LIGHT_FALLOFF_AIR,
   MAX_STACK,
   PLANT_GROW_MAX,
@@ -20,9 +33,18 @@ import {
   TORCH_LIGHT,
 } from '../config';
 import { Tile, type TileId } from '../world/tiles';
+import type { StatModifier } from './stats';
 
 /** A tile texture, or a shape drawn in code with a material color. */
-export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed' | 'lantern' | 'flare' | 'gem' | 'camp'; color: string };
+export type ItemIcon =
+  | TileId
+  | {
+      shape: 'bar' | 'pickaxe' | 'door' | 'bed' | 'lantern' | 'flare' | 'gem' | 'camp' | 'helmet' | 'belt' | 'charm' | 'grip' | 'boots' | 'ward' | 'claws' | 'bomb' | 'rope' | 'drill';
+      color: string;
+    };
+
+/** Phase 16's tools: what a left-click does with one in hand. */
+export type ToolKind = 'bomb' | 'rope' | 'drill';
 
 export interface ItemDef {
   name: string;
@@ -37,8 +59,12 @@ export interface ItemDef {
   icon: ItemIcon;
   /** Set on pickaxes: the tier it mines at (index into PICKAXES). */
   pickaxeTier?: number;
-  /** Left-click throws one toward the cursor (flares). */
+  /** Left-click throws one toward the cursor (flares, bombs). */
   thrown?: boolean;
+  /** Accessories (Phase 16): worn in a gear slot, they add this to the player's stats. */
+  accessory?: StatModifier;
+  /** Tools (Phase 16): bombs, rope coils and the drill each have their own left-click. */
+  tool?: ToolKind;
 }
 
 const block = (name: string, tile: TileId, description: string): ItemDef => ({
@@ -82,6 +108,17 @@ const pickaxe = (name: string, tier: number, color: string, description: string)
   placeTile: null,
   icon: { shape: 'pickaxe', color },
   pickaxeTier: tier,
+});
+
+/** An accessory (Phase 16): worn in a gear slot, it adds `modifier` to the player's stats. */
+const accessory = (name: string, shape: Exclude<ItemIcon, number>['shape'], color: string, description: string, modifier: StatModifier, details: string[]): ItemDef => ({
+  name,
+  description,
+  details,
+  maxStack: 1,
+  placeTile: null,
+  icon: { shape, color },
+  accessory: modifier,
 });
 
 /** Item registry. Keys are the item ids that tiles drop and inventories store. */
@@ -234,6 +271,76 @@ export const ITEMS = {
     ],
     icon: { shape: 'camp', color: '#c08a3e' },
   },
+  // Phase 16: accessories, worn in the gear slots.
+  miner_helmet: accessory('Miner\'s helmet', 'helmet', '#f2c94c', `A lamp on your head: lights ${HELMET_LIGHT} tiles around you.`, { lightRadius: HELMET_LIGHT }, [
+    'Like the lantern, its light keeps dread away',
+    'but only torchlight heals. Your hands stay free.',
+  ]),
+  toolbelt: accessory('Toolbelt', 'belt', '#8a5a34', `Stations and chests work from ${TOOLBELT_RANGE} tiles further away.`, { stationRange: TOOLBELT_RANGE }, [
+    'For crafting and quick stack.',
+  ]),
+  magnet_charm: accessory('Magnet charm', 'charm', '#3b7cec', `Drops fly to you from ${MAGNET_RANGE} tiles further away.`, { dropPullRange: MAGNET_RANGE }, [
+    'A sapphire set in iron.',
+  ]),
+  long_grip: accessory('Long-handled grip', 'grip', '#f2c94c', `Reach ${GRIP_REACH} tiles further.`, { reach: GRIP_REACH }, [
+    'For mining, building and using things.',
+  ]),
+  spring_boots: accessory('Spring boots', 'boots', '#bfefff', 'Jump higher.', { jumpVelocity: SPRING_BOOTS_JUMP }, [
+    'Floatstone in the soles. Higher jumps also',
+    'mean longer falls back down.',
+  ]),
+  padded_boots: accessory('Padded boots', 'boots', '#8f6236', `Fall ${PADDED_BOOTS_FALL} tiles further without getting hurt.`, { safeFallTiles: PADDED_BOOTS_FALL }, [
+    'Longer falls still hurt, from that height on.',
+  ]),
+  heat_ward: accessory('Heat ward', 'ward', '#e3245e', 'Hot zones burn you half as often.', { heatHurtInterval: HEAT_WARD_INTERVAL }, [
+    "A ruby charm. Lava still burns as much: it's",
+    'the heat around it that the ward softens.',
+  ]),
+  climbing_claws: accessory('Climbing claws', 'claws', '#c9ccd2', 'Slide down walls and cling to them.', { wallGrip: 1 }, [
+    'In the air, push against a wall to slide down',
+    "it slowly (it's never a fall). Hold up as well to",
+    'cling still, or jump to leap off it.',
+  ]),
+  // Phase 16: tools.
+  bomb: {
+    name: 'Bomb',
+    description: `Thrown at the cursor, it sticks and goes off after ${BOMB_FUSE} s.`,
+    details: [
+      'Breaks the 3 x 3 around it: whatever your best',
+      "pickaxe could mine, never bedrock. It doesn't",
+      `care whose bomb it is: ${BOMB_DAMAGE / 2} hearts if you're close.`,
+    ],
+    maxStack: MAX_STACK,
+    placeTile: null,
+    icon: { shape: 'bomb', color: '#3a3a44' },
+    thrown: true,
+    tool: 'bomb',
+  },
+  rope_coil: {
+    name: 'Rope coil',
+    description: `Hang it from an edge: it unrolls a ${ROPE_LENGTH}-tile rope ladder down.`,
+    details: [
+      'Click an empty spot with something solid above',
+      'or beside it, over a shaft. You can climb it like',
+      'a ladder. Break any part of it to roll it back up.',
+    ],
+    maxStack: MAX_STACK,
+    placeTile: null,
+    icon: { shape: 'rope', color: '#c9a66b' },
+    tool: 'rope',
+  },
+  drill: {
+    name: 'Drill',
+    description: `Mines anything the ${PICKAXES[5].name.toLowerCase()} pickaxe can, ${Math.round((DRILL_SPEED / PICKAXES[5].speed) * 10) / 10}x as fast.`,
+    details: [
+      `Burns a coal from your inventory every ${DRILL_TILES_PER_COAL} tiles,`,
+      "and doesn't run without it. Hold it to use it.",
+    ],
+    maxStack: 1,
+    placeTile: null,
+    icon: { shape: 'drill', color: '#ff7a3a' },
+    tool: 'drill',
+  },
 } satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;
@@ -248,4 +355,15 @@ export function itemDef(id: ItemId): ItemDef {
 
 export function itemIndex(id: ItemId): number {
   return INDEX.get(id) ?? 0;
+}
+
+/** Can it be worn in a gear slot? */
+export function isAccessory(id: ItemId): boolean {
+  return itemDef(id).accessory !== undefined;
+}
+
+/** Is it kept on death like a pickaxe (pickaxes and the drill stay in the bag)? */
+export function keptOnDeath(id: ItemId): boolean {
+  const def = itemDef(id);
+  return def.pickaxeTier !== undefined || def.tool === 'drill';
 }
