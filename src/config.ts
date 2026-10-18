@@ -306,6 +306,47 @@ export const FLARE_THROW_SPEED = 560; // px/s
 export const FLARE_GRAVITY = 600; // px/s^2 (a flat throw carries ~9 tiles, aimed up ~25)
 export const FLARE_MAX = 6; // burning at once; throwing another burns the oldest out
 
+// --- Strata rules (Phase 14b) ---
+// Fungal Hollows, damp: a torch there lights a smaller radius (only torches: lanterns, flares,
+// gem lamps and glowshrooms are unaffected). The damp fades in over the Hollows' top
+// DAMP_FADE_ROWS rows, so the first torches there are only a little dimmer.
+export const DAMP_TORCH_LIGHT = 10; // 5-tile radius (a dry torch lights 8)
+export const DAMP_FADE_ROWS = 12;
+// Geode Depths, floatstone: within FLOAT_RADIUS tiles of a floatstone tile (they grow in the huge
+// crystal caverns), gravity is FLOAT_GRAVITY times as strong and falls are slower and cushioned:
+// a fall only counts from where the player leaves the field.
+export const FLOATSTONE_LIGHT = 8; // 4-tile radius
+export const FLOAT_RADIUS = 5; // tiles, from the player's centre tile
+export const FLOAT_GRAVITY = 0.4;
+export const FLOAT_MAX_FALL = 0.45; // times MAX_FALL_SPEED
+export const FLOAT_BRAKE = 2400; // px/s^2: falling faster than that slows down this quickly
+// Magma Layer, heat: lava and hot rock heat the tiles around them. Heat spreads one level less
+// per tile through anything but insulating tiles (bricks, heartstone, closed doors), so a tile
+// is hot within (heat - 1) tiles of a source by a path that doesn't cross insulation.
+export const LAVA_LIGHT = 12; // 6-tile radius
+export const LAVA_HEAT = 4; // hot 3 tiles around
+export const HOT_ROCK_LIGHT = 6;
+export const HOT_ROCK_HEAT = 3; // hot 2 tiles around
+// Standing in a hot zone is safe for HEAT_GRACE seconds; after that it burns HEAT_HURT every
+// HEAT_HURT_INTERVAL. Out of the heat the grace comes back HEAT_COOL_RATE times as fast as it
+// ran out. Touching lava hurts LAVA_HURT straight away (then again after the hurt protection).
+// Timed on the session clock; none of it hurts in Cozy worlds.
+export const HEAT_GRACE = 4; // s
+export const HEAT_COOL_RATE = 2;
+export const HEAT_HURT_INTERVAL = 1.5; // s
+export const HEAT_HURT = 1;
+export const LAVA_HURT = 2;
+// Cues: hot tiles shimmer orange (HEAT_TINT_ALPHA at the hottest, still with Reduced flashes,
+// only without the shimmer), and an orange vignette closes in as the grace runs out.
+export const HEAT_TINT_ALPHA = 0.22;
+export const HEAT_VIGNETTE_ALPHA = 0.5;
+// The Heart of the Deep: a sealed chamber of heartstone (needs the emberite pickaxe) just above
+// the bedrock. Breaking the Heart inside is the Sandbox's goal; it drops the Heart, a trophy
+// that glows wherever it's placed.
+export const HEARTSTONE_LIGHT = 6;
+export const HEART_LIGHT = 20; // 10-tile radius
+export const HEART_BANNER_TIME = 9; // s the completion banner shows
+
 // --- Sound (synthesized in src/audio/sfx.ts) ---
 // Volume settings are 0..1 sliders; the gain applied is the square, which sounds more even.
 export const DEFAULT_MASTER_VOLUME = 0.8;
@@ -332,6 +373,8 @@ export const SFX_VOLUMES = {
   gravelLand: 0.4,
   heartbeat: 0.6,
   flare: 0.4,
+  sizzle: 0.4,
+  heart: 0.6,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile
@@ -574,6 +617,57 @@ export const STRATA_GEN: StrataGenSpec = {
   cavernEdgePenalty: 0.05,
   crystalCavernChance: 0.18,
   crystalChance: 0.012,
+};
+
+/**
+ * The strata's rules in generation (strata profile v2, Phase 14b): floatstone in the Geode
+ * Depths' huge caverns, hot rock and lava pools in the Magma Layer, and the Heart of the Deep's
+ * chamber above the bedrock.
+ */
+export interface DepthsGenSpec {
+  /** Chance a rock face inside a huge crystal cavern is floatstone. */
+  floatstoneChance: number;
+  /** No hot rock or lava in the Magma Layer's top rows: its first caves are a safe place to learn heat. */
+  gentleRows: number;
+  /** Hot rock veins, replacing basalt below the gentle rows. */
+  hotRockTilesPerVein: number;
+  hotRockVeinMin: number;
+  hotRockVeinMax: number;
+  /**
+   * Lava pools: a stretch of cave floor at least poolMinRun tiles long becomes a pool (one or two
+   * tiles deep, with a rock rim at each end) with this chance, rising from half at the gentle
+   * rows to all of it at the bottom.
+   */
+  lavaPoolChance: number;
+  poolMinRun: number;
+  poolMaxRun: number;
+  /** The Heart's chamber: shell size (walls included), wall thickness and the cavern around it. */
+  heartWidth: number;
+  heartHeight: number;
+  heartWall: number;
+  heartCavernMargin: number;
+  heartCavernHeight: number;
+  /** How far from the spawn column it is, either way. */
+  heartOffsetMin: number;
+  heartOffsetMax: number;
+}
+
+export const DEPTHS_GEN: DepthsGenSpec = {
+  floatstoneChance: 0.05,
+  gentleRows: 20,
+  hotRockTilesPerVein: 350,
+  hotRockVeinMin: 4,
+  hotRockVeinMax: 10,
+  lavaPoolChance: 0.75,
+  poolMinRun: 4,
+  poolMaxRun: 14,
+  heartWidth: 13,
+  heartHeight: 9,
+  heartWall: 2,
+  heartCavernMargin: 6,
+  heartCavernHeight: 15,
+  heartOffsetMin: 80,
+  heartOffsetMax: 220,
 };
 
 /**

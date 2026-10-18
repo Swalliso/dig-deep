@@ -1,8 +1,9 @@
 # Dig Deep – Roadmap after the MVP
 
 All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13, the
-guidance slice and Phase 14a (the strata world) are on `develop` (the dev site). **Phase 14b
-(the strata's rules) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
+guidance slice and Phase 14a (the strata world) are on `develop` (the dev site). Phase 14b (the
+strata's rules and the Heart of the Deep) is built on its feature branch, waiting for review.
+**Phase 15 (lifts and the camp) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
 has acceptance criteria to check before moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
 targets; release status is separate from implementation status.
 
@@ -94,8 +95,8 @@ phase that needs it, and that phase says so.
 | Input actions (`src/input.ts`) | 11a | Logical actions (move left, jump, climb, map, quick stack…) bound to keys in one table, instead of key codes spread through `game.ts`. The F3 help, the Controls screen, tooltips and hints read their key names from it, so the remapping screen in the companion work only edits the table. |
 | PlayerStats (`src/systems/stats.ts`) | 11b | Player stats computed from the base values in config, plus equipment and boons. Replaces direct reads of `REACH`, `STATION_RANGE`, `DROP_PULL_RANGE` and the run/jump constants. 11b uses it for max health and safe fall height. |
 | Active tile updates (`src/world/tileUpdates.ts`) | 12 | A queue of tiles to recheck, fed by neighbours of changed tiles and worked through with a per-step budget, like the lighting's dirty box. Runs falling blocks, torch burnout and liquids. Never touches the whole world in one frame. |
-| Generation profiles | 12, extended in 14a | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14a adds strata (the **strata** profile, whose per-column stratum boundaries are kept in `world.strataTops`), and Descent floors are smaller profiles. |
-| World compatibility | 12, reviewed at 14a and 17 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. Reviewed at 14a: strata are a new profile, classic and gravel worlds still generate exactly as before (tests pin both profiles' world hashes), and no `SAVE_VERSION` bump was needed. |
+| Generation profiles | 12, extended in 14a and 14b | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14a adds strata (the **strata** profile, whose per-column stratum boundaries are kept in `world.strataTops`), Phase 14b adds **strata v2** (floatstone, hot rock, lava pools and the Heart of the Deep, whose place is kept in `world.heart`), and Descent floors are smaller profiles. |
+| World compatibility | 12, reviewed at 14a, 14b and 17 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. Reviewed at 14a: strata are a new profile, classic and gravel worlds still generate exactly as before (tests pin both profiles' world hashes), and no `SAVE_VERSION` bump was needed. Reviewed at 14b: the rules' generation is strata **v2**; v1 is frozen (its world hashes are pinned too), so 14a worlds keep generating the same and get the damp rule (it needs only strata) but no floatstone, lava, hot rock or Heart. Tile ids 45–49 were appended, the Heart's claim is an optional save field, and no `SAVE_VERSION` bump was needed. |
 | Run rules and random streams | 18 | Record the seed, rules/generation version and eligible content pools. Derive separate generation, loot and boon streams from the seed and stable floor identifiers; keep cosmetics independent. Persist the state needed to resume without rerolling content. |
 
 Notes:
@@ -486,6 +487,63 @@ number 14.
 - Cozy worlds: heat and lava don't hurt, and damp only changes light.
 - Debug: a key that jumps to the Heart of the Deep.
 
+- As built:
+  - **Generation**: new worlds use **strata v2** (v1 is frozen and pinned by world hashes, so 14a
+    worlds keep generating the same: they get the damp rule, which needs only strata, but none
+    of what v2 adds). v2 generates everything v1 does, then floatstone, the Heart's chamber, hot
+    rock and lava pools, each from its own seeded stream. Tile ids 45–49 are appended (lava, hot
+    rock, floatstone, heartstone, the Heart). No `SAVE_VERSION` bump.
+  - **Damp**: a torch in the Fungal Hollows gives 10 light (a 5-tile radius) instead of 16, fading
+    in over the stratum's top 12 rows, so the first torches there are only a little dimmer. Only
+    torches: glowshrooms, gem lamps, the lantern and flares are unaffected. The light is worked
+    out where the torch is (`torchLight`), so incremental relighting still equals a full recompute
+    (tested across the boundary). Cues: the Hollows' banner line, a one-time hint when a torch is
+    placed in damp air, the torch tooltip, and F3's "Torch light here". The damp torch is as
+    bright as a glowshroom, so glowshrooms are the Hollows' main light.
+  - **Floatstone** (kept, not cut): pale blue crystals on the rock faces of the Geode Depths' huge
+    caverns (about 150 a world). Within 5 tiles of one, gravity is 0.4x and falls slower (a fast
+    fall brakes into it), so jumps go about twice as high, and a fall only counts from where the
+    player leaves the pull. It's a tile, so it can be mined (copper) and placed: a floatstone at
+    the bottom of a shaft is a soft landing. Cues: rising motes, its cyan glow, the Geode banner
+    line, a HUD line ("Floatstone: gravity is lighter here") and a one-time hint.
+  - **Heat**: lava (4) and hot rock (3) are heat sources; heat spreads a level less per tile
+    through air and rock alike, but not into or through insulating tiles: all four bricks,
+    heartstone and closed doors. It reaches only 3 tiles, so it's worked out on demand for a box
+    (the player's tiles each step, the screen when it or the world changes) rather than kept as
+    a map. A hot zone gives 4 s of grace, then burns 1 HP every 1.5 s; the grace comes back twice
+    as fast out of the heat, so dashing past lava is free. Nothing heals in the heat. Cues: hot
+    tiles shimmer orange (still tinted with Reduced flashes, without the shimmer, and visible
+    through rock, so hot rock ahead shows while tunnelling), the safety line under the dread
+    meter takes over ("Too hot here: burns in 3 s. Bricks keep heat out." in orange, then
+    "Burning: get out of the heat!"), an orange vignette grows as the grace runs out, a sizzle on
+    each burn, and a one-time hint. Heat exposure isn't saved. Heat is a zone: about 10% of the
+    Magma Layer's open space is hot, none in its top 20 rows (the first meeting is safe), and
+    hot rock (glowing cracked basalt, mined with iron, drops basalt) is the only heat you can
+    remove.
+  - **Lava**: pools of one or two tiles deep in cave floors, below the Magma Layer's top 20 rows,
+    more often deeper, always in a rock basin (a test checks nothing could spill). Lava is a
+    walk-through liquid tile that gives light (6 tiles), hurts 2 HP on touch, and can't be dug
+    or built in (the cursor says so and suggests bricks over it); it doesn't flow. A heat zone
+    always surrounds it, so the warning comes before contact. A satchel dropped in lava floats up
+    out of it.
+  - **The Heart of the Deep**: a 13 x 9 heartstone chamber (2 thick, needs the emberite
+    pickaxe) on the floor row above the bedrock, 80–220 tiles to one side of the spawn, in a
+    domed cavern with a small lava pool on each side; the Heart sits inside. Heartstone glows
+    crimson and insulates, so the chamber is a cool, lit landmark. Reaching the Magma Layer the
+    first time in a session says which way it is ("about 140 m to the east"); the map marks it
+    once seen; the crafting panel's pickaxe suggestion points to it once the player has the
+    emberite pickaxe. Breaking the Heart (any pickaxe, once inside) is the goal: a banner ("The
+    Heart of the Deep — Claimed after 2 h 14 min of play — The deep is yours. Build on!"), a
+    chord, sparks and a toast. It's saved (`heartClaimedAt`) so it happens once, and the world
+    list marks the world with ♥. The Heart drops as a trophy block that lights 10 tiles.
+  - **Cozy**: heat and lava don't hurt (no grace, no vignette, no line), damp only changes light,
+    and floatstone works the same.
+  - **Survival route before Phase 16**: no accessory is needed. Cool space is most of the Magma
+    Layer; any brick (stone bricks can be fired at home and carried down) and a closed door make
+    a cool room anywhere; the Heart's roof is cool and so is its chamber once opened.
+  - Debug: X stands the player on the Heart's chamber roof, Z puts 4 lava tiles at the cursor;
+    the kit has floatstone. F3 shows the torch light, floatstone, heat and the Heart.
+
 - [ ] Each rule warns before it can hurt (with audio, shake and flashes off), and its stratum
       offers a countermeasure.
 - [ ] Each stratum has a learnable first encounter and a practical route back to established
@@ -801,14 +859,14 @@ Work through the phases in number order, with the companion polish in small slic
 1. Done: Phases 11a and 11b (pausing, saves, health and recovery), 12 (cave-ins and supports,
    with generation profiles keeping older worlds intact) and 13 (the dark: carried light holds
    dread off, only established light heals), the guidance slice (pinned recipe, map pins and
-   quick torch) and Phase 14a (distinct strata whose materials all have uses, and renewable wood).
-2. Phase 14b: each stratum's rule and the Heart of the Deep.
-3. Phases 15–17: a reliable way home first (lifts and the camp), then understandable equipment
+   quick torch), Phase 14a (distinct strata whose materials all have uses, and renewable wood)
+   and Phase 14b (each stratum's rule and the Heart of the Deep, in review).
+2. Phases 15–17: a reliable way home first (lifts and the camp), then understandable equipment
    choices and useful discoveries. Expand crafting navigation before the recipe list grows.
-4. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
+3. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
    before expanding boons in 19 and objectives/mutators in 20. Meta progression and
    standardized dailies follow in 21.
-5. Ideas to brainstorm: camp defense before Phase 18; automation once lifts and liquids exist.
+4. Ideas to brainstorm: camp defense before Phase 18; automation once lifts and liquids exist.
 
 Phase 18 builds on Phase 11's session and health foundations, Phase 12's generation profiles
 and falling blocks (its pressure prototype needs them), Phase 13's darkness, Phase 14's strata

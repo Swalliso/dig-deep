@@ -20,10 +20,10 @@ export function lightSafety(level: number, established: number): LightSafety {
   return level >= DREAD_SAFE_LIGHT ? 'carried' : 'dark';
 }
 
-/** What the HUD says about the dark: how things stand and why. `tone` picks its color. */
+/** What the HUD says about the dark (or heat, see heat.ts): how things stand and why. `tone` picks its color. */
 export interface DreadStatus {
   text: string;
-  tone: 'danger' | 'warning' | 'carried' | 'safe';
+  tone: 'danger' | 'warning' | 'carried' | 'safe' | 'heat';
 }
 
 /**

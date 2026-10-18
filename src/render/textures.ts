@@ -252,6 +252,78 @@ function gemLamp(img: ImageData, color: string): void {
   put(img, 7, 4, [255, 255, 255]);
 }
 
+/** Lava: bright orange with yellow-hot streaks and a few darker cooling crusts. */
+function lava(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Lava).color);
+  const hot: RGB = [255, 214, 92];
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const wave = Math.sin((x + y * 0.5) * 0.9) + Math.sin((x * 0.4 - y) * 0.7);
+      put(img, x, y, wave > 1.2 ? hot : c, wave > 1.2 ? 1 : wave < -1.1 ? 0.72 : rng() < 0.15 ? 0.9 : 1);
+    }
+  }
+  for (let k = 0; k < 3; k++) {
+    const x = randInt(rng, 1, S - 4);
+    const y = randInt(rng, 2, S - 2);
+    for (let i = 0; i < 3; i++) put(img, x + i, y, [120, 40, 20]);
+  }
+}
+
+/** Hot rock: basalt split by glowing red-orange cracks. */
+function hotRock(img: ImageData, rng: Rng): void {
+  basalt(img, rng);
+  const glow = rgb(tileDef(Tile.HotRock).glowColor ?? '#ff4a1a');
+  for (let k = 0; k < 3; k++) {
+    let x = randInt(rng, 1, S - 2);
+    let y = randInt(rng, 0, 4);
+    for (let i = 0; i < 9 && y < S; i++) {
+      put(img, x, y, glow, i % 3 === 1 ? 1.15 : 0.95);
+      x = Math.min(S - 1, Math.max(0, x + randInt(rng, -1, 1)));
+      y += rng() < 0.75 ? 1 : 0;
+    }
+  }
+}
+
+/** Floatstone: pale blue crystal blocks drifting apart, with dark gaps between them. */
+function floatstone(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Floatstone).color);
+  const gap: RGB = [40, 52, 70];
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) put(img, x, y, gap, rng() < 0.2 ? 1.2 : 1);
+  for (const [x0, y0, w, h] of [[1, 2, 6, 5], [9, 0, 6, 6], [3, 9, 5, 6], [10, 8, 5, 5]] as [number, number, number, number][]) {
+    for (let y = y0; y < y0 + h; y++) {
+      for (let x = x0; x < x0 + w; x++) put(img, x, y, c, y === y0 ? 1.2 : x === x0 + w - 1 || y === y0 + h - 1 ? 0.75 : 1);
+    }
+    put(img, x0 + 1, y0 + 1, [255, 255, 255]);
+  }
+}
+
+/** Heartstone: deep crimson rock laced with bright veins that meet in diamonds. */
+function heartstone(img: ImageData, rng: Rng): void {
+  const c = rgb(tileDef(Tile.Heartstone).color);
+  const vein: RGB = [232, 54, 86];
+  speckle(img, rng, c, 1.2);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      if ((x + y) % 8 === 0 || (x - y + 16) % 8 === 4) put(img, x, y, vein, (x * 3 + y) % 5 === 0 ? 1.25 : 0.9);
+    }
+  }
+}
+
+/** The Heart of the Deep: a big faceted red gem with a golden glow at its core. */
+function heartCore(img: ImageData): void {
+  const c = rgb(tileDef(Tile.HeartCore).color);
+  const gold: RGB = [255, 214, 120];
+  for (let y = 1; y < S - 1; y++) {
+    const half = y < 6 ? Math.min(y + 1, 6) : Math.max(0, 14 - y);
+    for (let x = 8 - half; x < 8 + half; x++) {
+      const core = Math.abs(x - 7.5) + Math.abs(y - 7) < 3;
+      put(img, x, y, core ? gold : c, core ? 1 : x < 8 ? 1.2 : 0.8);
+    }
+  }
+  put(img, 5, 3, [255, 255, 255]);
+  put(img, 6, 2, [255, 255, 255]);
+}
+
 function bedrock(img: ImageData, rng: Rng): void {
   const c = rgb(tileDef(Tile.Bedrock).color);
   for (let y = 0; y < S; y++) {
@@ -578,6 +650,11 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.MushroomSprout: return mushroomSprout(img);
     case Tile.RubyLamp:
     case Tile.SapphireLamp: return gemLamp(img, tileDef(id).color);
+    case Tile.Lava: return lava(img, rng);
+    case Tile.HotRock: return hotRock(img, rng);
+    case Tile.Floatstone: return floatstone(img, rng);
+    case Tile.Heartstone: return heartstone(img, rng);
+    case Tile.HeartCore: return heartCore(img);
   }
 }
 

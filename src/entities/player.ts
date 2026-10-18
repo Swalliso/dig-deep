@@ -5,6 +5,9 @@ import {
   COYOTE_TIME,
   DEBUG_FLY_FAST,
   DEBUG_FLY_SPEED,
+  FLOAT_BRAKE,
+  FLOAT_GRAVITY,
+  FLOAT_MAX_FALL,
   GRAVITY,
   JUMP_BUFFER,
   JUMP_CORNER_CORRECTION,
@@ -81,6 +84,11 @@ export class Player {
   fallLanded = 0;
   /** Caught on a ladder by walking into its shaft during the latest update. */
   caughtByLadder = false;
+  /**
+   * Near floatstone (Phase 14b; the game sets it before each update): gravity is FLOAT_GRAVITY
+   * times as strong, falls are slower, and a fall only counts from where the player leaves it.
+   */
+  floating = false;
   /**
    * Left the ground by walking off a ledge (not by jumping, dropping through a platform or
    * letting go of a ladder). Walking off into a ladder column catches the player on it.
@@ -218,7 +226,10 @@ export class Player {
       this.jumpHeld = false;
     }
 
-    this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL_SPEED);
+    // Near floatstone gravity is lighter and falls slower: a faster fall brakes down to that speed.
+    const gravity = this.floating ? GRAVITY * FLOAT_GRAVITY : GRAVITY;
+    const maxFall = this.floating ? MAX_FALL_SPEED * FLOAT_MAX_FALL : MAX_FALL_SPEED;
+    this.vy = this.vy > maxFall ? Math.max(maxFall, this.vy - FLOAT_BRAKE * dt) : Math.min(this.vy + gravity * dt, maxFall);
 
     // Move in small steps, X then Y, so even max speed can't skip over a tile.
     const dx = this.vx * dt;
@@ -237,6 +248,8 @@ export class Player {
     if (this.grounded) this.walkDistance += Math.abs(this.x - startX);
     if (this.grounded && !wasGrounded) this.landingSpeed = fallSpeed;
     this.trackFall(wasGrounded, dropping || this.jumped);
+    // Floatstone cushions falls: one only counts from where the player leaves its pull.
+    if (this.floating && this.fallTop !== null) this.fallTop = this.y;
   }
 
   /**

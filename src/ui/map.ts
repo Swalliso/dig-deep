@@ -34,6 +34,8 @@ export interface MapMarkers {
   bed: { tx: number; ty: number } | null;
   /** Satchels left where the player died (tile coordinates, fractional). Drawn as diamonds. */
   satchels: { tx: number; ty: number }[];
+  /** The Heart of the Deep, once the player has seen it (Phase 14b), or null. Drawn as a diamond. */
+  heart: { tx: number; ty: number } | null;
   /** The player's map pins, and the index of the tracked one (or null). */
   pins: readonly MapPin[];
   trackedPin: number | null;
@@ -96,6 +98,7 @@ const SPAWN_COLOR = '#7cd65a';
 const CHEST_COLOR = '#d08a3c';
 const BED_COLOR = '#ff7eb6';
 const SATCHEL_COLOR = '#c792ff';
+const HEART_COLOR = '#ff3d5a';
 export const PIN_COLOR = '#5ad1e6';
 /** The tracked pin, on the map, the minimap and the HUD. */
 export const TRACKED_PIN_COLOR = '#ffffff';
@@ -304,6 +307,7 @@ export class FullMap {
     marker(ctx, sx(markers.spawn.tx + 0.5), sy(markers.spawn.ty + 0.5), size, SPAWN_COLOR, u);
     if (markers.bed) marker(ctx, sx(markers.bed.tx + 1), sy(markers.bed.ty + 0.5), size, BED_COLOR, u);
     for (const satchel of markers.satchels) diamond(ctx, sx(satchel.tx), sy(satchel.ty), size * 1.4, SATCHEL_COLOR, u);
+    if (markers.heart) diamond(ctx, sx(markers.heart.tx + 0.5), sy(markers.heart.ty + 0.5), size * 1.8, HEART_COLOR, u);
     marker(ctx, sx(markers.playerX / TILE_SIZE), sy(markers.playerY / TILE_SIZE), size * 1.4, PLAYER_COLOR, u);
     // Pins on top, with the one being edited showing what's typed.
     markers.pins.forEach((pin, i) => {
@@ -441,6 +445,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: num
   ];
   if (markers.bed) items.push([BED_COLOR, 'Bed']);
   if (markers.satchels.length > 0) items.push([SATCHEL_COLOR, 'Satchel']);
+  if (markers.heart) items.push([HEART_COLOR, 'Heart of the Deep']);
   if (markers.pins.some((_, i) => i !== markers.trackedPin)) items.push([PIN_COLOR, 'Pin']);
   if (markers.trackedPin !== null) items.push([TRACKED_PIN_COLOR, 'Tracked pin']);
   ctx.font = `${5 * u}px monospace`;
@@ -450,7 +455,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: num
   const widths = items.map(([, label]) => 6 * u + ctx.measureText(label).width);
   let x = cx - (widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1)) / 2;
   items.forEach(([color, label], i) => {
-    if (color === SATCHEL_COLOR) diamond(ctx, x + 2 * u, y, 4 * u, color, u);
+    if (color === SATCHEL_COLOR || color === HEART_COLOR) diamond(ctx, x + 2 * u, y, 4 * u, color, u);
     else if (color === PIN_COLOR || color === TRACKED_PIN_COLOR) pinHead(ctx, x + 2 * u, y, 2 * u, color, u);
     else marker(ctx, x + 2 * u, y, 3 * u, color, u);
     shadowText(ctx, label, x + 6 * u, y, '#d6d6d6', u);
@@ -497,6 +502,7 @@ export function drawMinimap(ctx: CanvasRenderingContext2D, image: MapImage, mark
   for (const satchel of markers.satchels) {
     diamond(ctx, x0 + (satchel.tx - left) * u, y0 + (satchel.ty - top) * u, 3 * u, SATCHEL_COLOR, u);
   }
+  if (markers.heart) diamond(ctx, at(markers.heart.tx, left, x0), at(markers.heart.ty, top, y0), 4 * u, HEART_COLOR, u);
   markers.pins.forEach((pin, i) => {
     pinHead(ctx, at(pin.tx, left, x0), at(pin.ty, top, y0), 1.5 * u, i === markers.trackedPin ? TRACKED_PIN_COLOR : PIN_COLOR, u);
   });

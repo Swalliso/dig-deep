@@ -172,9 +172,10 @@ export function drawFpsCounter(ctx: CanvasRenderingContext2D, fps: number, u: nu
 
 /**
  * A stratum's entry banner near the top of the screen: its name and depth ("Fungal Hollows —
- * 110 m") over a line of what's found there, between two thin rules, `alpha` opaque.
+ * 110 m") over a line of what's found there, between two thin rules, `alpha` opaque. `rule` is an
+ * extra line in a warmer colour (the stratum's rule; the Heart of the Deep's completion uses it too).
  */
-export function drawStratumBanner(ctx: CanvasRenderingContext2D, title: string, subtitle: string, alpha: number, u: number): void {
+export function drawStratumBanner(ctx: CanvasRenderingContext2D, title: string, subtitle: string, alpha: number, u: number, rule?: string): void {
   const { width, height } = ctx.canvas;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -190,6 +191,7 @@ export function drawStratumBanner(ctx: CanvasRenderingContext2D, title: string, 
   ctx.fillRect(Math.round(width / 2 - w / 2), y + 15 * u, Math.round(w), u);
   ctx.font = `${6 * u}px monospace`;
   shadowText(ctx, subtitle, width / 2, y + 19 * u, '#cfc6b4', u);
+  if (rule) shadowText(ctx, rule, width / 2, y + 28 * u, '#ffc27a', u);
   ctx.restore();
 }
 

@@ -4,7 +4,7 @@ import { nextStratumSpot } from '../src/debug';
 import { RECIPES } from '../src/systems/crafting';
 import { nextPickaxe, pickaxeNote, whereFound } from '../src/systems/goal';
 import { itemDef, type ItemId } from '../src/systems/items';
-import { CLASSIC_PROFILE, generateWorld, GRAVEL_PROFILE, NEW_WORLD_PROFILE, STRATA_ORES, STRATA_PROFILE } from '../src/world/generate';
+import { CLASSIC_PROFILE, generateWorld, GRAVEL_PROFILE, NEW_WORLD_PROFILE, STRATA_ORES, STRATA_V2_PROFILE } from '../src/world/generate';
 import { bannerTitle, depthRange, STRATA, StratumTracker, stratumAt } from '../src/world/strata';
 import { isSolid, Tile, TILES, tileDef, type TileId } from '../src/world/tiles';
 import { World } from '../src/world/world';
@@ -58,12 +58,12 @@ describe.each(SEEDS)('strata world from seed %i', (seed) => {
   let world: World;
   let counts: number[][];
   beforeAll(() => {
-    world = generateWorld(seed, STRATA_PROFILE);
+    world = generateWorld(seed, STRATA_V2_PROFILE);
     counts = countByStratum(world);
   });
 
   it('records its profile and a boundary per column between each pair of strata', () => {
-    expect(world.profile).toEqual({ name: 'strata', version: 1 });
+    expect(world.profile).toEqual({ name: 'strata', version: 2 });
     expect(world.strataTops).toHaveLength(STRATA.length - 1);
     for (const tops of world.strataTops) expect(tops).toHaveLength(world.width);
   });
@@ -156,16 +156,16 @@ describe.each(SEEDS)('strata world from seed %i', (seed) => {
 
 describe('the strata profile', () => {
   it('is what new worlds get, and is deterministic', () => {
-    expect(NEW_WORLD_PROFILE).toBe(STRATA_PROFILE);
-    const a = generateWorld(2024, STRATA_PROFILE);
-    const b = generateWorld(2024, STRATA_PROFILE);
+    expect(NEW_WORLD_PROFILE).toBe(STRATA_V2_PROFILE);
+    const a = generateWorld(2024, STRATA_V2_PROFILE);
+    const b = generateWorld(2024, STRATA_V2_PROFILE);
     expect(b.hash()).toBe(a.hash());
     expect(b.strataTops).toEqual(a.strataTops);
-    expect(generateWorld(2025, STRATA_PROFILE).hash()).not.toBe(a.hash());
+    expect(generateWorld(2025, STRATA_V2_PROFILE).hash()).not.toBe(a.hash());
   });
 
   it("keeps the surface the same as older worlds': hills, dirt, grass, trees and the spawn point", () => {
-    const strata = generateWorld(42, STRATA_PROFILE);
+    const strata = generateWorld(42, STRATA_V2_PROFILE);
     const gravel = generateWorld(42, GRAVEL_PROFILE);
     expect(strata.surface).toEqual(gravel.surface);
     expect([strata.spawnTx, strata.spawnTy]).toEqual([gravel.spawnTx, gravel.spawnTy]);
@@ -182,7 +182,7 @@ describe('the strata profile', () => {
 
   it('generates in under 2 seconds', () => {
     const start = performance.now();
-    generateWorld(7, STRATA_PROFILE);
+    generateWorld(7, STRATA_V2_PROFILE);
     expect(performance.now() - start).toBeLessThan(2000);
   });
 
@@ -202,7 +202,7 @@ describe('stratum tracking', () => {
   });
 
   it(`only counts a stratum as entered ${BANNER_HYSTERESIS} tiles past its boundary`, () => {
-    const world = generateWorld(42, STRATA_PROFILE);
+    const world = generateWorld(42, STRATA_V2_PROFILE);
     const tx = 500;
     const boundary = world.strataTops[1][tx]; // the Fungal Hollows' top
     const tracker = new StratumTracker(world, tx, boundary - 10);
@@ -218,7 +218,7 @@ describe('stratum tracking', () => {
 
 describe('debug: next stratum', () => {
   it('goes to the top of each stratum in turn, standing in open space, then back to the spawn', () => {
-    const world = generateWorld(42, STRATA_PROFILE);
+    const world = generateWorld(42, STRATA_V2_PROFILE);
     let tx = world.spawnTx;
     let ty = world.spawnTy;
     for (let s = 1; s < STRATA.length; s++) {
@@ -242,7 +242,7 @@ describe('debug: next stratum', () => {
 describe('progression through the strata', () => {
   let counts: number[][];
   beforeAll(() => {
-    counts = countByStratum(generateWorld(42, STRATA_PROFILE));
+    counts = countByStratum(generateWorld(42, STRATA_V2_PROFILE));
   });
 
   /**
@@ -303,21 +303,21 @@ describe('progression through the strata', () => {
   });
 
   it("says where each stratum's materials are found", () => {
-    expect(whereFound('iron_ore', STRATA_PROFILE)).toBe('Fungal Hollows, 110–230 m down');
-    expect(whereFound('ruby', STRATA_PROFILE)).toBe('Geode Depths, 230–350 m down');
-    expect(whereFound('emberite_ore', STRATA_PROFILE)).toBe('Magma Layer, from 350 m down');
-    expect(whereFound('mudstone', STRATA_PROFILE)).toBe('Fungal Hollows, 110–230 m down');
-    expect(whereFound('wood', STRATA_PROFILE)).toBe('from trees and giant mushrooms');
-    expect(whereFound('stone', STRATA_PROFILE)).toBe('under the dirt');
+    expect(whereFound('iron_ore', STRATA_V2_PROFILE)).toBe('Fungal Hollows, 110–230 m down');
+    expect(whereFound('ruby', STRATA_V2_PROFILE)).toBe('Geode Depths, 230–350 m down');
+    expect(whereFound('emberite_ore', STRATA_V2_PROFILE)).toBe('Magma Layer, from 350 m down');
+    expect(whereFound('mudstone', STRATA_V2_PROFILE)).toBe('Fungal Hollows, 110–230 m down');
+    expect(whereFound('wood', STRATA_V2_PROFILE)).toBe('from trees and giant mushrooms');
+    expect(whereFound('stone', STRATA_V2_PROFILE)).toBe('under the dirt');
     expect(whereFound('emberite_ore')).toBeNull(); // not in worlds from before strata
   });
 
   it('suggests the emberite pickaxe after gold in a strata world, but not in an older one', () => {
-    const next = nextPickaxe(4, STRATA_PROFILE)!;
+    const next = nextPickaxe(4, STRATA_V2_PROFILE)!;
     expect(next.recipe.output).toBe('emberite_pickaxe');
-    expect(pickaxeNote(next, STRATA_PROFILE)).toBe('Emberite ore: Magma Layer, from 350 m down, smelted at a furnace');
+    expect(pickaxeNote(next, STRATA_V2_PROFILE)).toBe('Emberite ore: Magma Layer, from 350 m down, smelted at a furnace');
     expect(nextPickaxe(4, GRAVEL_PROFILE)).toBeNull();
-    expect(nextPickaxe(5, STRATA_PROFILE)).toBeNull();
-    expect(nextPickaxe(1, STRATA_PROFILE)?.ore).toBe('copper_ore');
+    expect(nextPickaxe(5, STRATA_V2_PROFILE)).toBeNull();
+    expect(nextPickaxe(1, STRATA_V2_PROFILE)?.ore).toBe('copper_ore');
   });
 });

@@ -544,6 +544,10 @@ function drawGoalBox(ctx: CanvasRenderingContext2D, itemAtlas: HTMLCanvasElement
         { text: isPinned ? 'It is your goal.' : 'Click to pin it as your goal.', color: GREY },
       ];
     }
+  } else if (state.profile.depths) {
+    // Strata v2 worlds (Phase 14b): the best pickaxe opens the Heart of the Deep.
+    shadowText(ctx, 'Best pickaxe: it breaks heartstone.', left, y + u, PIN, u);
+    shadowText(ctx, 'The Heart of the Deep is above the bedrock.', left, y + 9 * u, LIGHT, u);
   } else {
     shadowText(ctx, 'You have the best pickaxe there is.', left, y + u, LIGHT, u);
   }
@@ -1219,7 +1223,8 @@ function worldDetail(world: WorldMeta): string {
     return `saved by ${world.version < SAVE_VERSION ? 'an older' : 'a newer'} version, can't be loaded`;
   }
   const difficulty = world.difficulty ? `${difficultyName(world.difficulty)} · ` : '';
-  return `${difficulty}seed ${world.seed} · saved ${timeAgo(world.savedAt)}`;
+  const heart = world.heartClaimed ? '♥ Heart claimed · ' : '';
+  return `${heart}${difficulty}seed ${world.seed} · saved ${timeAgo(world.savedAt)}`;
 }
 
 function timeAgo(time: number): string {

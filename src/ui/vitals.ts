@@ -82,6 +82,7 @@ const DREAD_COLORS: Record<DreadStatus['tone'], string> = {
   warning: '#d7b8ff',
   carried: '#ffd98a',
   safe: '#cfe8c8',
+  heat: '#ffae5c',
 };
 
 /**

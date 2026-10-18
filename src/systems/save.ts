@@ -81,6 +81,11 @@ export interface SaveData {
   pinnedRecipe?: ItemId | null;
   /** The player's map pins and which one is tracked (guidance slice). */
   mapPins?: SavedMapPins;
+  /**
+   * Session clock time the Heart of the Deep was claimed, or null if it hasn't been (Phase 14b).
+   * Missing means not claimed.
+   */
+  heartClaimedAt?: number | null;
 }
 
 /**
@@ -97,6 +102,8 @@ export interface WorldMeta {
   version: number;
   /** Missing for worlds saved before Phase 11b (they're Cozy). */
   difficulty?: Difficulty;
+  /** The Heart of the Deep has been claimed (Phase 14b). Missing means not. */
+  heartClaimed?: boolean;
 }
 
 /** A tile entity and where it is: a chest's contents, or when a planted sapling or sprout grows (Phase 14a). */
@@ -164,6 +171,8 @@ export interface SurvivalState {
   /** Guidance slice. */
   pinnedRecipe?: ItemId | null;
   mapPins?: MapPins;
+  /** Phase 14b. */
+  heartClaimedAt?: number | null;
 }
 
 export function createSave(
@@ -212,6 +221,7 @@ export type SavedState = Pick<
   | 'flares'
   | 'pinnedRecipe'
   | 'mapPins'
+  | 'heartClaimedAt'
 >;
 
 export function savedState(
@@ -242,6 +252,7 @@ export function savedState(
     ...(survival?.flares && { flares: savedFlares(survival.flares) }),
     ...(survival?.pinnedRecipe !== undefined && { pinnedRecipe: survival.pinnedRecipe }),
     ...(survival?.mapPins && { mapPins: survival.mapPins.saved() }),
+    ...(survival?.heartClaimedAt !== undefined && { heartClaimedAt: survival.heartClaimedAt }),
   };
 }
 
@@ -409,7 +420,8 @@ export function checkSave(raw: unknown): SaveStatus {
     (save.satchels === undefined || Array.isArray(save.satchels)) &&
     (save.caveIns === undefined || (typeof save.caveIns === 'object' && save.caveIns !== null)) &&
     (save.flares === undefined || Array.isArray(save.flares)) &&
-    (save.mapPins === undefined || (typeof save.mapPins === 'object' && save.mapPins !== null));
+    (save.mapPins === undefined || (typeof save.mapPins === 'object' && save.mapPins !== null)) &&
+    (save.heartClaimedAt === undefined || save.heartClaimedAt === null || typeof save.heartClaimedAt === 'number');
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 
@@ -475,6 +487,7 @@ export function metaFromSave(id: string, save: Partial<SaveData> | undefined): W
     savedAt: typeof save?.savedAt === 'number' ? save.savedAt : 0,
     version: typeof save?.version === 'number' ? save.version : -1,
     ...(save?.difficulty === 'normal' || save?.difficulty === 'cozy' ? { difficulty: save.difficulty } : {}),
+    ...(typeof save?.heartClaimedAt === 'number' ? { heartClaimed: true } : {}),
   };
 }
 

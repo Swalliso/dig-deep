@@ -169,12 +169,13 @@ function applySettings(): void {
 }
 
 /**
- * Health, difficulty, bed, satchels, cave-ins, dread, flares, the pinned recipe and the map pins:
+ * Health, difficulty, bed, satchels, cave-ins, dread, flares, the pinned recipe, the map pins and
+ * when the Heart of the Deep was claimed:
  * the game's saved state beyond the player and inventory.
  */
 function survival(game: Game): SurvivalState {
-  const { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins } = game;
-  return { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins };
+  const { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt } = game;
+  return { health, difficulty, bed, satchels, caveIns, dread, flares, pinnedRecipe, mapPins, heartClaimedAt };
 }
 
 /** The game as a save, right now. */
@@ -319,6 +320,7 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
             flares: flaresFromSave(save.flares),
             pinnedRecipe: restorePinnedRecipe(save.pinnedRecipe),
             mapPins: MapPins.fromSave(save.mapPins, world),
+            heartClaimedAt: typeof save.heartClaimedAt === 'number' && Number.isFinite(save.heartClaimedAt) ? save.heartClaimedAt : null,
           }
         : { difficulty },
     );

@@ -48,7 +48,8 @@ export function inReach(player: Player, tx: number, ty: number): boolean {
 export function checkMine(world: World, player: Player, tx: number, ty: number, tier: number): MineCheck {
   if (!world.inBounds(tx, ty)) return 'empty';
   const def = tileDef(world.getTile(tx, ty));
-  if (def.id === Tile.Air) return 'empty';
+  // Lava can't be dug: the cursor treats it like open air.
+  if (def.id === Tile.Air || def.liquid) return 'empty';
   if (!Number.isFinite(def.hardness)) return 'unbreakable';
   if (!inReach(player, tx, ty)) return 'far';
   if (tier < def.minTier) return 'tier';
