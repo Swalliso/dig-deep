@@ -1,9 +1,8 @@
 # Dig Deep – Roadmap after the MVP
 
 All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13, the
-guidance slice and Phase 14a (the strata world) are on `develop` (the dev site). Phase 14b (the
-strata's rules and the Heart of the Deep) is built on its feature branch, waiting for review.
-**Phase 15 (lifts and the camp) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
+guidance slice, Phase 14a (the strata world) and Phase 14b (the strata's rules and the Heart of
+the Deep) are on `develop` (the dev site). **Phase 15 (lifts and the camp) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
 has acceptance criteria to check before moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
 targets; release status is separate from implementation status.
 
@@ -860,7 +859,7 @@ Work through the phases in number order, with the companion polish in small slic
    with generation profiles keeping older worlds intact) and 13 (the dark: carried light holds
    dread off, only established light heals), the guidance slice (pinned recipe, map pins and
    quick torch), Phase 14a (distinct strata whose materials all have uses, and renewable wood)
-   and Phase 14b (each stratum's rule and the Heart of the Deep, in review).
+   and Phase 14b (each stratum's rule and the Heart of the Deep).
 2. Phases 15–17: a reliable way home first (lifts and the camp), then understandable equipment
    choices and useful discoveries. Expand crafting navigation before the recipe list grows.
 3. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
