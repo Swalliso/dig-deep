@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_HEIGHT, PLAYER_WIDTH, TILE_SIZE } from '../src/config';
+import { CAMP_LIGHT, DREAD_SAFE_LIGHT, PLAYER_HEIGHT, PLAYER_WIDTH, TILE_SIZE } from '../src/config';
 import { overlapsSolid, Player } from '../src/entities/player';
 import { campSpot, canPlace, itemForTile, primaryAction, tryPlace } from '../src/systems/building';
 import { craft, nearbyStations, RECIPES } from '../src/systems/crafting';
@@ -10,6 +10,7 @@ import { Health } from '../src/systems/health';
 import { restoreTileEntities, savedState, savedTileEntities, type SaveData } from '../src/systems/save';
 import { campPartners, campTopLeft, isWholeCamp } from '../src/world/camp';
 import { TileEntities } from '../src/world/tileEntities';
+import { LightMap } from '../src/world/lighting';
 import { Tile, tileDef, type TileId } from '../src/world/tiles';
 import { World } from '../src/world/world';
 
@@ -99,6 +100,18 @@ describe('the camp as a station', () => {
     const stations = nearbyStations(world, (13 + 0.5) * TILE_SIZE, (FLOOR - 1) * TILE_SIZE);
     expect([...stations].sort()).toEqual(['furnace', 'workbench']);
     expect(nearbyStations(world, 40 * TILE_SIZE, (FLOOR - 1) * TILE_SIZE).size).toBe(0);
+  });
+});
+
+describe('the campfire', () => {
+  it('lights the camp with established light, so it heals and keeps dread away in a dark cave', () => {
+    const { world } = campWorld();
+    fill(world, 0, 0, 59, FLOOR - 5, Tile.Stone); // roofed over: no sky light
+    const light = new LightMap(world);
+    expect(light.established(11, FLOOR - 1)).toBe(CAMP_LIGHT); // the stove
+    expect(light.established(10, FLOOR - 1)).toBeGreaterThanOrEqual(DREAD_SAFE_LIGHT); // where you wake up
+    expect(light.established(16, FLOOR - 1)).toBeGreaterThanOrEqual(DREAD_SAFE_LIGHT); // and around it
+    expect(light.established(40, FLOOR - 1)).toBe(0);
   });
 });
 

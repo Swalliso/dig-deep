@@ -178,6 +178,9 @@ export const LIFT_RATTLE_DISTANCE = 96; // px travelled per rattle of the cage o
 export const LIFT_RAILS_PER_BAR = 16; // lift rails crafted from one iron bar (and 2 planks)
 export const LIFT_PANEL_ROWS = 9; // stops listed at once in the lift panel (the wheel scrolls)
 export const LIFT_STOP_NAME_MAX = 18; // characters
+// The camp's stove is a campfire: established light (it heals and keeps dread away, like a
+// torch's), so a camp is a safe spot to rest wherever it's set up. The damp doesn't dim it.
+export const CAMP_LIGHT = 14; // 7-tile radius (a torch lights 8)
 
 // --- Cave-ins and supports (Phase 12) ---
 // Gravel is loose: it rests only on what's directly below it. A tile change rechecks the tiles

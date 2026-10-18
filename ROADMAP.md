@@ -594,7 +594,10 @@ satchel, and lifts and the camp are what make the deeper strata practical.
   - A cage that reaches a break mid-trip stops there and leaves the rider holding the rail; one
     whose rail is removed under it is gone (the next use makes another).
   - **Camp kit** (a workbench, a furnace, a bed and 2 iron bars): a 2 x 2 tent and stove (tiles
-    52–55) on solid ground that counts as a workbench and a furnace. Setting it up makes it the
+    52–55) on solid ground that counts as a workbench and a furnace. Its stove is a campfire
+    (agreed with the user, so the camp is more than a bed plus stations): established light of
+    `CAMP_LIGHT` (7 tiles, not dimmed by the damp), so a camp heals and keeps dread away
+    wherever it's set up. Setting it up makes it the
     respawn point (floater, chime and toast); right-clicking it does again after using a bed.
     Breaking any part packs up all of it into one camp kit. One camp at a time (the cursor says
     where the other one is). Respawning prefers whichever of the bed and the camp was set last
