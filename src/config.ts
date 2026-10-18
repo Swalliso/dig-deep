@@ -23,18 +23,30 @@ export const CHUNK_CACHE_LIMIT = 48; // cached chunk canvases kept in memory (~1
 // layers drift slowly and the world feels bigger. They're generated once per world from its
 // seed, as strips BACKGROUND_STRIP_WIDTH world px wide that repeat sideways.
 export interface BackgroundLayerSpec {
-  kind: 'clouds' | 'mountains' | 'hills';
+  /**
+   * Surface layers: clouds, mountains, hills. Underground (strata) layers repeat both ways: rock
+   * ledges with stalactites, giant mushrooms, crystals or basalt columns on them.
+   */
+  kind: 'clouds' | 'mountains' | 'hills' | 'stalactites' | 'mushrooms' | 'crystals' | 'columns';
   factor: number;
-  /** World px the layer's horizon sits above the average surface (SURFACE_LEVEL). */
+  /**
+   * World px the layer's horizon sits above the average surface (SURFACE_LEVEL). Underground
+   * layers: how far their ledges are shifted down, so two layers' ledges don't line up.
+   */
   lift: number;
-  /** Height range of the skyline above the horizon, world px. Clouds: the band they float in. */
+  /** Height range of the skyline above the horizon, world px. Clouds: the band they float in. Underground: the formations. */
   minHeight: number;
   maxHeight: number;
   color: string;
-  /** Mountains: snow on the high peaks. Hills: tree silhouettes. Clouds: their shaded undersides. */
+  /**
+   * Mountains: snow on the high peaks. Hills: tree silhouettes. Clouds: their shaded undersides.
+   * Underground: highlights (mushroom caps, crystal faces, glowing cracks).
+   */
   accent: string;
   /** Clouds only: world px per second they drift, on top of the parallax. */
   drift?: number;
+  /** Underground only: world px from one ledge to the next (the strip's height). */
+  period?: number;
 }
 export const BACKGROUND_STRIP_WIDTH = 1024; // world px before a layer repeats
 // World px of solid colour under each skyline in its strip; at least BACKGROUND_SHADE_DEPTH, so
@@ -44,12 +56,56 @@ export const BACKGROUND_FILL_BELOW = 96;
 // BACKGROUND_SHADE_DEPTH world px, so big areas of a near layer don't read as a flat wall.
 export const BACKGROUND_SHADE = 0.14;
 export const BACKGROUND_SHADE_DEPTH = 90;
-/** The surface background set. Later strata and biomes get their own sets (ROADMAP Phase 14). */
+/** The surface background set. Each stratum below Topsoil has its own set (STRATA_LOOKS). */
 export const SURFACE_BACKGROUND: readonly BackgroundLayerSpec[] = [
   { kind: 'clouds', factor: 0.04, lift: 110, minHeight: 10, maxHeight: 80, color: '#ffffff', accent: '#d9e9f6', drift: 3 },
   { kind: 'mountains', factor: 0.1, lift: 50, minHeight: 40, maxHeight: 150, color: '#9dbfdc', accent: '#dcebf6' },
   { kind: 'hills', factor: 0.25, lift: 24, minHeight: 20, maxHeight: 70, color: '#89b3a3', accent: '#76a091' },
   { kind: 'hills', factor: 0.45, lift: 4, minHeight: 12, maxHeight: 44, color: '#6f9c76', accent: '#5c8864' },
+];
+/**
+ * How each stratum below Topsoil looks behind dug-out spaces and caves (strata worlds only): a
+ * backdrop colour (its tint) with parallax layers over it, far to near. Topsoil keeps the dirt
+ * backdrop, and worlds without strata keep it all the way down. Darkness covers all of it, so it
+ * only shows where there's light.
+ */
+export interface StratumLook {
+  backdrop: string;
+  background: readonly BackgroundLayerSpec[];
+}
+export const STRATA_LOOKS: readonly StratumLook[] = [
+  // Stone Caverns: grey ledges with stalactites and stalagmites.
+  {
+    backdrop: '#17171c',
+    background: [
+      { kind: 'stalactites', factor: 0.12, lift: 0, minHeight: 10, maxHeight: 48, color: '#222229', accent: '#2b2b34', period: 176 },
+      { kind: 'stalactites', factor: 0.3, lift: 70, minHeight: 8, maxHeight: 36, color: '#2c2c35', accent: '#383844', period: 144 },
+    ],
+  },
+  // Fungal Hollows: giant mushrooms on damp green ledges, roots hanging under them.
+  {
+    backdrop: '#111916',
+    background: [
+      { kind: 'mushrooms', factor: 0.12, lift: 0, minHeight: 20, maxHeight: 58, color: '#1a2521', accent: '#2c2340', period: 176 },
+      { kind: 'mushrooms', factor: 0.3, lift: 64, minHeight: 14, maxHeight: 42, color: '#22312b', accent: '#3d2d55', period: 144 },
+    ],
+  },
+  // Geode Depths: violet crystal clusters growing up and down from the ledges.
+  {
+    backdrop: '#141029',
+    background: [
+      { kind: 'crystals', factor: 0.12, lift: 0, minHeight: 12, maxHeight: 50, color: '#1f1936', accent: '#3a2c66', period: 176 },
+      { kind: 'crystals', factor: 0.3, lift: 60, minHeight: 10, maxHeight: 38, color: '#29223f', accent: '#5a44a2', period: 144 },
+    ],
+  },
+  // Magma Layer: jagged basalt columns over cracks that glow a dull orange.
+  {
+    backdrop: '#1c0f0c',
+    background: [
+      { kind: 'columns', factor: 0.12, lift: 0, minHeight: 14, maxHeight: 52, color: '#291612', accent: '#5c200d', period: 176 },
+      { kind: 'columns', factor: 0.3, lift: 58, minHeight: 10, maxHeight: 40, color: '#361e17', accent: '#8c3512', period: 144 },
+    ],
+  },
 ];
 export const TEXTURE_SEED = 1337; // fixed so tile textures look the same in every world
 
@@ -161,6 +217,7 @@ export const PICKAXES = [
   { name: 'Copper', speed: 1.9 },
   { name: 'Iron', speed: 2.6 },
   { name: 'Gold', speed: 3.5 },
+  { name: 'Emberite', speed: 4.6 }, // Phase 14a: from the Magma Layer's emberite ore, which needs gold
 ] as const;
 
 // --- Break particles ---
@@ -193,10 +250,13 @@ export const QUICK_STACK_HOTBAR = true;
 // --- Lighting ---
 export const LIGHT_MAX = 16; // full brightness: open sky
 export const TORCH_LIGHT = 16; // brightness at a torch's own tile
-// Natural light (Phase 13): tiles that glow on their own. Strata place them in new worlds from
-// Phase 14; until then they come from the debug kit.
+// Natural light (Phase 13): tiles that glow on their own. In strata worlds glowshrooms grow in the
+// Fungal Hollows and glow crystals in the Geode Depths (Phase 14a).
 export const GLOWSHROOM_LIGHT = 10; // 5-tile radius
 export const GLOW_CRYSTAL_LIGHT = 12; // 6-tile radius
+// Gem lamps (Phase 14a, a ruby or sapphire set in gold) are brighter than torches: past LIGHT_MAX
+// a tile is simply fully lit, so they light further rather than brighter.
+export const LAMP_LIGHT = 20; // 10-tile radius (a torch lights 8)
 // Glowing tiles also tint the lit tiles around them with their own color (TileDef.glowColor),
 // drawn over the darkness. It's only drawn: the light map, dread and healing ignore color.
 export const GLOW_TINT_RADIUS = 6; // tiles
@@ -286,6 +346,26 @@ export const FOOTSTEP_DISTANCE = 26; // px walked per footstep (~7 a second at f
 export const LAND_MIN_SPEED = 250; // px/s; landing faster than this thuds and kicks up dust (a 2-tile drop or a jump)
 export const LAND_FULL_SPEED = 750; // px/s; the thud and the dust puff are at full size from here up
 
+// --- Ambience (Phase 14a, strata worlds) ---
+// Each stratum has a quiet bed of sound that plays while you're in it (wind, a cave drone, damp
+// air, a crystal hum, a low rumble), crossfading over AMBIENCE_FADE when you cross into another,
+// plus now and then an event on top (a gust, a creak, a drip, a chime, a distant boom), timed on
+// the session clock so it stops while the world is paused. It has its own volume setting.
+export const DEFAULT_AMBIENCE_VOLUME = 0.6;
+export const AMBIENCE_FADE = 1.5; // s
+export const AMBIENCE_DUCK = 0.35; // the bed's level while the inventory, the map or the death screen is up
+/** Loudness of each stratum's bed (and its events) before the volume settings. */
+export const AMBIENCE_VOLUMES = { wind: 0.5, drone: 0.55, drips: 0.5, hum: 0.4, rumble: 0.65 } as const;
+export type AmbienceId = keyof typeof AMBIENCE_VOLUMES;
+/** Seconds of play between a stratum's ambient events, random between the two. */
+export const AMBIENCE_EVENT_GAPS: Record<AmbienceId, readonly [number, number]> = {
+  wind: [6, 14],
+  drone: [5, 12],
+  drips: [0.5, 2.2],
+  hum: [3, 8],
+  rumble: [6, 14],
+};
+
 // --- Juice ---
 // Screen shake on breaking a tile: a "trauma" of hardness x SHAKE_PER_HARDNESS (at most 1)
 // shakes the view up to SHAKE_MAX world px, fading out at SHAKE_DECAY per second. A new break
@@ -342,6 +422,12 @@ export const QUICK_TORCH_RADIUS = 2; // tiles
 export const TOAST_DURATION = 1.5; // s
 export const TOAST_FADE = 0.5; // s of fade-out at the end of a toast
 export const MAX_TOASTS = 5;
+// Entering a stratum (strata worlds) shows its name and depth near the top of the screen for
+// BANNER_TIME, fading in and out over BANNER_FADE. A stratum only counts as entered once the
+// player is BANNER_HYSTERESIS tiles past its boundary, so walking along one doesn't flicker.
+export const BANNER_TIME = 4; // s
+export const BANNER_FADE = 0.6; // s
+export const BANNER_HYSTERESIS = 2; // tiles
 
 // --- Saving ---
 export const AUTOSAVE_INTERVAL = 60; // s of play between automatic saves (also saves on pause)
@@ -352,6 +438,23 @@ export const SAVE_CHANGES_AFTER = 2; // s
 // --- Debug mode (?debug in the URL) ---
 export const DEBUG_FLY_SPEED = 300; // px/s
 export const DEBUG_FLY_FAST = 4; // speed multiplier while Shift is held
+// Y (next stratum) looks for open space this many rows into the next stratum and this many
+// columns either side of the player before carving a pocket at the stratum's top.
+export const DEBUG_STRATUM_SEARCH_ROWS = 30;
+export const DEBUG_STRATUM_SEARCH_COLUMNS = 40;
+
+// --- Renewable wood (Phase 14a) ---
+// Leaves drop a sapling now and then (felled canopies too), and giant mushroom caps drop
+// mushroom spores. Planted (a sapling on grass or dirt, spores on mudstone), they grow into a
+// tree or a giant mushroom after PLANT_GROW_MIN..PLANT_GROW_MAX seconds of play, once there's
+// room. Growth runs on the session clock, checked every PLANT_CHECK_INTERVAL.
+export const SAPLING_CHANCE = 0.12;
+export const SPORE_CHANCE = 0.15;
+export const PLANT_GROW_MIN = 240; // s
+export const PLANT_GROW_MAX = 420; // s
+export const PLANT_CHECK_INTERVAL = 1; // s
+export const GIANT_MUSHROOM_STEM_MIN = 3; // tiles under the cap
+export const GIANT_MUSHROOM_STEM_MAX = 6;
 
 // --- Crafting ---
 export const STATION_RANGE = 4; // tiles; a workbench/furnace this close (centre to centre) counts
@@ -399,12 +502,79 @@ export interface OreSpec {
   tilesPerVein: number; // one vein per this many tiles of the depth band
   veinMin: number;
   veinMax: number;
+  /**
+   * Strata worlds: the stratum (index into STRATA, 1 = Stone Caverns) whose rock the ore replaces.
+   * Its veins stay inside that stratum's wandering boundaries; the depths are the nominal band.
+   */
+  stratum?: number;
 }
 
 export const ORE_COAL: OreSpec = { minDepth: 20, maxDepth: 200, tilesPerVein: 500, veinMin: 3, veinMax: 8 };
 export const ORE_COPPER: OreSpec = { minDepth: 30, maxDepth: 250, tilesPerVein: 700, veinMin: 3, veinMax: 8 };
 export const ORE_IRON: OreSpec = { minDepth: 120, maxDepth: 400, tilesPerVein: 900, veinMin: 3, veinMax: 8 };
 export const ORE_GOLD: OreSpec = { minDepth: 250, maxDepth: 550, tilesPerVein: 1300, veinMin: 3, veinMax: 8 };
+
+// Ores re-banded per stratum (the 'strata' profile): each one only in its own stratum's rock.
+export const STRATA_COAL: OreSpec = { stratum: 1, minDepth: 15, maxDepth: 110, tilesPerVein: 450, veinMin: 3, veinMax: 8 };
+export const STRATA_COPPER: OreSpec = { stratum: 1, minDepth: 25, maxDepth: 110, tilesPerVein: 600, veinMin: 3, veinMax: 8 };
+export const STRATA_IRON: OreSpec = { stratum: 2, minDepth: 110, maxDepth: 230, tilesPerVein: 750, veinMin: 3, veinMax: 8 };
+export const STRATA_GOLD: OreSpec = { stratum: 3, minDepth: 230, maxDepth: 350, tilesPerVein: 1000, veinMin: 3, veinMax: 8 };
+export const STRATA_RUBY: OreSpec = { stratum: 3, minDepth: 230, maxDepth: 350, tilesPerVein: 2400, veinMin: 2, veinMax: 4 };
+export const STRATA_SAPPHIRE: OreSpec = { stratum: 3, minDepth: 230, maxDepth: 350, tilesPerVein: 2400, veinMin: 2, veinMax: 4 };
+export const STRATA_EMBERITE: OreSpec = { stratum: 4, minDepth: 350, maxDepth: 480, tilesPerVein: 1100, veinMin: 3, veinMax: 7 };
+
+/**
+ * Strata (the 'strata' generation profile, Phase 14a): depth bands with their own rock, ores and
+ * growths. Each boundary wanders by up to `jitter` tiles per column. Topsoil ends at the first
+ * boundary or the bottom of the dirt, whichever is deeper, so a valley's grass is never in the
+ * Stone Caverns.
+ */
+export interface StrataGenSpec {
+  /** m below SURFACE_LEVEL where Stone Caverns, Fungal Hollows, Geode Depths and the Magma Layer start. */
+  tops: readonly [number, number, number, number];
+  jitter: number;
+  noiseScale: number; // tiles per noise period along a boundary
+  /** Glowshrooms on Fungal Hollows cave floors: thick in patches (where patch noise beats patchThreshold), rare elsewhere. */
+  glowshroomPatchScale: number;
+  glowshroomPatchThreshold: number;
+  glowshroomPatchChance: number;
+  glowshroomChance: number;
+  /** Chance a Fungal Hollows floor spot with room grows a giant mushroom, then at least this many columns to the next. */
+  giantMushroomChance: number;
+  giantMushroomSpacing: number;
+  /**
+   * Huge crystal caverns in the Geode Depths: carved where low-frequency noise beats the
+   * threshold, which rises by cavernEdgePenalty per tile closer than cavernEdge to the band's
+   * edges, so caverns round off inside the Geode Depths instead of breaking into the next stratum.
+   */
+  cavernScaleX: number;
+  cavernScaleY: number;
+  cavernThreshold: number;
+  cavernEdge: number;
+  cavernEdgePenalty: number;
+  /** Chance a Geode Depths rock face is a glow crystal: in the huge caverns, and elsewhere. */
+  crystalCavernChance: number;
+  crystalChance: number;
+}
+
+export const STRATA_GEN: StrataGenSpec = {
+  tops: [15, 110, 230, 350],
+  jitter: 8,
+  noiseScale: 30,
+  glowshroomPatchScale: 26,
+  glowshroomPatchThreshold: 0.2,
+  glowshroomPatchChance: 0.5,
+  glowshroomChance: 0.04,
+  giantMushroomChance: 0.07,
+  giantMushroomSpacing: 4,
+  cavernScaleX: 80,
+  cavernScaleY: 26,
+  cavernThreshold: 0.5,
+  cavernEdge: 8,
+  cavernEdgePenalty: 0.05,
+  crystalCavernChance: 0.18,
+  crystalChance: 0.012,
+};
 
 /**
  * Gravel pockets (the 'gravel' generation profile, Phase 12): blobs of gravel in stone. A

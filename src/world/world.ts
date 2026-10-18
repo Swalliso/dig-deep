@@ -23,6 +23,12 @@ export class World {
   spawnTy = 0;
   /** The generation profile the world was made with (see generate.ts); set by generation. */
   profile: { name: string; version: number } = { name: 'classic', version: 1 };
+  /**
+   * Strata worlds (Phase 14a): for each boundary between two strata, top to bottom, the first row
+   * of the stratum below it, per column (see strata.ts). Empty for worlds without strata. Filled
+   * in by generation, so a loaded world gets them back from its seed.
+   */
+  strataTops: Int16Array[] = [];
   /** Called after any tile changes. Lighting and tile entities listen here (see onTileChange). */
   private readonly tileListeners: TileListener[] = [];
   /**

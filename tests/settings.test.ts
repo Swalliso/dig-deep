@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { storageKey } from '../src/channel';
-import { DEFAULT_MASTER_VOLUME, DEFAULT_SFX_VOLUME } from '../src/config';
+import { DEFAULT_AMBIENCE_VOLUME, DEFAULT_MASTER_VOLUME, DEFAULT_SFX_VOLUME } from '../src/config';
 import { defaultSettings, parseSettings, SETTINGS_KEY } from '../src/systems/settings';
 
 describe('settings', () => {
@@ -15,6 +15,7 @@ describe('settings', () => {
     expect(defaults).toEqual({
       masterVolume: DEFAULT_MASTER_VOLUME,
       sfxVolume: DEFAULT_SFX_VOLUME,
+      ambienceVolume: DEFAULT_AMBIENCE_VOLUME,
       screenShake: true,
       reducedFlashes: false,
       pixelScale: 'auto',
@@ -27,7 +28,7 @@ describe('settings', () => {
   });
 
   it('round-trip through JSON', () => {
-    const settings = { masterVolume: 0, sfxVolume: 0.35, screenShake: false, reducedFlashes: true, pixelScale: 3 as const, showFps: true, showMinimap: false };
+    const settings = { masterVolume: 0, sfxVolume: 0.35, ambienceVolume: 0.2, screenShake: false, reducedFlashes: true, pixelScale: 3 as const, showFps: true, showMinimap: false };
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
   });
 
@@ -35,5 +36,8 @@ describe('settings', () => {
     const parsed = parseSettings(JSON.stringify({ masterVolume: 7, sfxVolume: 'loud', pixelScale: 4, showFps: true }));
     expect(parsed).toEqual({ ...defaultSettings(), masterVolume: 1, showFps: true });
     expect(parseSettings(JSON.stringify({ masterVolume: -1 })).masterVolume).toBe(0);
+    // Settings saved before the ambience slider existed get its default.
+    expect(parseSettings(JSON.stringify({ masterVolume: 0.5 })).ambienceVolume).toBe(DEFAULT_AMBIENCE_VOLUME);
+    expect(parseSettings(JSON.stringify({ ambienceVolume: 3 })).ambienceVolume).toBe(1);
   });
 });

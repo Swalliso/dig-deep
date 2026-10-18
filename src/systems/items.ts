@@ -1,8 +1,22 @@
-import { BEAM_MAX_HEIGHT, CHEST_SLOTS, FLARE_LIGHT, FLARE_TIME, LANTERN_LIGHT, LIGHT_FALLOFF_AIR, MAX_STACK, SPAN_MAX, SUPPORT_REACH } from '../config';
+import {
+  BEAM_MAX_HEIGHT,
+  CHEST_SLOTS,
+  FLARE_LIGHT,
+  FLARE_TIME,
+  LAMP_LIGHT,
+  LANTERN_LIGHT,
+  LIGHT_FALLOFF_AIR,
+  MAX_STACK,
+  PLANT_GROW_MAX,
+  PLANT_GROW_MIN,
+  SPAN_MAX,
+  SUPPORT_REACH,
+  TORCH_LIGHT,
+} from '../config';
 import { Tile, type TileId } from '../world/tiles';
 
 /** A tile texture, or a shape drawn in code with a material color. */
-export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed' | 'lantern' | 'flare'; color: string };
+export type ItemIcon = TileId | { shape: 'bar' | 'pickaxe' | 'door' | 'bed' | 'lantern' | 'flare' | 'gem'; color: string };
 
 export interface ItemDef {
   name: string;
@@ -37,7 +51,17 @@ const material = (name: string, icon: ItemIcon, description: string): ItemDef =>
   icon,
 });
 
-const bar = (name: string, color: string): ItemDef => material(name, { shape: 'bar', color }, 'Metal for crafting pickaxes.');
+const bar = (name: string, color: string, description = 'Metal for crafting pickaxes.'): ItemDef => material(name, { shape: 'bar', color }, description);
+
+const gem = (name: string, color: string, description: string): ItemDef => material(name, { shape: 'gem', color }, description);
+
+/** "4–7 minutes": how long a planted sapling or spores take to grow. */
+const growTime = `${Math.round(PLANT_GROW_MIN / 60)}–${Math.round(PLANT_GROW_MAX / 60)} minutes`;
+
+const lamp = (name: string, tile: TileId, glow: string): ItemDef => ({
+  ...block(name, tile, `A gem set in gold that glows ${glow}. Its light heals, like a torch's.`),
+  details: [`Lights ${LAMP_LIGHT / LIGHT_FALLOFF_AIR} tiles around it (a torch lights ${TORCH_LIGHT / LIGHT_FALLOFF_AIR}).`],
+});
 
 const pickaxe = (name: string, tier: number, color: string, description: string): ItemDef => ({
   name,
@@ -51,9 +75,9 @@ const pickaxe = (name: string, tier: number, color: string, description: string)
 /** Item registry. Keys are the item ids that tiles drop and inventories store. */
 export const ITEMS = {
   dirt: block('Dirt', Tile.Dirt, 'Soft soil. Quick to dig and to build with.'),
-  stone: block('Stone', Tile.Stone, 'Common rock. Makes a furnace and stone tools.'),
-  deepstone: block('Deepstone', Tile.Deepstone, 'Dense rock from deep down.'),
-  wood: material('Wood', Tile.Wood, 'From trees. Makes planks, torches and handles.'),
+  stone: block('Stone', Tile.Stone, 'Common rock. Makes a furnace, stone tools and bricks.'),
+  deepstone: block('Deepstone', Tile.Deepstone, 'Dense rock from deep down. Makes deepstone bricks.'),
+  wood: material('Wood', Tile.Wood, 'From trees and giant mushrooms. Makes planks, torches and handles.'),
   planks: block('Planks', Tile.Planks, 'Building block made from wood.'),
   torch: block('Torch', Tile.Torch, 'Lights up the dark around it.'),
   workbench: block('Workbench', Tile.Workbench, 'Station for tools, the furnace and chests.'),
@@ -63,13 +87,13 @@ export const ITEMS = {
   iron_ore: material('Iron ore', Tile.IronOre, 'Smelt into iron bars at a furnace.'),
   gold_ore: material('Gold ore', Tile.GoldOre, 'Smelt into gold bars at a furnace.'),
   copper_bar: bar('Copper bar', '#d9783a'),
-  iron_bar: bar('Iron bar', '#c9ccd2'),
-  gold_bar: bar('Gold bar', '#f2c94c'),
+  iron_bar: bar('Iron bar', '#c9ccd2', 'Metal for the iron pickaxe and the lantern.'),
+  gold_bar: bar('Gold bar', '#f2c94c', 'Metal for the gold pickaxe and gem lamps.'),
   wooden_pickaxe: pickaxe('Wooden pickaxe', 0, '#b88a52', 'Mines dirt, stone and coal.'),
-  stone_pickaxe: pickaxe('Stone pickaxe', 1, '#8d8d92', 'Also mines copper ore.'),
+  stone_pickaxe: pickaxe('Stone pickaxe', 1, '#8d8d92', 'Also mines copper ore and mudstone.'),
   copper_pickaxe: pickaxe('Copper pickaxe', 2, '#d9783a', 'Also mines iron ore and deepstone.'),
-  iron_pickaxe: pickaxe('Iron pickaxe', 3, '#c9ccd2', 'Also mines gold ore.'),
-  gold_pickaxe: pickaxe('Gold pickaxe', 4, '#f2c94c', 'The fastest pickaxe.'),
+  iron_pickaxe: pickaxe('Iron pickaxe', 3, '#c9ccd2', 'Also mines gold ore, gems and basalt.'),
+  gold_pickaxe: pickaxe('Gold pickaxe', 4, '#f2c94c', 'Also mines emberite ore.'),
   chest: block('Chest', Tile.Chest, `Holds ${CHEST_SLOTS} stacks. Crafting uses what is in nearby chests.`),
   ladder: block('Ladder', Tile.Ladder, 'Hold W or S on it to climb. You can stand on its top.'),
   platform: block('Platform', Tile.Platform, 'Jump up through it. S drops down through (hold S to keep dropping).'),
@@ -126,6 +150,30 @@ export const ITEMS = {
   door: { ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'), icon: { shape: 'door', color: '#8f6236' } },
   // Placed as the left half; building.ts adds the right half beside it.
   bed: { ...block('Bed', Tile.BedLeft, 'Two tiles wide. Right-click it to respawn there.'), icon: { shape: 'bed', color: '#b84a4a' } },
+  // Phase 14a: each stratum's rock and its bricks.
+  mudstone: block('Mudstone', Tile.Mudstone, 'Damp rock from the Fungal Hollows. Makes mudstone bricks.'),
+  basalt: block('Basalt', Tile.Basalt, 'Dark rock from the Magma Layer. Makes basalt bricks.'),
+  stone_bricks: block('Stone bricks', Tile.StoneBricks, 'A tidy building block, fired from stone.'),
+  mudstone_bricks: block('Mudstone bricks', Tile.MudstoneBricks, 'A mossy green building block, fired from mudstone.'),
+  deepstone_bricks: block('Deepstone bricks', Tile.DeepstoneBricks, 'A slate-blue building block, fired from deepstone.'),
+  basalt_bricks: block('Basalt bricks', Tile.BasaltBricks, 'A dark building block, fired from basalt.'),
+  // Phase 14a: the Magma Layer's ore and the Geode Depths' gems.
+  emberite_ore: material('Emberite ore', Tile.EmberiteOre, 'Smelt into emberite bars at a furnace.'),
+  emberite_bar: bar('Emberite bar', '#ff7a3a', 'Metal for the emberite pickaxe.'),
+  emberite_pickaxe: pickaxe('Emberite pickaxe', 5, '#ff7a3a', 'The fastest pickaxe.'),
+  ruby: gem('Ruby', '#e3245e', 'A red gem from the Geode Depths. Set in gold, it makes ruby lamps.'),
+  sapphire: gem('Sapphire', '#3b7cec', 'A blue gem from the Geode Depths. Set in gold, it makes sapphire lamps.'),
+  ruby_lamp: lamp('Ruby lamp', Tile.RubyLamp, 'red'),
+  sapphire_lamp: lamp('Sapphire lamp', Tile.SapphireLamp, 'blue'),
+  // Phase 14a: renewable wood.
+  sapling: {
+    ...block('Sapling', Tile.Sapling, 'Plant it on grass or dirt and it grows into a tree.'),
+    details: [`It grows in ${growTime} of play, once there's room.`, 'Leaves drop saplings now and then.'],
+  },
+  mushroom_spores: {
+    ...block('Mushroom spores', Tile.MushroomSprout, 'Plant them on mudstone and a giant mushroom grows.'),
+    details: [`It grows in ${growTime} of play, once there's room.`, 'Giant mushroom stems give wood, and their caps drop spores.'],
+  },
 } satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

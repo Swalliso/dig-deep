@@ -1,5 +1,5 @@
-import { BEDROCK_BOTTOM_ROWS, SURFACE_LEVEL, WORLD_HEIGHT } from '../config';
-import { ORE_LAYERS } from '../world/generate';
+import { CLASSIC_PROFILE, type GenProfile } from '../world/generate';
+import { depthRange, STRATA, WORLD_BOTTOM_DEPTH } from '../world/strata';
 import { tileDef } from '../world/tiles';
 import type { Chest } from './chests';
 import { availableCount, canCraft, RECIPES, type Recipe, type Station } from './crafting';
@@ -8,7 +8,8 @@ import { itemDef, ITEM_IDS, type ItemId } from './items';
 
 // The next goal: one pinned recipe, shown on the HUD with what's still missing and where to
 // craft it, and the crafting panel's suggestion for the next pickaxe, with where its ore is
-// found. No quests: the player picks the goal.
+// found. No quests: the player picks the goal. Where things are found depends on the world's
+// generation profile (strata worlds have their own ore bands).
 
 /** The recipe that makes `item`, if any. Each item has at most one recipe. */
 export function recipeFor(item: ItemId): Recipe | null {
@@ -20,18 +21,30 @@ export function restorePinnedRecipe(saved: unknown): ItemId | null {
   return typeof saved === 'string' && (ITEM_IDS as readonly string[]).includes(saved) && recipeFor(saved as ItemId) ? (saved as ItemId) : null;
 }
 
-/** The deepest depth (m) a player can dig to: the top of the bedrock floor. */
-const WORLD_BOTTOM_DEPTH = WORLD_HEIGHT - BEDROCK_BOTTOM_ROWS - SURFACE_LEVEL;
+/** "Fungal Hollows, 110–230 m down" */
+function inStratum(s: number): string {
+  return `${STRATA[s].name}, ${depthRange(s)} down`;
+}
 
-/** Where a raw material is found: "30–250 m down", or null for items that are made, not found. */
-export function whereFound(item: ItemId): string | null {
-  const ore = ORE_LAYERS.find((layer) => tileDef(layer.tile).drop === item);
+/**
+ * Where a raw material is found in a world generated with `profile`: "30–250 m down", or in a
+ * strata world the stratum, "Fungal Hollows, 110–230 m down". Null for items that are made, not
+ * found (or that this world doesn't have).
+ */
+export function whereFound(item: ItemId, profile: GenProfile = CLASSIC_PROFILE): string | null {
+  const ore = profile.ores.find((layer) => tileDef(layer.tile).drop === item);
   if (ore) {
+    if (ore.spec.stratum !== undefined) return inStratum(ore.spec.stratum);
     const { minDepth, maxDepth } = ore.spec;
     return maxDepth >= WORLD_BOTTOM_DEPTH ? `from ${minDepth} m down` : `${minDepth}–${maxDepth} m down`;
   }
   if (item === 'stone') return 'under the dirt';
-  if (item === 'wood') return 'from trees';
+  if (item === 'wood') return profile.strata ? 'from trees and giant mushrooms' : 'from trees';
+  if (profile.strata) {
+    // A stratum's own rock (mudstone, deepstone, basalt).
+    const s = STRATA.findIndex((stratum, i) => i > 0 && tileDef(stratum.rock).drop === item);
+    if (s > 0) return inStratum(s);
+  }
   return null;
 }
 
@@ -55,14 +68,20 @@ export interface GoalStatus {
   ready: boolean;
 }
 
-export function goalStatus(recipe: Recipe, inventory: Inventory, stations: ReadonlySet<Station>, chests: readonly Chest[]): GoalStatus {
+export function goalStatus(
+  recipe: Recipe,
+  inventory: Inventory,
+  stations: ReadonlySet<Station>,
+  chests: readonly Chest[],
+  profile: GenProfile = CLASSIC_PROFILE,
+): GoalStatus {
   return {
     recipe,
     ingredients: recipe.ingredients.map(({ item, count }) => ({
       item,
       need: count,
       have: availableCount(inventory, item, chests),
-      where: whereFound(item),
+      where: whereFound(item, profile),
     })),
     stationNear: recipe.station === null || stations.has(recipe.station),
     ready: canCraft(inventory, recipe, stations, chests),
@@ -78,25 +97,30 @@ export interface PickaxeSuggestion {
   ore: ItemId | null;
 }
 
-/** The lowest-tier pickaxe recipe above `tier` (the best pickaxe carried), or null if there's none. */
-export function nextPickaxe(tier: number): PickaxeSuggestion | null {
-  let best: Recipe | null = null;
+/**
+ * The lowest-tier pickaxe recipe above `tier` (the best pickaxe carried) whose material can be
+ * found in a world generated with `profile`, or null if there's none (worlds from before strata
+ * have no emberite, so gold is their best).
+ */
+export function nextPickaxe(tier: number, profile: GenProfile = CLASSIC_PROFILE): PickaxeSuggestion | null {
+  let best: PickaxeSuggestion | null = null;
   for (const recipe of RECIPES) {
     const t = itemDef(recipe.output).pickaxeTier;
-    if (t !== undefined && t > tier && (best === null || t < itemDef(best.output).pickaxeTier!)) best = recipe;
+    if (t === undefined || t <= tier || (best && t >= itemDef(best.recipe.output).pickaxeTier!)) continue;
+    const material = recipe.ingredients[0].item;
+    // A bar is smelted from the ore its recipe starts with.
+    const ore = recipeFor(material)?.ingredients[0].item ?? null;
+    if (whereFound(ore ?? material, profile) === null) continue;
+    best = { recipe, material, ore };
   }
-  if (!best) return null;
-  const material = best.ingredients[0].item;
-  const smelt = recipeFor(material);
-  const ore = smelt?.ingredients.find((i) => whereFound(i.item) !== null)?.item ?? null;
-  return { recipe: best, material, ore };
+  return best;
 }
 
 /** The suggestion's note on where its material comes from: "Copper ore: 30–250 m down, smelted at a furnace". */
-export function pickaxeNote(suggestion: PickaxeSuggestion): string {
+export function pickaxeNote(suggestion: PickaxeSuggestion, profile: GenProfile = CLASSIC_PROFILE): string {
   const raw = suggestion.ore ?? suggestion.material;
   const name = itemDef(raw).name;
   const smelt = recipeFor(suggestion.material);
   const station = smelt?.station ? `, smelted at a ${smelt.station}` : '';
-  return `${name}: ${whereFound(raw) ?? 'crafted'}${suggestion.ore ? station : ''}`;
+  return `${name}: ${whereFound(raw, profile) ?? 'crafted'}${suggestion.ore ? station : ''}`;
 }

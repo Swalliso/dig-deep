@@ -1,4 +1,7 @@
 import {
+  AMBIENCE_FADE,
+  AMBIENCE_VOLUMES,
+  DEFAULT_AMBIENCE_VOLUME,
   DEFAULT_MASTER_VOLUME,
   DEFAULT_SFX_VOLUME,
   DIG_TICK_FREQ,
@@ -13,6 +16,7 @@ import {
   SFX_PITCH_JITTER,
   SFX_SAME_SOUND_GAP,
   SFX_VOLUMES,
+  type AmbienceId,
 } from '../config';
 import type { TileMaterial } from '../world/tiles';
 
@@ -21,15 +25,24 @@ import type { TileMaterial } from '../world/tiles';
 // Browsers only let audio start after a user gesture, so the AudioContext is created on the
 // first click or key press. Until then, and whenever a volume is 0, every sound is skipped.
 // Sounds are cosmetic, so Math.random is fine here.
+//
+// Strata worlds also have ambience (Phase 14a): a quiet bed of sound per stratum that loops for
+// as long as the player is in it, plus events played now and then on top. It has its own bus
+// and volume setting, under the master volume.
 
 let ctx: AudioContext | null = null;
 /** SFX volume; every sound plays into it. */
 let sfxBus: GainNode | null = null;
+/** Ambience volume; the stratum beds and ambient events play into it. */
+let ambienceBus: GainNode | null = null;
 let masterBus: GainNode | null = null;
 /** One second of white noise, played from a random offset by every noise layer. */
 let noise: AudioBuffer | null = null;
+/** Four seconds of brown (deep) noise, looped under the ambience beds. */
+let brownNoise: AudioBuffer | null = null;
 let masterVolume = DEFAULT_MASTER_VOLUME;
 let sfxVolume = DEFAULT_SFX_VOLUME;
+let ambienceVolume = DEFAULT_AMBIENCE_VOLUME;
 let voices = 0;
 /** Context time each sound key last played, for SFX_SAME_SOUND_GAP. */
 const lastPlayed = new Map<string, number>();
@@ -62,29 +75,42 @@ function createContext(): void {
   masterBus.connect(compressor);
   sfxBus = ctx.createGain();
   sfxBus.connect(masterBus);
+  ambienceBus = ctx.createGain();
+  ambienceBus.connect(masterBus);
   masterBus.gain.value = gainFor(masterVolume);
   sfxBus.gain.value = gainFor(sfxVolume);
+  ambienceBus.gain.value = gainFor(ambienceVolume);
 
   noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const data = noise.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  // Brown noise: white noise summed up (with a slow leak back to zero), so it rumbles.
+  brownNoise = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+  const brown = brownNoise.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < brown.length; i++) {
+    last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+    brown[i] = last * 3.5;
+  }
 }
 
 /** Volumes from the settings, 0..1 each. */
-export function setVolumes(master: number, sfx: number): void {
+export function setVolumes(master: number, sfx: number, ambience = ambienceVolume): void {
   masterVolume = master;
   sfxVolume = sfx;
-  if (!ctx || !masterBus || !sfxBus) return;
+  ambienceVolume = ambience;
+  if (!ctx || !masterBus || !sfxBus || !ambienceBus) return;
   // A short glide instead of a jump, so dragging a slider doesn't click.
   masterBus.gain.setTargetAtTime(gainFor(master), ctx.currentTime, 0.02);
   sfxBus.gain.setTargetAtTime(gainFor(sfx), ctx.currentTime, 0.02);
+  ambienceBus.gain.setTargetAtTime(gainFor(ambience), ctx.currentTime, 0.02);
 }
 
 const gainFor = (volume: number): number => volume * volume;
 
 /** For the F3 overlay. */
 export function audioStatus(): string {
-  return ctx ? `${ctx.state}, ${voices} playing` : 'starts on the first click';
+  return ctx ? `${ctx.state}, ${voices} playing, ambience ${bed?.id ?? 'none'}` : 'starts on the first click';
 }
 
 // --- Building blocks ---
@@ -107,12 +133,15 @@ interface PlayOptions {
   delay?: number;
   /** Skip it if a sound with this key played less than SFX_SAME_SOUND_GAP ago. */
   key?: string;
+  /** Ambient events play into the ambience bus instead of the SFX bus. */
+  ambience?: boolean;
 }
 
 /** Play one sound made of the layers `build` adds, unless audio is off or too busy. */
 function play(options: PlayOptions, build: (v: Voice) => void): void {
-  if (!ctx || !sfxBus || !noise || ctx.state === 'closed') return;
-  if (masterVolume <= 0 || sfxVolume <= 0 || voices >= SFX_MAX_VOICES) return;
+  const bus = options.ambience ? ambienceBus : sfxBus;
+  if (!ctx || !bus || !noise || ctx.state === 'closed') return;
+  if (masterVolume <= 0 || (options.ambience ? ambienceVolume : sfxVolume) <= 0 || voices >= SFX_MAX_VOICES) return;
   const now = ctx.currentTime;
   if (options.key) {
     if (now - (lastPlayed.get(options.key) ?? -Infinity) < SFX_SAME_SOUND_GAP) return;
@@ -124,9 +153,9 @@ function play(options: PlayOptions, build: (v: Voice) => void): void {
   if (pan !== 0) {
     const panner = ctx.createStereoPanner();
     panner.pan.value = pan;
-    out.connect(panner).connect(sfxBus);
+    out.connect(panner).connect(bus);
   } else {
-    out.connect(sfxBus);
+    out.connect(bus);
   }
   const v: Voice = { t: now + (options.delay ?? 0), out, last: null, end: 0 };
   build(v);
@@ -439,4 +468,162 @@ export function uiClick(): void {
     tone(v, { type: 'triangle', freq: 1500, to: 1000, attack: 0.001, decay: 0.03, gain: 0.6 });
     noiseBurst(v, { filter: 'highpass', freq: 5000, attack: 0.001, decay: 0.015, gain: 0.3 });
   });
+}
+
+// --- Ambience (strata worlds) ---
+
+/** A stratum's bed of sound, looping until it fades out. */
+interface Bed {
+  id: AmbienceId;
+  /** Everything in the bed plays into this; its gain fades the bed in and out. */
+  out: GainNode;
+  sources: AudioScheduledSourceNode[];
+}
+
+let bed: Bed | null = null;
+/** The level the bed is fading to (0..1, before AMBIENCE_VOLUMES and the settings). */
+let bedLevel = 0;
+
+/**
+ * Play stratum ambience `id` at `level` (0..1; the inventory or map ducks it), or none (null).
+ * Call every step: it only does something when either changes. A new stratum's bed fades in over
+ * AMBIENCE_FADE while the old one fades out; null fades it out (the pause menu, the title screen).
+ */
+export function setAmbience(id: AmbienceId | null, level: number): void {
+  if (!ctx || !ambienceBus || !brownNoise || ctx.state === 'closed') return;
+  const now = ctx.currentTime;
+  if (bed && (bed.id !== id || level <= 0)) {
+    fadeOut(bed, now);
+    bed = null;
+  }
+  if (!id || level <= 0) return;
+  const fresh = !bed;
+  if (!bed) bed = buildBed(id, now);
+  if (fresh || level !== bedLevel) {
+    const gain = bed.out.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(level * AMBIENCE_VOLUMES[id], now + (fresh ? AMBIENCE_FADE : 0.4));
+    bedLevel = level;
+  }
+}
+
+function fadeOut(b: Bed, now: number): void {
+  const gain = b.out.gain;
+  gain.cancelScheduledValues(now);
+  gain.setValueAtTime(gain.value, now);
+  gain.linearRampToValueAtTime(0, now + AMBIENCE_FADE);
+  for (const source of b.sources) source.stop(now + AMBIENCE_FADE + 0.05);
+  b.sources[0].onended = () => b.out.disconnect();
+}
+
+/**
+ * Build a stratum's bed, silent until setAmbience fades it in: wind for Topsoil, a low drone for
+ * the Stone Caverns, damp air for the Fungal Hollows, a crystal hum for the Geode Depths and a
+ * deep rumble for the Magma Layer. Slow LFOs keep each one moving.
+ */
+function buildBed(id: AmbienceId, t: number): Bed {
+  const c = ctx!;
+  const out = c.createGain();
+  out.gain.value = 0;
+  out.connect(ambienceBus!);
+  const sources: AudioScheduledSourceNode[] = [];
+  const osc = (type: OscillatorType, freq: number, gain: number): GainNode => {
+    const o = c.createOscillator();
+    o.type = type;
+    o.frequency.value = freq;
+    const g = c.createGain();
+    g.gain.value = gain;
+    o.connect(g).connect(out);
+    o.start(t);
+    sources.push(o);
+    return g;
+  };
+  /** Looped brown noise through a filter; returns the filter and the gain after it. */
+  const rumble = (type: BiquadFilterType, freq: number, q: number, gain: number): { filter: BiquadFilterNode; level: GainNode } => {
+    const s = c.createBufferSource();
+    s.buffer = brownNoise;
+    s.loop = true;
+    const filter = c.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = freq;
+    filter.Q.value = q;
+    const level = c.createGain();
+    level.gain.value = gain;
+    s.connect(filter).connect(level).connect(out);
+    s.start(t, Math.random() * 3);
+    sources.push(s);
+    return { filter, level };
+  };
+  /** A slow wobble of `depth` around a parameter's value. */
+  const lfo = (freq: number, depth: number, param: AudioParam): void => {
+    const o = c.createOscillator();
+    o.frequency.value = freq;
+    const g = c.createGain();
+    g.gain.value = depth;
+    o.connect(g).connect(param);
+    o.start(t);
+    sources.push(o);
+  };
+  if (id === 'wind') {
+    const wind = rumble('bandpass', 420, 0.6, 1.4);
+    lfo(0.07, 220, wind.filter.frequency); // its pitch wanders
+    lfo(0.11, 0.6, wind.level.gain); // and it gusts
+  } else if (id === 'drone') {
+    osc('sine', 55, 0.35);
+    osc('sine', 82.4, 0.2);
+    osc('sine', 110.6, 0.06); // beats slowly against 2 x 55
+    const air = rumble('lowpass', 170, 0.7, 0.9);
+    lfo(0.05, 0.35, air.level.gain);
+  } else if (id === 'drips') {
+    const damp = rumble('bandpass', 650, 0.9, 0.9);
+    lfo(0.09, 0.35, damp.level.gain);
+    osc('sine', 98, 0.08);
+  } else if (id === 'hum') {
+    osc('sine', 523.3, 0.07);
+    osc('sine', 524.9, 0.07); // a slow shimmer against the note above
+    osc('sine', 784, 0.04);
+    osc('sine', 1046.5, 0.02);
+    rumble('lowpass', 140, 0.7, 0.4);
+  } else {
+    const deep = rumble('lowpass', 90, 0.7, 1.6);
+    lfo(0.13, 0.7, deep.level.gain);
+    osc('sine', 38, 0.3);
+  }
+  return { id, out, sources };
+}
+
+/** What plays now and then on top of each stratum's bed. */
+const AMBIENT_EVENTS: Record<AmbienceId, Sound> = {
+  // A gust of wind.
+  wind: (v, p) => noiseBurst(v, { filter: 'bandpass', freq: 450 * p, to: 900 * p, q: 0.8, attack: 0.8, decay: 1.6, gain: 0.5 }),
+  // Rock settling somewhere: a low creak and a patter of pebbles.
+  drone: (v, p) => {
+    tone(v, { type: 'sawtooth', freq: 70 * p, to: 52 * p, attack: 0.3, decay: 0.9, gain: 0.05 });
+    for (let i = 0; i < 3; i++) {
+      noiseBurst(v, { filter: 'bandpass', freq: 1800 * p, q: 4, delay: 0.25 + i * 0.13 + Math.random() * 0.05, attack: 0.001, decay: 0.03, gain: 0.22 });
+    }
+  },
+  // A drip, and its echo.
+  drips: (v, p) => {
+    const f = 1400 * p;
+    tone(v, { type: 'sine', freq: f, to: f * 0.45, attack: 0.002, decay: 0.07, gain: 0.7 });
+    tone(v, { type: 'sine', freq: f * 0.9, to: f * 0.4, delay: 0.16, attack: 0.002, decay: 0.06, gain: 0.2 });
+  },
+  // A crystal chiming softly, on one of a few notes.
+  hum: (v, p) => {
+    const f = [1046.5, 1174.7, 1318.5, 1568][Math.floor(Math.random() * 4)] * p;
+    tone(v, { type: 'sine', freq: f, attack: 0.01, decay: 1.6, gain: 0.35 });
+    tone(v, { type: 'sine', freq: f * 2.76, attack: 0.01, decay: 0.8, gain: 0.07 });
+  },
+  // A distant boom deep in the rock.
+  rumble: (v, p) => {
+    noiseBurst(v, { filter: 'lowpass', freq: 220 * p, to: 60 * p, attack: 0.05, decay: 1.8, gain: 1 });
+    tone(v, { type: 'sine', freq: 46 * p, to: 32 * p, attack: 0.05, decay: 1.5, gain: 0.5 });
+  },
+};
+
+/** One of a stratum's ambient events, from somewhere `pan` (-1 left .. 1 right). */
+export function ambientEvent(id: AmbienceId, pan = 0): void {
+  play({ volume: AMBIENCE_VOLUMES[id], pan, ambience: true }, (v) => AMBIENT_EVENTS[id](v, jitter()));
 }

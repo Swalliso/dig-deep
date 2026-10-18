@@ -81,17 +81,19 @@ These override the spec. Don't revert them.
 
 Add `debug` to the URL (`http://localhost:5173/?seed=42&debug`) to turn on testing shortcuts:
 **G** gives a materials kit (enough for every recipe, plus a workbench, a furnace, three
-chests, two beds, a lantern, flares, glowshrooms, glow crystals, and stacks of ladders,
-platforms, doors, gravel, beams and crossbeams), **F**
+chests, two beds, a lantern, flares, glowshrooms, glow crystals, saplings, mushroom spores, gem
+lamps, and stacks of ladders, platforms, doors, gravel, beams and crossbeams), **F**
 toggles fly mode (no gravity or collision; W/S or ↑/↓ for up/down, Shift for 4x speed),
 **I** cycles instant mining off → 1x1 → 3x3 brush (reach and pickaxe-tier rules still apply,
 bedrock stays unbreakable, drops and tree felling work as normal), **L** toggles lighting
-(fullbright) for exploring, **O** puts a 4 x 2 patch of every ore at the cursor (for ore
-sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, **V** reveals the
+(fullbright) for exploring, **O** puts a 7 x 2 patch of every ore and gem at the cursor (for
+ore sounds and glints), **K** digs a 100 m ladder shaft down from the cursor, **V** reveals the
 whole map, **H** toggles god mode (and heals), **J** deals 2 damage (to test falls, fly up
 with F and turn fly off), **B** puts a 3 x 3 block of gravel at the cursor (in the open it
-shakes and falls at once; in rock it's a pocket to dig under) and **U** fills the dread meter
-(again: empties it). Debug mode also opens the F3 overlay at start, the title screen gets a button
+shakes and falls at once; in rock it's a pocket to dig under), **U** fills the dread meter
+(again: empties it), **Y** goes to the top of the next stratum in a strata world (from the Magma
+Layer, back to the spawn; it carves a pocket if there's no open space near the top) and **P**
+makes every planted sapling and mushroom sprout grow now (if it has room). Debug mode also opens the F3 overlay at start, the title screen gets a button
 that marks the most recent world as an older version (to test the version-mismatch screen), and
 the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
 mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
@@ -137,27 +139,35 @@ src/
   channel.ts         live vs dev-site build, storageKey() for every saved key
   input.ts           the action table (every key binding) and keyboard + mouse state, read
                      through actionDown/actionPressed; typing mode (naming a map pin)
-  debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining)
+  debug.ts           ?debug testing shortcuts (materials kit, fly mode, instant mining, next
+                     stratum)
   util/rng.ts        seeded PRNG (shared by world gen and textures)
   audio/
-    sfx.ts           every sound effect, synthesized with Web Audio (no audio files); starts on
-                     the first click or key press
+    sfx.ts           every sound effect and each stratum's ambience (a looping bed plus events),
+                     synthesized with Web Audio (no audio files); starts on the first click or
+                     key press
   world/
-    tiles.ts         tile registry (id, name, hardness, min tier, color, drop, solid, climbable,
-                     one-way), floor checks
+    tiles.ts         tile registry (id, name, hardness, min tier, color, drop, chance drop,
+                     solid, climbable, one-way, light, plant), floor checks
     world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile, the world's
-                     generation profile
-    generate.ts      generation profiles (frozen 'classic', 'gravel' for new worlds); seeded
-                     terrain, caves, ores, gravel pockets, trees, bedrock, spawn
+                     generation profile and stratum boundaries
+    generate.ts      generation profiles (frozen 'classic' and 'gravel', 'strata' for new
+                     worlds); seeded terrain, strata, caves, crystal caverns, ores, gravel
+                     pockets, trees, giant mushrooms, glowshrooms, glow crystals, bedrock, spawn
+    strata.ts        the strata table (name, depths, rock, look, ambience), which stratum a tile
+                     is in, the banner's text, the stratum tracker (with hysteresis)
+    plants.ts        saplings and mushroom sprouts: where they can be planted, growing trees and
+                     giant mushrooms (also used by generation), growing the ones due
     supports.ts      loose tiles and what holds them up: firm ground, anchored beams (posts) and
                      crossbeams/platforms (spans); the support preview
     tileUpdates.ts   active tile updates: a queue of tiles to recheck after a change next to them,
                      worked through with a per-step budget
-    trees.ts         felling: cutting a trunk removes the tree above the cut
+    trees.ts         felling: cutting a trunk (or a giant mushroom's stem) removes what's above
+                     the cut
     lighting.ts      per-tile light: sky columns + torches + glowing tiles, spread with falloff,
                      incremental relight; moving lights (lantern, flares) in their own patches
-    tileEntities.ts  per-tile data (chest contents), keyed by ty * width + tx, removed when the
-                     tile changes
+    tileEntities.ts  per-tile data (chest contents, when a planted sapling grows), keyed by
+                     ty * width + tx, removed when the tile changes
     doors.ts         doors: two tiles each (open and closed are separate tile ids), toggling,
                      finding the other half
     beds.ts          beds: two tiles side by side (the respawn point), finding the other half
@@ -186,37 +196,41 @@ src/
                      carried / established) and the HUD status line
     death.ts         satchels (the bag left on death) and collecting them, the respawn point
                      (bed, or a safe fallback near spawn)
-    crafting.ts      recipe table and groups, station range checks, craft() (inventory first,
-                     then nearby chests)
+    crafting.ts      recipe table and groups (the panel's tabs), station range checks, craft()
+                     (inventory first, then nearby chests)
     goal.ts          the pinned recipe (next goal): its ingredient counts and station, where
-                     raw materials are found, the next pickaxe to suggest
+                     raw materials are found (from the world's profile), the next pickaxe to
+                     suggest
     mapPins.ts       the player's named map pins (explored tiles only, MAP_PIN_MAX) and the
                      tracked one
     chests.ts        chest contents: loot all, deposit all, quick stack, shift-click moves
     save.ts          save format (seed + changed chunks, RLE) + world slots in IndexedDB via
                      idb-keyval (each save stored with a small world-list entry)
     backup.ts        world backup files: export a save as JSON, check one before importing
-    settings.ts      player settings (volumes, screen shake, reduced flashes, pixel scale, FPS counter) in
-                     localStorage
+    settings.ts      player settings (master, effects and ambience volumes, screen shake, reduced
+                     flashes, pixel scale, FPS counter) in localStorage
   render/
     camera.ts        camera position, clamping
     textures.ts      procedural 16x16 tile, crack and item-icon atlases, built once at startup
-    renderer.ts      sky, parallax background, underground backdrop, cached chunk canvases,
-                     light overlay, colored glow around glowing tiles, entities, ore glints,
-                     break flashes
-    parallax.ts      background layers (clouds, mountains, hills) built per world from its seed
-                     as repeating strips; scroll math (layer sets in config.ts)
+    renderer.ts      sky, parallax background, underground backdrop (per stratum in strata
+                     worlds), cached chunk canvases, light overlay, colored glow around glowing
+                     tiles, entities, ore glints, break flashes
+    parallax.ts      background layers built per world from its seed as repeating strips: the
+                     surface's clouds, mountains and hills, and each stratum's underground set
+                     (ledges with stalactites, mushrooms, crystals or basalt columns, repeating
+                     both ways); scroll math (layer sets in config.ts)
     particles.ts     cosmetic break particles and landing dust (Math.random is fine here)
     juice.ts         screen shake, break flash strength, where and when ores glint
     mapImage.ts      the map's picture: one pixel per explored tile, repainted as tiles change
   ui/
-    hud.ts           hotbar, toasts, depth meter, F3 debug overlay, slot/stack drawing helpers
+    hud.ts           hotbar, toasts, depth meter, a stratum's entry banner, F3 debug overlay,
+                     slot/stack drawing helpers
     vitals.ts        hearts, the protection bar, the way to a satchel, the death screen
     controls.ts      the controls list for the Controls screen and every on-screen key hint
                      (F3 help, map help, tooltips), built from the action table; a test keeps
                      README.md's table matching it and every row short enough to fit
-    menus.ts         inventory + chest + crafting panel with tooltips (canvas); title, worlds,
-                     new world, controls, settings, pause (HTML in #ui)
+    menus.ts         inventory + chest + crafting panel (a tab per recipe group) with tooltips
+                     (canvas); title, worlds, new world, controls, settings, pause (HTML in #ui)
     map.ts           full-screen map (M: pan, zoom, markers, pins and the pin editor) and the
                      corner minimap (N)
     guidance.ts      the pinned recipe's lines on the HUD
@@ -233,12 +247,22 @@ they drop.
   `x`, `y`. `TILE_SIZE = 16`. `ty` grows downward (row 0 is the top of the sky).
 - **Depth**: `depth = ty - SURFACE_LEVEL` (`SURFACE_LEVEL = 120`), so 1 tile = 1 m and 0 m is the
   average surface. Ore depth ranges in the spec use this depth. Deepstone starts at absolute
-  row 350, as the generation section says.
+  row 350, as the generation section says (in strata worlds, give or take its wander, that's
+  where the Geode Depths start).
 - **Tunables**: every tunable number (gravity, speeds, world size, gen parameters) lives in
   `src/config.ts`. Per-tile data (hardness, min tier, color, drop) lives in the tile registry.
 - **World**: 1000 x 600 tiles, stored as 32 x 32 chunks. Out-of-bounds reads return Bedrock.
   The same seed must always produce the identical world, so all randomness in generation
   goes through the seeded RNG. Never use `Math.random()` in generation.
+- **Strata**: worlds made with the `strata` generation profile (every new world since Phase
+  14a) are five depth bands, `STRATA` in `world/strata.ts`: Topsoil, Stone Caverns, Fungal
+  Hollows, Geode Depths, Magma Layer. Each boundary wanders per column and is kept in
+  `world.strataTops` (regenerated from the seed, never saved); `stratumAt(world, tx, ty)` says
+  which stratum a tile is in, and -1 in worlds made with an older profile, which get no stratum
+  banner, ambience or stratum backdrop either. Each stratum has its own rock, and its ores
+  (`OreSpec.stratum`) replace only that rock inside its boundaries. Each stratum's rock and ores
+  need at most the pickaxe made from the strata above it, so there are no circular
+  requirements (a test walks it). The strata's rules (damp, floatstone, heat) are Phase 14b.
 - **Loop**: fixed-timestep `update(dt)` at 60 Hz; `render()` once per `requestAnimationFrame`.
   Moving things (player, camera) keep `prevX`/`prevY`, and render interpolates between the
   last two update steps so motion stays smooth on high-refresh screens. Keyboard edge
@@ -250,7 +274,10 @@ they drop.
   (physics, drops, mining damage and healing, ore glints, later hazards) takes its time from
   the simulation step and `Game.clock` (`systems/clock.ts`), never from `Date.now()` or
   `performance.now()`. Toasts and UI animations run on real time. Focus loss needs an explicit
-  resume, except in debug mode, where it doesn't pause.
+  resume, except in debug mode, where it doesn't pause. A stratum's ambience is quieter while
+  the panel, the map or the death screen pauses the world, fades out on the pause menu and the
+  title screen, and its events (drips, chimes) are timed on the session clock; planted saplings
+  grow on the session clock too.
 - **Input**: game code reads keys only through actions (`actionDown('jump')`,
   `actionPressed('inventory')`) from the table in `input.ts`. Any text that names a key builds
   it with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test
@@ -267,7 +294,8 @@ they drop.
 - **Lighting**: `World.onTileChange` (a list of listeners; tile entities and the map image listen too) tells the
   `LightMap` about every tile change; it relights only the box within light reach of the
   changes (plus any stretch of a column whose sky light moved), once per update step. Light
-  sources are tiles with `TileDef.light`. Moving lights (`setMovingLight`: the held lantern,
+  sources are tiles with `TileDef.light` (gem lamps shine past LIGHT_MAX, which only means the
+  tiles near them are fully lit for longer). Moving lights (`setMovingLight`: the held lantern,
   flares) are kept apart from that established light, each in a small patch relit only when it
   moves to another tile or a tile in its patch changes; `level()` is the max of both and
   `established()` leaves moving lights out. Light has no color: glowing tiles' colored glow
@@ -278,7 +306,9 @@ they drop.
   ids, chunk/world size or the save format change**; old saves then show "Save from an older
   version" instead of loading wrong. Items lying on the ground are saved (as an optional
   `drops` field; adding optional fields like that needs no version bump). Chest contents are
-  saved the same way, as an optional `tileEntities` field, and so are the map's explored tiles
+  saved the same way, as an optional `tileEntities` field (planted saplings and mushroom
+  sprouts are tile entities too, with the session clock time they grow), and so are the map's
+  explored tiles
   (`explored`, per chunk, RLE), and so is the session clock (`playTime`), and so are the pinned
   recipe (`pinnedRecipe`, by the item it makes) and the map pins (`mapPins`). A stack held on the
   mouse is saved as if put away; whatever doesn't fit is saved as a drop at the player, so
@@ -296,7 +326,8 @@ they drop.
   in one transaction, so the title screen lists worlds without loading every save. Each save
   records its world's **generation profile** (`profile`: name and version; missing = classic)
   and loading regenerates with it, so existing worlds never pick up new generation. A profile
-  must never change what it generates once released (a test pins classic's world hashes): new
+  must never change what it generates once released (tests pin classic's and gravel's world
+  hashes): new
   generation goes in a new profile, and `NEW_WORLD_PROFILE` picks what new worlds get. A
   profile this version doesn't know reads as a save from a newer version. Keeping
   old worlds working is nice but never a constraint (testers know breaking changes may come):

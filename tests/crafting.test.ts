@@ -40,8 +40,14 @@ describe('recipes', () => {
     ]);
     expect(table).toEqual([
       ['4 planks', '1 wood', 'none'],
+      ['4 stone_bricks', '4 stone', 'furnace'], // Phase 14a
+      ['4 mudstone_bricks', '4 mudstone', 'furnace'], // Phase 14a
+      ['4 deepstone_bricks', '4 deepstone', 'furnace'], // Phase 14a
+      ['4 basalt_bricks', '4 basalt', 'furnace'], // Phase 14a
       ['1 workbench', '10 planks', 'none'],
       ['4 torch', '1 wood + 1 coal', 'none'],
+      ['2 ruby_lamp', '1 gold_bar + 1 ruby', 'workbench'], // Phase 14a
+      ['2 sapphire_lamp', '1 gold_bar + 1 sapphire', 'workbench'], // Phase 14a
       ['1 furnace', '20 stone', 'workbench'],
       ['1 stone_pickaxe', '15 stone + 5 wood', 'workbench'],
       ['1 copper_bar', '3 copper_ore + 1 coal', 'furnace'],
@@ -50,6 +56,8 @@ describe('recipes', () => {
       ['1 iron_pickaxe', '10 iron_bar + 5 wood', 'workbench'],
       ['1 gold_bar', '3 gold_ore + 1 coal', 'furnace'],
       ['1 gold_pickaxe', '10 gold_bar + 5 wood', 'workbench'],
+      ['1 emberite_bar', '3 emberite_ore + 1 coal', 'furnace'], // Phase 14a
+      ['1 emberite_pickaxe', '10 emberite_bar + 5 wood', 'workbench'], // Phase 14a
       ['1 lantern', '2 iron_bar + 1 torch', 'workbench'], // Phase 13
       ['2 flare', '1 torch + 2 coal', 'workbench'], // Phase 13
       ['1 chest', '8 planks', 'workbench'],
@@ -65,9 +73,10 @@ describe('recipes', () => {
   it('sorts every recipe into a group', () => {
     const byGroup = Object.fromEntries(RECIPE_GROUPS.map((g) => [g, RECIPES.filter((r) => r.group === g).map((r) => r.output)]));
     expect(byGroup).toEqual({
-      blocks: ['planks', 'torch', 'beam', 'crossbeam', 'ladder', 'platform', 'door'],
-      tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe', 'lantern', 'flare'],
-      materials: ['copper_bar', 'iron_bar', 'gold_bar'],
+      blocks: ['planks', 'stone_bricks', 'mudstone_bricks', 'deepstone_bricks', 'basalt_bricks', 'beam', 'crossbeam', 'ladder', 'platform', 'door'],
+      light: ['torch', 'ruby_lamp', 'sapphire_lamp', 'lantern', 'flare'],
+      tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe', 'emberite_pickaxe'],
+      materials: ['copper_bar', 'iron_bar', 'gold_bar', 'emberite_bar'],
       stations: ['workbench', 'furnace', 'chest', 'bed'],
     });
   });

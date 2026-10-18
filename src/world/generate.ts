@@ -1,4 +1,4 @@
-import { createNoise2D } from 'simplex-noise';
+import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import {
   BEDROCK_BOTTOM_ROWS,
   CAVE_CRUST_HARD,
@@ -16,11 +16,20 @@ import {
   DIRT_DEPTH_MAX,
   DIRT_DEPTH_MIN,
   DIRT_NOISE_SCALE,
+  GIANT_MUSHROOM_STEM_MAX,
   GRAVEL_POCKETS,
   ORE_COAL,
   ORE_COPPER,
   ORE_GOLD,
   ORE_IRON,
+  STRATA_COAL,
+  STRATA_COPPER,
+  STRATA_EMBERITE,
+  STRATA_GEN,
+  STRATA_GOLD,
+  STRATA_IRON,
+  STRATA_RUBY,
+  STRATA_SAPPHIRE,
   SURFACE_AMPLITUDE,
   SURFACE_LEVEL,
   SURFACE_NOISE_SCALES,
@@ -35,8 +44,11 @@ import {
   WORLD_WIDTH,
   type GravelSpec,
   type OreSpec,
+  type StrataGenSpec,
 } from '../config';
 import { createRng, randInt, type Rng } from '../util/rng';
+import { growGiantMushroom } from './plants';
+import { STRATA, stratumAt } from './strata';
 import { Tile, tileDef, type TileId } from './tiles';
 import { World } from './world';
 
@@ -53,6 +65,17 @@ export const ORE_LAYERS: ReadonlyArray<{ tile: TileId; spec: OreSpec }> = [
   { tile: Tile.GoldOre, spec: ORE_GOLD },
 ];
 
+/** The strata profile's ores (Phase 14a): each one only in its own stratum's rock. */
+export const STRATA_ORES: ReadonlyArray<{ tile: TileId; spec: OreSpec }> = [
+  { tile: Tile.CoalOre, spec: STRATA_COAL },
+  { tile: Tile.CopperOre, spec: STRATA_COPPER },
+  { tile: Tile.IronOre, spec: STRATA_IRON },
+  { tile: Tile.GoldOre, spec: STRATA_GOLD },
+  { tile: Tile.RubyOre, spec: STRATA_RUBY },
+  { tile: Tile.SapphireOre, spec: STRATA_SAPPHIRE },
+  { tile: Tile.EmberiteOre, spec: STRATA_EMBERITE },
+];
+
 /**
  * How a world is generated. Saves regenerate unchanged chunks from the seed, so a world keeps the
  * profile it was made with (its name and version are saved with it) and new generation features
@@ -65,6 +88,11 @@ export interface GenProfile {
   ores: ReadonlyArray<{ tile: TileId; spec: OreSpec }>;
   /** Gravel pockets, or null for none. */
   gravel: GravelSpec | null;
+  /**
+   * Strata (Phase 14a): depth bands with their own rock, ores and growths, or null for one layer
+   * of stone over deepstone.
+   */
+  strata: StrataGenSpec | null;
 }
 
 /** Which profile a world was generated with, as saved. */
@@ -74,12 +102,18 @@ export interface ProfileRef {
 }
 
 /** Generation as it was up to Phase 11: frozen, so worlds made then keep regenerating the same. */
-export const CLASSIC_PROFILE: GenProfile = { name: 'classic', version: 1, ores: ORE_LAYERS, gravel: null };
-/** Phase 12: classic plus gravel pockets. */
-export const GRAVEL_PROFILE: GenProfile = { name: 'gravel', version: 1, ores: ORE_LAYERS, gravel: GRAVEL_POCKETS };
-export const PROFILES: readonly GenProfile[] = [CLASSIC_PROFILE, GRAVEL_PROFILE];
+export const CLASSIC_PROFILE: GenProfile = { name: 'classic', version: 1, ores: ORE_LAYERS, gravel: null, strata: null };
+/** Phase 12: classic plus gravel pockets. Frozen too. */
+export const GRAVEL_PROFILE: GenProfile = { name: 'gravel', version: 1, ores: ORE_LAYERS, gravel: GRAVEL_POCKETS, strata: null };
+/**
+ * Phase 14a: strata (Topsoil, Stone Caverns, Fungal Hollows, Geode Depths, Magma Layer), each
+ * with its own rock and ores; giant mushrooms and glowshrooms in the Hollows, huge glowing
+ * crystal caverns in the Geode Depths; and the gravel pockets.
+ */
+export const STRATA_PROFILE: GenProfile = { name: 'strata', version: 1, ores: STRATA_ORES, gravel: GRAVEL_POCKETS, strata: STRATA_GEN };
+export const PROFILES: readonly GenProfile[] = [CLASSIC_PROFILE, GRAVEL_PROFILE, STRATA_PROFILE];
 /** What new worlds are generated with. */
-export const NEW_WORLD_PROFILE = GRAVEL_PROFILE;
+export const NEW_WORLD_PROFILE = STRATA_PROFILE;
 
 /** The profile a save names, or null if this version doesn't know it. */
 export function findProfile(ref: ProfileRef): GenProfile | null {
@@ -115,6 +149,7 @@ export function* generateWorldSteps(world: World, profile: GenProfile): Generato
   const subRng = (salt: number): Rng => createRng((seed ^ Math.imul(salt, 0x9e3779b9)) >>> 0);
   const progress = (step: number, label: string): GenProgress => ({ label, progress: step / STEP_COUNT });
   const { width, height } = world;
+  const strata = profile.strata;
 
   // 1. Surface height: layered 1D noise, rolling hills around SURFACE_LEVEL.
   yield progress(0, 'Shaping hills');
@@ -127,18 +162,25 @@ export function* generateWorldSteps(world: World, profile: GenProfile): Generato
     world.surface[tx] = Math.round(SURFACE_LEVEL + n * SURFACE_AMPLITUDE);
   }
 
-  // 2. Layers: grass, a noisy band of dirt, stone, then deepstone below a noisy boundary.
+  // 2. Layers: grass, a noisy band of dirt, stone, then deepstone below a noisy boundary (or,
+  //    with strata, each stratum's rock between its wandering boundaries).
   yield progress(1, 'Layering dirt and stone');
   const dirtNoise = createNoise2D(subRng(2));
   const deepNoise = createNoise2D(subRng(3));
+  const boundaryNoise = strata ? [8, 9, 10, 11].map((salt) => createNoise2D(subRng(salt))) : [];
+  if (strata) world.strataTops = boundaryNoise.map(() => new Int16Array(width));
   for (let tx = 0; tx < width; tx++) {
     const s = world.surface[tx];
     const dirtT = (dirtNoise(tx / DIRT_NOISE_SCALE, 0) + 1) / 2;
     const dirtDepth = Math.round(DIRT_DEPTH_MIN + dirtT * (DIRT_DEPTH_MAX - DIRT_DEPTH_MIN));
-    const deepRow = DEEPSTONE_ROW + Math.round(deepNoise(tx / DEEPSTONE_NOISE_SCALE, 0) * DEEPSTONE_JITTER);
     world.setTile(tx, s, Tile.Grass);
-    for (let ty = s + 1; ty < height; ty++) {
-      world.setTile(tx, ty, ty <= s + dirtDepth ? Tile.Dirt : ty >= deepRow ? Tile.Deepstone : Tile.Stone);
+    if (strata) {
+      layerStrata(world, strata, boundaryNoise, tx, s + dirtDepth);
+    } else {
+      const deepRow = DEEPSTONE_ROW + Math.round(deepNoise(tx / DEEPSTONE_NOISE_SCALE, 0) * DEEPSTONE_JITTER);
+      for (let ty = s + 1; ty < height; ty++) {
+        world.setTile(tx, ty, ty <= s + dirtDepth ? Tile.Dirt : ty >= deepRow ? Tile.Deepstone : Tile.Stone);
+      }
     }
     if (tx % 100 === 99) yield progress(1 + tx / width, 'Layering dirt and stone');
   }
@@ -166,22 +208,40 @@ export function* generateWorldSteps(world: World, profile: GenProfile): Generato
     if (tx % 25 === 24) yield progress(2 + tx / width, 'Carving caves');
   }
 
-  // 4. Ores: random-walk veins, only into stone/deepstone, only inside each ore's depth band.
+  // 3b. Strata: huge crystal caverns in the Geode Depths, from their own noise.
+  const cavernNoise = strata ? createNoise2D(subRng(12)) : null;
+  if (strata && cavernNoise) {
+    yield progress(2.95, 'Hollowing crystal caverns');
+    carveCrystalCaverns(world, cavernNoise, strata);
+  }
+
+  // 4. Ores: random-walk veins, only into stone/deepstone (strata: their own stratum's rock),
+  //    only inside each ore's depth band.
   const oreRng = subRng(5);
   for (let i = 0; i < profile.ores.length; i++) {
     yield progress(3 + i / profile.ores.length, 'Placing ores');
-    placeOreVeins(world, oreRng, profile.ores[i].tile, profile.ores[i].spec);
+    placeOreVeins(world, oreRng, profile.ores[i].tile, profile.ores[i].spec, strata ? strata.jitter : 0);
   }
 
-  // 4b. Gravel pockets (not in classic), from their own RNG so nothing else changes.
+  // 4b. Gravel pockets (not in classic), from their own RNG so nothing else changes. With strata
+  //     they're in the Stone Caverns' stone and the Fungal Hollows' mudstone.
   if (profile.gravel) {
     yield progress(3.9, 'Loosening gravel');
-    placeGravelPockets(world, subRng(7), profile.gravel, profile.ores);
+    placeGravelPockets(world, subRng(7), profile.gravel, profile.ores, strata !== null);
   }
 
   // 5. Trees on flat stretches of grass.
   yield progress(4, 'Growing trees');
   placeTrees(world, subRng(6));
+
+  // 5b. Strata: giant mushrooms and glowshrooms on the Fungal Hollows' floors, glow crystals in
+  //     the Geode Depths' rock faces.
+  if (strata && cavernNoise) {
+    yield progress(4.4, 'Growing glowshrooms');
+    growHollows(world, subRng(13), createNoise2D(subRng(14)), strata);
+    yield progress(4.7, 'Lighting crystals');
+    placeGlowCrystals(world, subRng(15), cavernNoise, strata);
+  }
 
   // 6. Bedrock: both side columns and the bottom rows.
   yield progress(5, 'Adding bedrock');
@@ -222,16 +282,59 @@ export function parseSeed(text: string): number {
   return h >>> 0;
 }
 
-/** Absolute rows [top, bottom] an ore may occupy, clipped to above the bedrock floor. */
-export function oreRowRange(world: World, spec: OreSpec): [number, number] {
-  const top = SURFACE_LEVEL + spec.minDepth;
-  const bottom = Math.min(SURFACE_LEVEL + spec.maxDepth, world.height - 1 - BEDROCK_BOTTOM_ROWS);
+/**
+ * Absolute rows [top, bottom] an ore may occupy, clipped to above the bedrock floor. `pad` widens
+ * the band at both ends (strata ores reach their stratum's wandering boundaries).
+ */
+export function oreRowRange(world: World, spec: OreSpec, pad = 0): [number, number] {
+  const top = SURFACE_LEVEL + spec.minDepth - pad;
+  const bottom = Math.min(SURFACE_LEVEL + spec.maxDepth + pad, world.height - 1 - BEDROCK_BOTTOM_ROWS);
   return [top, bottom];
 }
 
-function placeOreVeins(world: World, rng: Rng, tile: TileId, spec: OreSpec): void {
-  const [top, bottom] = oreRowRange(world, spec);
+/**
+ * Strata layers for column tx, below its grass: dirt down to `dirtBottom`, then each stratum's
+ * rock between its boundaries (Topsoil's stone under the dirt is the Stone Caverns' stone). Each
+ * boundary wanders around its nominal depth; Topsoil reaches at least to the bottom of the dirt,
+ * and every stratum is at least a tile thick. Records the boundaries in world.strataTops.
+ */
+function layerStrata(world: World, spec: StrataGenSpec, noise: NoiseFunction2D[], tx: number, dirtBottom: number): void {
+  const tops = world.strataTops;
+  for (let k = 0; k < tops.length; k++) {
+    const row = SURFACE_LEVEL + spec.tops[k] + Math.round(noise[k](tx / spec.noiseScale, 0) * spec.jitter);
+    tops[k][tx] = Math.max(row, k === 0 ? dirtBottom + 1 : tops[k - 1][tx] + 1);
+  }
+  let s = 1;
+  for (let ty = world.surface[tx] + 1; ty < world.height; ty++) {
+    if (ty <= dirtBottom) {
+      world.setTile(tx, ty, Tile.Dirt);
+      continue;
+    }
+    while (s < tops.length && ty >= tops[s][tx]) s++;
+    world.setTile(tx, ty, STRATA[s].rock);
+  }
+}
+
+/**
+ * Huge caverns in the Geode Depths: open air where low-frequency noise beats the threshold,
+ * which rises near the stratum's edges so they round off inside it.
+ */
+function carveCrystalCaverns(world: World, noise: NoiseFunction2D, spec: StrataGenSpec): void {
+  const [, , geode, magma] = world.strataTops;
+  for (let tx = 1; tx < world.width - 1; tx++) {
+    for (let ty = geode[tx]; ty < magma[tx]; ty++) {
+      const edge = Math.min(ty - geode[tx], magma[tx] - 1 - ty);
+      const threshold = spec.cavernThreshold + Math.max(0, spec.cavernEdge - edge) * spec.cavernEdgePenalty;
+      if (noise(tx / spec.cavernScaleX, ty / spec.cavernScaleY) > threshold) world.setTile(tx, ty, Tile.Air);
+    }
+  }
+}
+
+function placeOreVeins(world: World, rng: Rng, tile: TileId, spec: OreSpec, pad: number): void {
+  const [top, bottom] = oreRowRange(world, spec, pad);
   if (bottom < top) return;
+  const stratum = spec.stratum;
+  const rock = stratum === undefined ? null : STRATA[stratum].rock;
   const veins = Math.round(((bottom - top + 1) * world.width) / spec.tilesPerVein);
   for (let v = 0; v < veins; v++) {
     let tx = randInt(rng, 1, world.width - 2);
@@ -240,7 +343,8 @@ function placeOreVeins(world: World, rng: Rng, tile: TileId, spec: OreSpec): voi
     let placed = 0;
     for (let step = 0; step < size * 4 && placed < size; step++) {
       const current = world.getTile(tx, ty);
-      if (current === Tile.Stone || current === Tile.Deepstone) {
+      const fits = rock === null ? current === Tile.Stone || current === Tile.Deepstone : current === rock && stratumAt(world, tx, ty) === stratum;
+      if (fits) {
         world.setTile(tx, ty, tile);
         placed++;
       }
@@ -252,12 +356,37 @@ function placeOreVeins(world: World, rng: Rng, tile: TileId, spec: OreSpec): voi
 }
 
 /**
- * Gravel pockets: ragged ellipses of gravel, replacing stone only. Some are moved up onto a cave
- * ceiling found below their spot, so their bottom row hangs over the cave (still until
- * disturbed); deeper ceiling pockets may get ore in their bottom rows. Pockets above
- * spec.gentleDepth are small.
+ * Gravel pockets: ragged ellipses of gravel, replacing stone only (with strata: the Stone
+ * Caverns' stone and the Fungal Hollows' mudstone). Some are moved up onto a cave ceiling found
+ * below their spot, so their bottom row hangs over the cave (still until disturbed); deeper
+ * ceiling pockets may get ore in their bottom rows. Pockets above spec.gentleDepth are small.
  */
-function placeGravelPockets(world: World, rng: Rng, spec: GravelSpec, ores: GenProfile['ores']): void {
+function placeGravelPockets(world: World, rng: Rng, spec: GravelSpec, ores: GenProfile['ores'], strata: boolean): void {
+  /** Can gravel replace the tile at (tx, ty)? */
+  const rock = strata
+    ? (tx: number, ty: number): boolean => {
+        const tile = world.getTile(tx, ty);
+        return tile === Tile.Mudstone || (tile === Tile.Stone && stratumAt(world, tx, ty) >= 1);
+      }
+    : (tx: number, ty: number): boolean => world.getTile(tx, ty) === Tile.Stone;
+  /**
+   * The ore for a rich pocket centred at (cx, cy) to put at (tx, ty): the best ore for the
+   * pocket's depth, or with strata, the best ore of its stratum (none at a tile across a boundary).
+   */
+  const oreAt = strata
+    ? (tx: number, ty: number, cx: number, cy: number): TileId | null => {
+        const s = stratumAt(world, cx, cy);
+        if (stratumAt(world, tx, ty) !== s) return null;
+        let ore: TileId | null = null;
+        for (const layer of ores) if (layer.spec.stratum === s) ore = layer.tile;
+        return ore;
+      }
+    : (_tx: number, _ty: number, _cx: number, cy: number): TileId | null => {
+        const depth = cy - SURFACE_LEVEL;
+        let ore: TileId | null = null;
+        for (const layer of ores) if (depth >= layer.spec.minDepth && depth <= layer.spec.maxDepth) ore = layer.tile;
+        return ore;
+      };
   const top = SURFACE_LEVEL + spec.minDepth;
   const bottom = world.height - 1 - BEDROCK_BOTTOM_ROWS - 2;
   const pockets = Math.round(((bottom - top + 1) * world.width) / spec.tilesPerPocket);
@@ -269,9 +398,9 @@ function placeGravelPockets(world: World, rng: Rng, spec: GravelSpec, ores: GenP
     const ry = Math.max(1, rx - 1);
     let ceiling = false;
     if (rng() < spec.ceilingShare) {
-      // The first stone tile with air under it, below the spot: the pocket's bottom row goes there.
+      // The first rock tile with air under it, below the spot: the pocket's bottom row goes there.
       for (let y = cy; y < Math.min(bottom, cy + spec.ceilingSearch); y++) {
-        if (world.getTile(cx, y) === Tile.Stone && world.getTile(cx, y + 1) === Tile.Air) {
+        if (rock(cx, y) && world.getTile(cx, y + 1) === Tile.Air) {
           cy = y - ry;
           ceiling = true;
           break;
@@ -285,12 +414,12 @@ function placeGravelPockets(world: World, rng: Rng, spec: GravelSpec, ores: GenP
         if (d > 1 || (d > 0.6 && rng() < 0.35)) continue;
         const tx = cx + dx;
         const ty = cy + dy;
-        if (ty < top || ty > bottom || world.getTile(tx, ty) !== Tile.Stone) continue;
+        if (ty < top || ty > bottom || !rock(tx, ty)) continue;
         world.setTile(tx, ty, Tile.Gravel);
         placed.push([tx, ty]);
       }
     }
-    // A ceiling pocket reaches down to the cave wherever only a tile or two of stone is left under it.
+    // A ceiling pocket reaches down to the cave wherever only a tile or two of rock is left under it.
     if (ceiling) {
       for (let tx = cx - rx; tx <= cx + rx; tx++) {
         let low = -1;
@@ -299,26 +428,24 @@ function placeGravelPockets(world: World, rng: Rng, spec: GravelSpec, ores: GenP
         for (let k = 1; k <= 3; k++) {
           if (world.getTile(tx, low + k) === Tile.Air) {
             for (let y = low + 1; y < low + k; y++) {
-              if (world.getTile(tx, y) !== Tile.Stone) break;
+              if (!rock(tx, y)) break;
               world.setTile(tx, y, Tile.Gravel);
               placed.push([tx, y]);
             }
             break;
           }
-          if (world.getTile(tx, low + k) !== Tile.Stone) break;
+          if (!rock(tx, low + k)) break;
         }
       }
     }
-    // Ore in the bottom rows of a deep ceiling pocket: the best ore for its depth.
+    // Ore in the bottom rows of a deep ceiling pocket.
     if (!ceiling || cy - SURFACE_LEVEL < spec.richMinDepth || rng() >= spec.richChance || placed.length === 0) continue;
-    const depth = cy - SURFACE_LEVEL;
-    let ore: TileId | null = null;
-    for (const layer of ores) if (depth >= layer.spec.minDepth && depth <= layer.spec.maxDepth) ore = layer.tile;
-    if (ore === null) continue;
+    if (oreAt(cx, cy, cx, cy) === null) continue;
     const low = placed.filter(([, ty]) => ty >= cy);
     for (let i = 0; i < spec.richOres && low.length > 0; i++) {
       const [tx, ty] = low.splice(randInt(rng, 0, low.length - 1), 1)[0];
-      world.setTile(tx, ty, ore);
+      const ore = oreAt(tx, ty, cx, cy);
+      if (ore !== null) world.setTile(tx, ty, ore);
     }
   }
 }
@@ -353,5 +480,46 @@ function placeTrees(world: World, rng: Rng): void {
     }
 
     tx += randInt(rng, TREE_SPACING_MIN, TREE_SPACING_MAX);
+  }
+}
+
+/**
+ * The Fungal Hollows' floors (open air over mudstone): now and then a giant mushroom where there's
+ * room (at least spec.giantMushroomSpacing columns apart, and far enough below the stratum's top
+ * that the tallest one stays inside it), and glowshrooms, thick in patches and rare between
+ * them, so some stretches are lit and others dark.
+ */
+function growHollows(world: World, rng: Rng, patchNoise: NoiseFunction2D, spec: StrataGenSpec): void {
+  const [, hollows, geode] = world.strataTops;
+  const tallest = GIANT_MUSHROOM_STEM_MAX + 3; // stem and cap
+  let nextMushroom = 0;
+  for (let tx = 3; tx < world.width - 3; tx++) {
+    const roof = Math.max(...hollows.subarray(tx - 3, tx + 4)) + tallest;
+    for (let ty = hollows[tx]; ty < geode[tx]; ty++) {
+      if (world.getTile(tx, ty) !== Tile.Air || world.getTile(tx, ty + 1) !== Tile.Mudstone) continue;
+      if (tx >= nextMushroom && ty >= roof && rng() < spec.giantMushroomChance && growGiantMushroom(world, tx, ty, rng)) {
+        nextMushroom = tx + spec.giantMushroomSpacing;
+        continue;
+      }
+      const patch = patchNoise(tx / spec.glowshroomPatchScale, ty / spec.glowshroomPatchScale) > spec.glowshroomPatchThreshold;
+      if (rng() < (patch ? spec.glowshroomPatchChance : spec.glowshroomChance)) world.setTile(tx, ty, Tile.Glowshroom);
+    }
+  }
+}
+
+/**
+ * Glow crystals in the Geode Depths' rock faces (deepstone next to open air): plenty in the huge
+ * caverns, a few elsewhere.
+ */
+function placeGlowCrystals(world: World, rng: Rng, cavernNoise: NoiseFunction2D, spec: StrataGenSpec): void {
+  const [, , geode, magma] = world.strataTops;
+  const open = (tx: number, ty: number): boolean => world.getTile(tx, ty) === Tile.Air;
+  for (let tx = 1; tx < world.width - 1; tx++) {
+    for (let ty = geode[tx]; ty < magma[tx]; ty++) {
+      if (world.getTile(tx, ty) !== Tile.Deepstone) continue;
+      if (!open(tx - 1, ty) && !open(tx + 1, ty) && !open(tx, ty - 1) && !open(tx, ty + 1)) continue;
+      const cavern = cavernNoise(tx / spec.cavernScaleX, ty / spec.cavernScaleY) > spec.cavernThreshold - 0.1;
+      if (rng() < (cavern ? spec.crystalCavernChance : spec.crystalChance)) world.setTile(tx, ty, Tile.GlowCrystal);
+    }
   }
 }

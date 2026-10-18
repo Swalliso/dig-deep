@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FLARE_LIGHT, GLOW_CRYSTAL_LIGHT, GLOWSHROOM_LIGHT, LANTERN_LIGHT, LIGHT_FALLOFF_AIR, LIGHT_FALLOFF_SOLID, LIGHT_MAX, PLAYER_GLOW, TOAST_DURATION, TORCH_LIGHT } from '../src/config';
+import { FLARE_LIGHT, GLOW_CRYSTAL_LIGHT, GLOWSHROOM_LIGHT, LAMP_LIGHT, LANTERN_LIGHT, LIGHT_FALLOFF_AIR, LIGHT_FALLOFF_SOLID, LIGHT_MAX, PLAYER_GLOW, TOAST_DURATION, TORCH_LIGHT } from '../src/config';
 import { Toasts } from '../src/ui/hud';
 import { createRng, randInt } from '../src/util/rng';
 import { generateWorld } from '../src/world/generate';
@@ -95,7 +95,7 @@ describe('lighting', () => {
     fill(world, 20, 38, 45, 44, Tile.Air);
     const light = new LightMap(world);
     const rng = createRng(5);
-    const choices: TileId[] = [Tile.Air, Tile.Air, Tile.Stone, Tile.Torch, Tile.Dirt, Tile.Glowshroom, Tile.GlowCrystal];
+    const choices: TileId[] = [Tile.Air, Tile.Air, Tile.Stone, Tile.Torch, Tile.Dirt, Tile.Glowshroom, Tile.GlowCrystal, Tile.RubyLamp];
     for (let edit = 1; edit <= 300; edit++) {
       // A few changes per step, like breaking a tree or using the 3x3 brush.
       for (let k = randInt(rng, 1, 3); k > 0; k--) {
@@ -136,6 +136,18 @@ describe('lighting', () => {
     expect(light.level(15 + GLOWSHROOM_LIGHT / LIGHT_FALLOFF_AIR, 37)).toBe(0);
     expect(light.established(40, 37)).toBe(GLOW_CRYSTAL_LIGHT - LIGHT_FALLOFF_AIR);
     expect(light.established(28, 37)).toBe(0);
+  });
+
+  it('a gem lamp lights about 10 tiles around it, further than a torch', () => {
+    const world = stoneWorld();
+    fill(world, 5, 37, 55, 37, Tile.Air);
+    world.setTile(25, 37, Tile.SapphireLamp);
+    const light = new LightMap(world);
+    const radius = LAMP_LIGHT / LIGHT_FALLOFF_AIR;
+    expect(radius).toBe(10);
+    expect(radius).toBeGreaterThan(TORCH_LIGHT / LIGHT_FALLOFF_AIR);
+    for (let d = 0; d <= radius; d++) expect(light.established(25 + d, 37)).toBe(LAMP_LIGHT - LIGHT_FALLOFF_AIR * d);
+    expect(light.level(25 + radius + 1, 37)).toBe(0);
   });
 
   it('a moving light gives exactly what a torch in its place would', () => {

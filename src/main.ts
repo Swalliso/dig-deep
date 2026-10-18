@@ -1,4 +1,4 @@
-import { initAudio, setVolumes } from './audio/sfx';
+import { initAudio, setAmbience, setVolumes } from './audio/sfx';
 import {
   AUTOSAVE_INTERVAL,
   GEN_FRAME_BUDGET_MS,
@@ -107,7 +107,7 @@ const renderer = new Renderer(canvas);
 renderer.setPixelScale(settings.pixelScale);
 initInput(canvas);
 initAudio();
-setVolumes(settings.masterVolume, settings.sfxVolume);
+setVolumes(settings.masterVolume, settings.sfxVolume, settings.ambienceVolume);
 const menus = new Menus(document.getElementById('ui') as HTMLElement);
 /** The Settings screen edits `settings` in place; every change is applied and saved at once. */
 const settingsHooks: SettingsHooks = { settings, onChange: applySettings };
@@ -163,7 +163,7 @@ function pauseForFocus(): boolean {
 
 function applySettings(): void {
   saveSettings(settings);
-  setVolumes(settings.masterVolume, settings.sfxVolume);
+  setVolumes(settings.masterVolume, settings.sfxVolume, settings.ambienceVolume);
   renderer.setPixelScale(settings.pixelScale);
   currentGame()?.resize();
 }
@@ -218,6 +218,7 @@ function snapshot(game: Game): string {
 /** `note` is shown under the title (e.g. why a world couldn't be loaded). */
 async function showTitle(note?: string): Promise<void> {
   screen = { kind: 'title' };
+  setAmbience(null, 0);
   const worlds = await listWorlds();
   if (screen.kind !== 'title') return;
   menus.showTitle(titleOptions(worlds, note));
@@ -335,6 +336,7 @@ function finishLoading(world: World, save: SaveData | null, slot: Slot, difficul
 
 function pause(game: Game, reason: 'menu' | 'focus'): void {
   game.endTyping(); // keys go to the pause menu, not a pin name
+  setAmbience(null, 0); // the game sets it again when it's back
   screen = { kind: 'paused', game, reason };
   autosave(game);
   menus.showPause({

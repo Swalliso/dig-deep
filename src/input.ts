@@ -63,6 +63,8 @@ const ACTION_DEFS = {
   debugHurt: { label: 'Debug: take 2 damage', keys: ['KeyJ'], debug: true },
   debugGravel: { label: 'Debug: gravel pocket at the cursor', keys: ['KeyB'], debug: true },
   debugDread: { label: 'Debug: fill dread (again: empty it)', keys: ['KeyU'], debug: true },
+  debugNextStratum: { label: 'Debug: go to the top of the next stratum', keys: ['KeyY'], debug: true },
+  debugGrowPlants: { label: 'Debug: grow planted saplings and spores now', keys: ['KeyP'], debug: true },
 } satisfies Record<string, ActionDef>;
 
 export type Action = keyof typeof ACTION_DEFS;
