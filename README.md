@@ -116,7 +116,8 @@ and pick **Normal** or **Cozy**).
   You can stand on top of a ladder, so a shaft with a ladder in it can be walked over. Jump up
   through platforms, and press S to drop down through one (hold S to keep dropping through
   the ones below). Doors are two tiles tall and need ground under them; right-click to open
-  or close one.
+  or close one. A door opens toward the way you were facing when you placed it (its handle
+  is on the other side).
 - **Health** (Normal worlds): 10 HP, shown as 5 hearts in the top left. Falls of more than 12
   tiles hurt; grab a ladder on the way down (hold W or S) and the fall ends safely, and walking
   off a ledge into a ladder shaft catches you on the ladder. Health comes back slowly after 5 s

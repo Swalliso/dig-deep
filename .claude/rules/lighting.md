@@ -35,3 +35,5 @@ paths:
   any other light, with no special tint: the dread meter and the status line under it tell the
   player they're unsafe (agreed with the user in Phase 13).
 - Light spreads diagonally too (reviewed and kept).
+- Sky light falls straight past doors (`blocksSky`): a closed door is a thin panel and mustn't
+  shade its bottom half or the ground under it. Light spreading sideways is still dimmed by it.

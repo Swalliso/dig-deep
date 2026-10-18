@@ -167,7 +167,7 @@ export const ITEMS = {
   // Placed as the bottom half; building.ts adds the top half above it.
   door: {
     ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'),
-    details: ['Keeps heat out while it is closed, like bricks.'],
+    details: ['Opens toward the way you face when you place it.', 'Keeps heat out while it is closed, like bricks.'],
     icon: { shape: 'door', color: '#8f6236' },
   },
   // Placed as the left half; building.ts adds the right half beside it.

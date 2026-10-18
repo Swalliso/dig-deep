@@ -1,6 +1,7 @@
 import { PLAYER_HEIGHT, PLAYER_WIDTH, QUICK_TORCH_RADIUS, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
 import { campTiles } from '../world/camp';
+import { closedDoorTiles, hingeFacing } from '../world/doors';
 import { stopFits } from '../world/lifts';
 import { canPlantOn } from '../world/plants';
 import { beamFooting, worldGetter } from '../world/supports';
@@ -112,9 +113,12 @@ export function tryPlace(world: World, player: Player, inventory: Inventory, tx:
   const tile = itemDef(stack.item).placeTile;
   if (tile === null || !canPlace(world, player, tx, ty, tile)) return false;
   if (tile === Tile.DoorClosedBottom) {
+    // It opens toward the way the player faces, so walking up to a wall and placing a door
+    // swings it ahead of you.
     const [bx, by] = doorSpot(world, player, tx, ty)!;
-    world.setTile(bx, by - 1, Tile.DoorClosedTop);
-    world.setTile(bx, by, Tile.DoorClosedBottom);
+    const [top, bottom] = closedDoorTiles(hingeFacing(player.facing));
+    world.setTile(bx, by - 1, top);
+    world.setTile(bx, by, bottom);
   } else if (tile === Tile.BedLeft) {
     const [lx, ly] = bedSpot(world, player, tx, ty)!;
     world.setTile(lx, ly, Tile.BedLeft);

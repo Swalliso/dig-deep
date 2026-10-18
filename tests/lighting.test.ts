@@ -89,13 +89,35 @@ describe('lighting', () => {
     expect(light.level(40, 37)).toBe(0);
   });
 
+  it('lets sky light fall past a closed door, which still dims light passing sideways', () => {
+    const world = stoneWorld();
+    const light = new LightMap(world);
+    // A closed door standing on the ground in the open: no shade on its bottom half or under it.
+    world.setTile(10, GROUND - 2, Tile.DoorRightClosedTop);
+    world.setTile(10, GROUND - 1, Tile.DoorRightClosedBottom);
+    light.update();
+    for (let y = GROUND - 2; y <= GROUND + 3; y++) expect(light.level(10, y)).toBe(light.level(9, y));
+    expect(light.level(10, GROUND - 1)).toBe(LIGHT_MAX);
+
+    // A torch-lit room with a closed door in its wall: the light beyond is dimmed by the door
+    // just as by the stone around it.
+    fill(world, 20, 35, 40, 36, Tile.Air);
+    world.setTile(30, 35, Tile.DoorClosedTop);
+    world.setTile(30, 36, Tile.DoorClosedBottom);
+    world.setTile(26, 36, Tile.Torch);
+    light.update();
+    const past = TORCH_LIGHT - 3 * LIGHT_FALLOFF_AIR - LIGHT_FALLOFF_SOLID - LIGHT_FALLOFF_AIR;
+    expect(light.level(31, 36)).toBe(Math.max(0, past));
+    expect(light.light).toEqual(fullRecompute(world).light);
+  });
+
   it('incremental relighting always matches a full recompute', () => {
     const world = stoneWorld();
     fill(world, 8, 30, 50, 34, Tile.Air);
     fill(world, 20, 38, 45, 44, Tile.Air);
     const light = new LightMap(world);
     const rng = createRng(5);
-    const choices: TileId[] = [Tile.Air, Tile.Air, Tile.Stone, Tile.Torch, Tile.Dirt, Tile.Glowshroom, Tile.GlowCrystal, Tile.RubyLamp];
+    const choices: TileId[] = [Tile.Air, Tile.Air, Tile.Stone, Tile.Torch, Tile.Dirt, Tile.Glowshroom, Tile.GlowCrystal, Tile.RubyLamp, Tile.DoorClosedTop, Tile.DoorRightClosedBottom];
     for (let edit = 1; edit <= 300; edit++) {
       // A few changes per step, like breaking a tree or using the 3x3 brush.
       for (let k = randInt(rng, 1, 3); k > 0; k--) {
