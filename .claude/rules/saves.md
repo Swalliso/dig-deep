@@ -26,6 +26,11 @@ paths:
   - the pinned recipe (`pinnedRecipe`, by the item it makes) and the map pins (`mapPins`)
   - when the Heart of the Deep was claimed (`heartClaimedAt`; the world list marks a claimed
     world)
+  - lift cages (`lifts`, Phase 15), each parked where it was or where it was heading, and
+    `respawnAt: 'camp'` when the camp was set as the respawn point after the bed; lift stop names
+    and the camp (on its top-left tile) are tile entities
+- A save made during a lift ride stores the player standing at the stop the ride ends at
+  (`Game.savedPlayer`) and the cage there, so a reload mid-trip loads with the trip done.
 - Not saved: particles, half-mined tile damage, the trash slot, and heat exposure (a reload
   starts its few seconds of grace again).
 - A stack held on the mouse is saved as if put away; whatever doesn't fit is saved as a drop at

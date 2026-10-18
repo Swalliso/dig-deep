@@ -1,4 +1,4 @@
-import { TILE_SIZE } from '../config';
+import { LIFT_RAILS_PER_BAR, TILE_SIZE } from '../config';
 import { Tile, type TileId } from '../world/tiles';
 import type { World } from '../world/world';
 import type { Chest } from './chests';
@@ -76,9 +76,18 @@ export const RECIPES: readonly Recipe[] = [
   recipe('blocks', 'platform', 2, 'workbench', ['planks', 1]),
   recipe('blocks', 'door', 1, 'workbench', ['planks', 6]),
   recipe('stations', 'bed', 1, 'workbench', ['planks', 10], ['wood', 4]),
+  // Phase 15: lifts and the camp.
+  recipe('blocks', 'lift_rail', LIFT_RAILS_PER_BAR, 'workbench', ['iron_bar', 1], ['planks', 2]),
+  recipe('stations', 'lift_stop', 1, 'workbench', ['iron_bar', 1], ['planks', 4]),
+  recipe('stations', 'camp_kit', 1, 'workbench', ['workbench', 1], ['furnace', 1], ['bed', 1], ['iron_bar', 2]),
 ];
 
-const STATION_TILES: Record<Station, number> = { workbench: Tile.Workbench, furnace: Tile.Furnace };
+/** The tiles that count as each station: its own, and every part of the camp (Phase 15). */
+const CAMP_TILES: readonly number[] = [Tile.CampTopLeft, Tile.CampTopRight, Tile.CampBottomLeft, Tile.CampBottomRight];
+const STATION_TILES: Record<Station, readonly number[]> = {
+  workbench: [Tile.Workbench, ...CAMP_TILES],
+  furnace: [Tile.Furnace, ...CAMP_TILES],
+};
 
 /**
  * Visit every tile whose centre is within `range` tiles (the player's station range) of world
@@ -106,7 +115,7 @@ export function forEachTileInRange(
 export function nearbyStations(world: World, x: number, y: number, range = BASE_STATS.stationRange): Set<Station> {
   const found = new Set<Station>();
   forEachTileInRange(world, x, y, range, (_tx, _ty, tile) => {
-    for (const station of ['workbench', 'furnace'] as const) if (tile === STATION_TILES[station]) found.add(station);
+    for (const station of ['workbench', 'furnace'] as const) if (STATION_TILES[station].includes(tile)) found.add(station);
   });
   return found;
 }

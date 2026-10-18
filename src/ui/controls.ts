@@ -63,7 +63,7 @@ export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
     ['Throw a held flare', `${key('use')} at a spot`],
     ['Pick block onto hotbar', key('pickBlock')],
     ['Quick torch (keeps what you hold)', list('quickTorch')],
-    ['Open chest, use door or bed', `${clickName('interact', table)} it`],
+    ['Use chest, door, bed, camp, lift', `${clickName('interact', table)} it`],
     ['Climb a ladder', `${keyPairs('climbUp', 'climbDown', table)} on it`],
     ['Drop through a platform', `${key('climbDown')} (hold to keep dropping)`],
     ['Map / minimap', `${key('map')} / ${key('minimap')}`],
@@ -90,7 +90,7 @@ export function overlayHelpLines(table: ActionTable = ACTIONS): string[] {
   return [
     `${keyPairs('moveLeft', 'moveRight', table, '/')}: move   ${list('jump')}: jump   ${keyPairs('climbUp', 'climbDown', table, '/')} on a ladder: climb   ${key('climbDown')} on a platform: drop through`,
     `${key('use')}: dig, or place the held block on an empty spot (hold to sweep), or throw a held flare`,
-    `${key('interact')}: open chest or door, sleep in bed (respawn there)   ${key('pickBlock')}: pick block   ${list('quickTorch')}: quick torch`,
+    `${key('interact')}: open chest or door, sleep in bed or camp (respawn there), ride a lift from a stop   ${key('pickBlock')}: pick block   ${list('quickTorch')}: quick torch`,
     `${hotbarRange(table)} or wheel: select   ${list('dropStack')}: drop stack   ${list('quickStack')}: quick stack to nearby chests`,
     `${list('inventory')}: inventory + crafting, with the nearest chest (${key('modifier').toLowerCase()}-click: move stack, craft 10; ${key('pin').toLowerCase()}: pin a recipe)`,
     `${list('map')}: map   ${list('minimap')}: minimap   ${list('pause')}: pause   ${list('overlay')}: hide this overlay`,
@@ -117,6 +117,11 @@ export function mapHelpText(table: ActionTable = ACTIONS): string {
 /** The pin editor's help line: 'Type a name · Enter: done · Esc: cancel'. */
 export function pinEditorHelp(table: ActionTable = ACTIONS): string {
   return `Type a name · ${mainKey('confirm', table)}: done · ${mainKey('pause', table)}: cancel`;
+}
+
+/** The lift panel's help line: 'Left-click a stop to ride there · Esc: close'. */
+export function liftPanelHelp(table: ActionTable = ACTIONS): string {
+  return `${clickName('click', table)} a stop to ride there · ${mainKey('pause', table)}: close`;
 }
 
 /** The goal box with nothing pinned: 'Right-click a recipe to pin it as your goal.' */

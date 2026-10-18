@@ -36,6 +36,10 @@ export interface MapMarkers {
   satchels: { tx: number; ty: number }[];
   /** The Heart of the Deep, once the player has seen it (Phase 14b), or null. Drawn as a diamond. */
   heart: { tx: number; ty: number } | null;
+  /** The camp, by its top-left tile, or null (Phase 15). */
+  camp: { tx: number; ty: number } | null;
+  /** Lift stops and their names (Phase 15); the full map labels them. */
+  liftStops: { tx: number; ty: number; name: string }[];
   /** The player's map pins, and the index of the tracked one (or null). */
   pins: readonly MapPin[];
   trackedPin: number | null;
@@ -99,6 +103,8 @@ const CHEST_COLOR = '#d08a3c';
 const BED_COLOR = '#ff7eb6';
 const SATCHEL_COLOR = '#c792ff';
 const HEART_COLOR = '#ff3d5a';
+const CAMP_COLOR = '#ffa64d';
+const LIFT_COLOR = '#e0e4ea';
 export const PIN_COLOR = '#5ad1e6';
 /** The tracked pin, on the map, the minimap and the HUD. */
 export const TRACKED_PIN_COLOR = '#ffffff';
@@ -306,6 +312,14 @@ export class FullMap {
     for (const chest of markers.chests) marker(ctx, sx(chest.tx + 0.5), sy(chest.ty + 0.5), size, CHEST_COLOR, u);
     marker(ctx, sx(markers.spawn.tx + 0.5), sy(markers.spawn.ty + 0.5), size, SPAWN_COLOR, u);
     if (markers.bed) marker(ctx, sx(markers.bed.tx + 1), sy(markers.bed.ty + 0.5), size, BED_COLOR, u);
+    if (markers.camp) marker(ctx, sx(markers.camp.tx + 1), sy(markers.camp.ty + 1), size * 1.4, CAMP_COLOR, u);
+    ctx.font = `${4 * u}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    for (const stop of markers.liftStops) {
+      marker(ctx, sx(stop.tx + 0.5), sy(stop.ty + 0.5), size, LIFT_COLOR, u);
+      shadowText(ctx, stop.name, sx(stop.tx + 0.5) + size, sy(stop.ty + 0.5), LIFT_COLOR, u);
+    }
     for (const satchel of markers.satchels) diamond(ctx, sx(satchel.tx), sy(satchel.ty), size * 1.4, SATCHEL_COLOR, u);
     if (markers.heart) diamond(ctx, sx(markers.heart.tx + 0.5), sy(markers.heart.ty + 0.5), size * 1.8, HEART_COLOR, u);
     marker(ctx, sx(markers.playerX / TILE_SIZE), sy(markers.playerY / TILE_SIZE), size * 1.4, PLAYER_COLOR, u);
@@ -444,6 +458,8 @@ function drawLegend(ctx: CanvasRenderingContext2D, cx: number, y: number, u: num
     [CHEST_COLOR, 'Chest'],
   ];
   if (markers.bed) items.push([BED_COLOR, 'Bed']);
+  if (markers.camp) items.push([CAMP_COLOR, 'Camp']);
+  if (markers.liftStops.length > 0) items.push([LIFT_COLOR, 'Lift stop']);
   if (markers.satchels.length > 0) items.push([SATCHEL_COLOR, 'Satchel']);
   if (markers.heart) items.push([HEART_COLOR, 'Heart of the Deep']);
   if (markers.pins.some((_, i) => i !== markers.trackedPin)) items.push([PIN_COLOR, 'Pin']);
@@ -499,6 +515,8 @@ export function drawMinimap(ctx: CanvasRenderingContext2D, image: MapImage, mark
   for (const chest of markers.chests) marker(ctx, at(chest.tx, left, x0), at(chest.ty, top, y0), 2 * u, CHEST_COLOR, u);
   marker(ctx, at(markers.spawn.tx, left, x0), at(markers.spawn.ty, top, y0), 2 * u, SPAWN_COLOR, u);
   if (markers.bed) marker(ctx, at(markers.bed.tx + 0.5, left, x0), at(markers.bed.ty, top, y0), 2 * u, BED_COLOR, u);
+  if (markers.camp) marker(ctx, at(markers.camp.tx + 0.5, left, x0), at(markers.camp.ty + 0.5, top, y0), 3 * u, CAMP_COLOR, u);
+  for (const stop of markers.liftStops) marker(ctx, at(stop.tx, left, x0), at(stop.ty, top, y0), 2 * u, LIFT_COLOR, u);
   for (const satchel of markers.satchels) {
     diamond(ctx, x0 + (satchel.tx - left) * u, y0 + (satchel.ty - top) * u, 3 * u, SATCHEL_COLOR, u);
   }

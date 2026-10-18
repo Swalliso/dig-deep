@@ -1,5 +1,7 @@
 import { PLAYER_HEIGHT, PLAYER_WIDTH, QUICK_TORCH_RADIUS, TILE_SIZE } from '../config';
 import type { Player } from '../entities/player';
+import { campTiles } from '../world/camp';
+import { stopFits } from '../world/lifts';
 import { canPlantOn } from '../world/plants';
 import { beamFooting, worldGetter } from '../world/supports';
 import { isClimbable, isSolid, Tile, tileDef, type TileId } from '../world/tiles';
@@ -13,14 +15,17 @@ import { inReach } from './mining';
  * that holds blocks up (no floating blocks), and a solid block can't overlap the player. A beam
  * also needs a beam or firm ground right under it (see beamFooting), and a sapling or mushroom
  * sprout the ground it grows on (see canPlantOn).
- * Doors and beds have their own rules; see doorSpot and bedSpot.
+ * A lift stop also needs a lift rail beside it and a floor under it (see stopFits).
+ * Doors, beds and the camp have their own rules; see doorSpot, bedSpot and campSpot.
  */
 export function canPlace(world: World, player: Player, tx: number, ty: number, tile: TileId): boolean {
   if (tile === Tile.DoorClosedBottom) return doorSpot(world, player, tx, ty) !== null;
   if (tile === Tile.BedLeft) return bedSpot(world, player, tx, ty) !== null;
+  if (tile === Tile.CampTopLeft) return campSpot(world, player, tx, ty) !== null;
   if (!world.inBounds(tx, ty) || world.getTile(tx, ty) !== Tile.Air) return false;
   if (!inReach(player, tx, ty)) return false;
   if (!canPlantOn(tile, world.getTile(tx, ty + 1))) return false;
+  if (tile === Tile.LiftStop && !stopFits(world, tx, ty)) return false;
   const supported =
     holdsBlocks(world.getTile(tx - 1, ty)) ||
     holdsBlocks(world.getTile(tx + 1, ty)) ||
@@ -79,6 +84,27 @@ export function bedSpot(world: World, player: Player, tx: number, ty: number): [
   return null;
 }
 
+/**
+ * Where a camp placed at the cursor tile (tx, ty) goes: the cursor can be on any of its four
+ * tiles (a bottom one first, so it sits on the floor the cursor is over). Returns its top-left
+ * tile, or null if it doesn't fit: all four tiles must be empty, with solid ground under both
+ * bottom ones, and the cursor tile in reach. (The camp doesn't block movement, so it may overlap
+ * the player.) Only one camp can stand at a time; the game checks that (see Game.buildAt).
+ */
+export function campSpot(world: World, player: Player, tx: number, ty: number): [number, number] | null {
+  if (!inReach(player, tx, ty)) return null;
+  for (const top of [ty - 1, ty]) {
+    for (const left of [tx, tx - 1]) {
+      const fits =
+        campTiles(left, top).every(([x, y]) => world.inBounds(x, y) && world.getTile(x, y) === Tile.Air) &&
+        isSolid(world.getTile(left, top + 2)) &&
+        isSolid(world.getTile(left + 1, top + 2));
+      if (fits) return [left, top];
+    }
+  }
+  return null;
+}
+
 /** Place one of the selected hotbar item at (tx, ty). Returns true if a tile was placed. */
 export function tryPlace(world: World, player: Player, inventory: Inventory, tx: number, ty: number): boolean {
   const stack = inventory.selectedStack;
@@ -93,6 +119,9 @@ export function tryPlace(world: World, player: Player, inventory: Inventory, tx:
     const [lx, ly] = bedSpot(world, player, tx, ty)!;
     world.setTile(lx, ly, Tile.BedLeft);
     world.setTile(lx + 1, ly, Tile.BedRight);
+  } else if (tile === Tile.CampTopLeft) {
+    const [cx, cy] = campSpot(world, player, tx, ty)!;
+    for (const [x, y, part] of campTiles(cx, cy)) world.setTile(x, y, part);
   } else {
     world.setTile(tx, ty, tile);
   }

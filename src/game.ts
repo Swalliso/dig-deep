@@ -58,6 +58,7 @@ import {
   nextInstantMine,
   nextStratumSpot,
   placeLadderShaft,
+  placeLiftShaft,
   placeGravelPocket,
   placeLavaPool,
   placeOreSampler,
@@ -72,7 +73,7 @@ import { breakFlashAlpha, ScreenShake, type BreakFlash } from './render/juice';
 import { MapImage } from './render/mapImage';
 import { Particles } from './render/particles';
 import type { Renderer } from './render/renderer';
-import { canPlace, itemForTile, overlapsPlayer, primaryAction, quickTorchSpot, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
+import { campSpot, canPlace, itemForTile, overlapsPlayer, primaryAction, quickTorchSpot, tilesOnLine, tryPlace, type PrimaryAction } from './systems/building';
 import { CaveIns, gravelDamage, type CaveInHooks, type SavedCaveIns } from './systems/caveIns';
 import { chestAt, nearbyChests, quickStackAll, type Chest } from './systems/chests';
 import { SessionClock, type PauseReason } from './systems/clock';
@@ -86,12 +87,14 @@ import {
   takeBag,
   touchesSatchel,
   type BedSpot,
+  type RespawnChoice,
   type Satchel,
 } from './systems/death';
 import { goalStatus, recipeFor } from './systems/goal';
 import { deathCauseText, difficultyName, fallDamage, Health, type DamageCause, type Difficulty } from './systems/health';
 import { Inventory } from './systems/inventory';
 import { itemDef, type ItemId } from './systems/items';
+import { defaultStopName, Lifts, riderSpot, stopDepth, stopLanding, stopName, stopProblem, type Cage, type CageEvent, type LiftView, type StopSpot } from './systems/lifts';
 import { MapPins } from './systems/mapPins';
 import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { hintSeen, markHintSeen, type HintId } from './systems/hints';
@@ -101,13 +104,16 @@ import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/c
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawStratumBanner, drawToasts, Toasts } from './ui/hud';
 import { goalHudLines } from './ui/guidance';
 import { drawMinimap, FullMap, PIN_COLOR, type MapInput, type MapMarkers } from './ui/map';
+import { depthText, LiftPanel } from './ui/liftPanel';
 import { InventoryPanel, type PanelState } from './ui/menus';
 import { directionText, drawDeathScreen, drawDreadMeter, drawHearts, drawHudLine, offsetText } from './ui/vitals';
 import { bedLeft, bedPartner, isBed, isWholeBed } from './world/beds';
+import { campPartners, campTopLeft, isCamp, isWholeCamp } from './world/camp';
 import { ExploredMap } from './world/explored';
 import { doorBottom, doorPartner, isDoorOpen, toggleDoor } from './world/doors';
 import { CLASSIC_PROFILE, findProfile, profileLabel, type GenProfile } from './world/generate';
 import { heatField, maxHeat, type HeatField } from './world/heat';
+import { stopFits } from './world/lifts';
 import { LightMap } from './world/lighting';
 import { canPlantOn, growDuePlants, newPlant, plantGrowTime } from './world/plants';
 import { bannerTitle, depthRange, inFloatField, MAGMA, STRATA, StratumTracker, stratumAt, torchLight } from './world/strata';
@@ -154,6 +160,10 @@ export interface GameStart {
   mapPins?: MapPins;
   /** Session clock time the Heart of the Deep was claimed; defaults to null (not yet). */
   heartClaimedAt?: number | null;
+  /** Whether the bed or the camp was set as the respawn point last; defaults to the bed. */
+  respawnAt?: RespawnChoice;
+  /** Lift cages; defaults to none. Must belong to this world. */
+  lifts?: Lifts;
 }
 
 /** What the death screen says, shown until the player respawns. */
@@ -221,6 +231,12 @@ export class Game {
   difficulty: Difficulty;
   /** The bed the player respawns at (its left tile), or null. */
   bed: BedSpot | null;
+  /** Which of the bed and the camp was set as the respawn point last (Phase 15). */
+  respawnAt: RespawnChoice;
+  /** Lift cages, and the player's trip on one (Phase 15). */
+  readonly lifts: Lifts;
+  /** Opened by right-clicking a lift stop: pick a stop to ride to (it pauses the world). */
+  readonly liftPanel = new LiftPanel();
   /** Bags left where the player died, oldest first. */
   satchels: Satchel[];
   /** Showing after a death until the player presses the respawn key (the world is paused). */
@@ -314,6 +330,8 @@ export class Game {
   private gravelHintShown = false;
   private supportPreview: SupportPreview | null = null;
   private readonly caveInHooks: CaveInHooks;
+  /** The "one camp at a time" toast shows once per left-button hold. */
+  private campRefusedThisHold = false;
 
   constructor(world: World, renderer: Renderer, settings: Settings, start: GameStart = {}) {
     this.world = world;
@@ -326,6 +344,8 @@ export class Game {
     this.health = start.health ?? new Health(this.player.stats.maxHealth);
     this.difficulty = start.difficulty ?? 'normal';
     this.bed = start.bed ?? null;
+    this.respawnAt = start.respawnAt ?? 'bed';
+    this.lifts = start.lifts ?? new Lifts();
     this.satchels = start.satchels ?? [];
     this.dread = start.dread ?? new Dread();
     this.flareList = start.flares ?? [];
@@ -389,17 +409,29 @@ export class Game {
     return this.flareList;
   }
 
-  /** Is Esc going to close something in the game (the panel or the map) rather than pause? */
+  /** Is Esc going to close something in the game (the panel, the map or the lift panel) rather than pause? */
   get capturesEscape(): boolean {
-    return this.inventoryPanel.open || this.fullMap.open;
+    return this.inventoryPanel.open || this.fullMap.open || this.liftPanel.open;
   }
 
-  /** What pauses the world from inside the game (the inventory panel or the full map), or null. */
+  /** What pauses the world from inside the game (the inventory panel, the full map or the lift panel), or null. */
   get pausedBy(): PauseReason | null {
     if (this.deathScreen) return 'dead';
     if (this.inventoryPanel.open) return 'panel';
     if (this.fullMap.open) return 'map';
+    if (this.liftPanel.open) return 'lift';
     return null;
+  }
+
+  /**
+   * Where a save puts the player: where they are, or, riding a lift, where the ride ends, so a
+   * save made during a trip loads with the trip done (and the cage there; see Lifts.saved).
+   */
+  get savedPlayer(): { x: number; y: number; fallTop: number | null; centerX: number; centerY: number } {
+    const { player } = this;
+    const end = this.lifts.ride && this.rideEnd();
+    if (!end) return player;
+    return { x: end.x, y: end.y, fallTop: null, centerX: end.x + PLAYER_WIDTH / 2, centerY: end.y + PLAYER_HEIGHT / 2 };
   }
 
   /** Call after the renderer has resized. */
@@ -499,7 +531,9 @@ export class Game {
   /** Keys, the map and the panel: everything that takes input while the player is alive. */
   private handleInput(dt: number): void {
     this.handleKeys();
-    if (this.fullMap.open) {
+    if (this.liftPanel.open) {
+      this.updateLiftPanel();
+    } else if (this.fullMap.open) {
       const { canvas, scale } = this.renderer;
       const pins = { pins: this.mapPins, explored: this.explored };
       this.fullMap.update(dt, this.mapInput(), canvas.width, canvas.height, scale, this.world.width, this.world.height, pins);
@@ -512,6 +546,8 @@ export class Game {
   private handleKeys(): void {
     const { inventory, inventoryPanel } = this;
     if (actionPressed('overlay')) this.showOverlay = !this.showOverlay;
+    // The lift panel takes the mouse and Esc; the other keys wait until it closes.
+    if (this.liftPanel.open) return;
     // M opens the full map (closing the inventory panel); M or Esc closes it. While it's open the
     // mouse wheel, dragging and the movement keys move the map.
     // While a pin name is being typed, Esc only stops the typing (the map handles it).
@@ -549,7 +585,10 @@ export class Game {
       giveDebugKit(this.inventory);
       toasts.show('Debug: materials added');
     }
-    if (actionPressed('debugFly')) player.setFlying(!player.flying, world);
+    if (actionPressed('debugFly')) {
+      this.lifts.ride = null;
+      player.setFlying(!player.flying, world);
+    }
     if (actionPressed('debugInstantMine')) this.instantMine = nextInstantMine(this.instantMine);
     if (actionPressed('debugLighting')) this.fullbright = !this.fullbright;
     if (actionPressed('debugRevealMap')) {
@@ -585,6 +624,11 @@ export class Game {
       toasts.show(`Debug: ${placeLadderShaft(world, lx, ly)} m ladder shaft`);
     }
     if (actionPressed('debugNextStratum')) this.debugNextStratum();
+    if (actionPressed('debugLiftShaft')) {
+      const [lx, ly] = this.cursorTile();
+      const length = placeLiftShaft(world, this.tileEntities, lx, ly);
+      toasts.show(length > 0 ? `Debug: ${length} m lift with stops (right-click one to ride)` : 'Debug: no room for a lift here');
+    }
     if (actionPressed('debugHeart')) this.debugHeart();
     if (actionPressed('debugLava')) {
       const [lx, ly] = this.cursorTile();
@@ -607,6 +651,7 @@ export class Game {
   private debugNextStratum(): void {
     const { player, camera, toasts } = this;
     const spot = nextStratumSpot(this.world, ...this.playerTile());
+    this.lifts.ride = null;
     if (!spot) {
       toasts.show(`Debug: this world has no strata (it was made with ${profileLabel(this.world.profile)})`);
       return;
@@ -623,6 +668,7 @@ export class Game {
   private debugHeart(): void {
     const { player, camera, toasts } = this;
     const spot = heartSpot(this.world);
+    this.lifts.ride = null;
     if (!spot) {
       toasts.show(`Debug: this world has no Heart of the Deep (it was made with ${profileLabel(this.world.profile)})`);
       return;
@@ -651,7 +697,7 @@ export class Game {
         this.openChest = { tx, ty };
         inventoryPanel.open = true;
         sfx.uiClick();
-      } else if (!inventoryPanel.open && !this.useBed(tx, ty)) {
+      } else if (!inventoryPanel.open && !this.lifts.ride && !this.useBed(tx, ty) && !this.useCamp(tx, ty) && !this.useLiftStop(tx, ty)) {
         this.useDoor(tx, ty);
       }
     }
@@ -674,6 +720,173 @@ export class Game {
     }
   }
 
+  /** The lift panel's view of the lift it was opened at, or null if that stop or its rail is gone. */
+  private liftView(): LiftView | null {
+    const stop = this.liftPanel.stop;
+    if (!stop || this.world.getTile(stop.sx, stop.sy) !== Tile.LiftStop) return null;
+    return this.lifts.view(this.world, this.tileEntities, stop.sx, stop.sy);
+  }
+
+  /** The open lift panel: clicks on stops, renaming, scrolling and Esc. */
+  private updateLiftPanel(): void {
+    const { liftPanel, renderer } = this;
+    const view = this.liftView();
+    if (!view) {
+      liftPanel.hide();
+      return;
+    }
+    const input = {
+      wheel: consumeWheel(),
+      mouseX: mouse.x,
+      mouseY: mouse.y,
+      clicked: actionPressed('click'),
+      confirm: actionPressed('confirm'),
+      cancel: actionPressed('pause'),
+    };
+    const action = liftPanel.update(input, view, renderer.canvas.width, renderer.canvas.height, renderer.scale);
+    if (!action) return;
+    const here = view.stops[view.here];
+    if (action.kind === 'close') {
+      liftPanel.hide();
+      sfx.uiClick();
+    } else if (action.kind === 'rename') {
+      this.tileEntities.set(here.sx, here.sy, { kind: 'liftStop', name: action.name });
+      sfx.uiClick();
+    } else if (action.kind === 'call') {
+      liftPanel.hide();
+      this.lifts.pickup = null;
+      this.lifts.send(view.cage, here.sy);
+      sfx.liftCall();
+      this.toasts.show('Cage called: it is on its way to this stop', 3);
+    } else {
+      liftPanel.hide();
+      this.startTrip(view.cage, here, action.to);
+    }
+  }
+
+  /**
+   * Ride from stop `from` to `to`: straight away if the cage is at `from`, or once it has come to
+   * fetch the player (if they're still by the stop when it gets there).
+   */
+  private startTrip(cage: Cage, from: StopSpot, to: StopSpot): void {
+    if (this.lifts.isAt(cage, from.sy)) {
+      this.board(cage, to);
+      return;
+    }
+    this.lifts.send(cage, from.sy);
+    this.lifts.pickup = { cage: cage.id, from: { sx: from.sx, sy: from.sy }, to: { sx: to.sx, sy: to.sy } };
+    sfx.liftCall();
+    this.toasts.show(`The cage is on its way. Wait by the stop: it will take you to ${stopName(this.tileEntities, to.sx, to.sy)}.`, 4);
+  }
+
+  /** Step into the cage and set off for stop `to`. */
+  private board(cage: Cage, to: StopSpot): void {
+    const { player } = this;
+    this.lifts.pickup = null;
+    this.lifts.ride = { cage: cage.id, to: { sx: to.sx, sy: to.sy } };
+    this.lifts.send(cage, to.sy);
+    const spot = riderSpot(cage);
+    player.rideTo(spot.x, spot.y);
+    this.leftAction = null;
+    sfx.liftStart(this.pan(cage.tx));
+  }
+
+  /** Where the ride ends: standing at the stop, or (if that's blocked now) in the cage, holding on to the rail. */
+  private rideEnd(): { x: number; y: number; onRail: boolean } | null {
+    const ride = this.lifts.ride;
+    const cage = ride && this.lifts.cage(ride.cage);
+    if (!ride || !cage) return null;
+    if (stopProblem(this.world, ride.to, cage.tx) === null) return { ...stopLanding(ride.to), onRail: false };
+    return { ...riderSpot({ ...cage, y: cage.target ?? cage.y }), onRail: true };
+  }
+
+  /**
+   * One step of the lifts: cages move, and the player rides along, steps out at the end of a
+   * trip, or boards a cage that has come to fetch them.
+   */
+  private updateLifts(dt: number): void {
+    const { lifts, player } = this;
+    for (const event of lifts.update(dt, this.world)) this.cageEvent(event);
+    const ride = lifts.ride;
+    const cage = ride && lifts.cage(ride.cage);
+    if (cage) {
+      const spot = riderSpot(cage);
+      player.rideTo(spot.x, spot.y);
+    }
+  }
+
+  /** What a cage's move means for the player: arriving, being stuck at a break, or losing its rail. */
+  private cageEvent({ kind, cage }: CageEvent): void {
+    const { lifts, player, toasts } = this;
+    const riding = lifts.ride?.cage === cage.id;
+    const fetching = lifts.pickup?.cage === cage.id;
+    const onScreen = Math.abs((cage.tx + 0.5) * TILE_SIZE - player.centerX) < this.renderer.viewWidth / 2 && Math.abs(cage.y - player.centerY) < this.renderer.viewHeight / 2;
+    const near = riding || onScreen;
+    if (kind === 'rattle') {
+      if (near) sfx.liftRattle(this.pan(cage.tx));
+      return;
+    }
+    if (kind === 'arrived') {
+      if (near || fetching) sfx.liftArrive(this.pan(cage.tx));
+      if (riding) this.arrive();
+      else if (fetching) this.fetched(cage);
+      return;
+    }
+    // Stuck at a break in the rail, or its rail gone from under it: a rider holds on to the rail.
+    if (riding) {
+      const spot = riderSpot(cage);
+      lifts.ride = null;
+      player.placeAt(spot.x, spot.y);
+      player.climbing = kind === 'stuck';
+      toasts.show(kind === 'stuck' ? 'The rail is broken here, so the cage stopped. Climb the rail to get out.' : 'The rail under the cage is gone!', 5);
+    } else if (fetching) {
+      lifts.pickup = null;
+      toasts.show("The cage can't get to you: its rail is broken on the way.", 4);
+    }
+  }
+
+  /** The cage reached the end of the trip: step out at the stop. */
+  private arrive(): void {
+    const { player, lifts } = this;
+    const ride = lifts.ride!;
+    const cage = lifts.cage(ride.cage);
+    const end = this.rideEnd();
+    lifts.ride = null;
+    if (!end || !cage) return;
+    player.placeAt(end.x, end.y);
+    if (end.onRail) {
+      player.climbing = true;
+      this.toasts.show("Something is in the way at that stop, so you can't step out. Climb the rail.", 4);
+      return;
+    }
+    player.facing = ride.to.sx > cage.tx ? 1 : -1; // facing out of the cage
+    const name = stopName(this.tileEntities, ride.to.sx, ride.to.sy);
+    this.floaters.push({ text: name, color: '#ffe066', x: player.centerX, y: player.y - 4, at: this.clock.time, duration: 1.6 });
+  }
+
+  /** A cage called to fetch the player got there: they board if they're still by the stop. */
+  private fetched(cage: Cage): void {
+    const pickup = this.lifts.pickup!;
+    this.lifts.pickup = null;
+    if (this.deathScreen) return;
+    if (inReach(this.player, pickup.from.sx, pickup.from.sy)) this.board(cage, pickup.to);
+    else this.toasts.show('The cage came for you, but you had left the stop.', 3);
+  }
+
+  /** Right-click on a lift stop in reach: open the lift panel. Returns false if (tx, ty) isn't a lift stop in reach. */
+  private useLiftStop(tx: number, ty: number): boolean {
+    if (this.world.getTile(tx, ty) !== Tile.LiftStop || !inReach(this.player, tx, ty)) return false;
+    const view = this.lifts.view(this.world, this.tileEntities, tx, ty);
+    if (!view) {
+      this.toasts.show('This lift stop has no lift rail beside it any more.', 3);
+      return true;
+    }
+    this.leftAction = null;
+    this.liftPanel.show(tx, ty, view);
+    sfx.uiClick();
+    return true;
+  }
+
   /** Pin the recipe that makes `item` as the goal, or clear the goal (null). */
   private pinRecipe(item: ItemId | null): void {
     this.pinnedRecipe = item && recipeFor(item) ? item : null;
@@ -684,6 +897,7 @@ export class Game {
   /** Stop typing a pin name, keeping it (the pause menu is opening). */
   endTyping(): void {
     this.fullMap.stopEditing(this.mapPins, true);
+    this.liftPanel.stopRenaming();
   }
 
   /** One step of the world: the player, mining and building, drops, and everything else timed. */
@@ -691,13 +905,17 @@ export class Game {
     const { world, player } = this;
     this.clock.advance(dt);
     player.floating = !player.flying && inFloatField(world, ...this.playerTile());
-    player.update(dt, world, {
-      move: (actionDown('moveRight') ? 1 : 0) - (actionDown('moveLeft') ? 1 : 0),
-      jumpPressed: actionPressed('jump'),
-      jumpHeld: actionDown('jump'),
-      climb: (actionDown('climbDown') ? 1 : 0) - (actionDown('climbUp') ? 1 : 0),
-      fast: actionDown('modifier'),
-    });
+    // Riding a lift, the cage moves the player (updateLifts); otherwise the usual physics.
+    this.updateLifts(dt);
+    if (!this.lifts.ride) {
+      player.update(dt, world, {
+        move: (actionDown('moveRight') ? 1 : 0) - (actionDown('moveLeft') ? 1 : 0),
+        jumpPressed: actionPressed('jump'),
+        jumpHeld: actionDown('jump'),
+        climb: (actionDown('climbDown') ? 1 : 0) - (actionDown('climbUp') ? 1 : 0),
+        fast: actionDown('modifier'),
+      });
+    }
     this.playerFeedback();
     this.checkFall();
     this.feelTheDark(dt);
@@ -706,7 +924,9 @@ export class Game {
     // Health only comes back in the world's own light (not the lantern's), out of the heat.
     this.health.update(this.clock.time, player.stats.maxHealth, this.safety === 'established' && this.heatSafety === 'cool');
     if (this.deathScreen) return; // the fall, the heat or lava was fatal: the rest waits for the respawn
-    this.useHeldItem(dt);
+    // No digging or building from a moving cage.
+    if (this.lifts.ride) this.leftAction = null;
+    else this.useHeldItem(dt);
     if (actionPressed('quickTorch')) this.quickTorch();
     this.caveIns.update(dt, this.clock.time, TILE_UPDATE_BUDGET, this.caveInHooks);
     if (this.deathScreen) return; // crushed: the rest waits for the respawn
@@ -741,6 +961,7 @@ export class Game {
       this.leftAction = primaryAction(stack ? stack.item : null, world.getTile(tx, ty));
       this.lastBuildTile = [tx, ty];
       this.builtThisHold.clear();
+      this.campRefusedThisHold = false;
     }
     if (actionPressed('use') && this.leftAction === 'throw') this.throwFlareAt(tx, ty);
     const held = this.leftAction === 'dig' && actionDown('use');
@@ -792,6 +1013,7 @@ export class Game {
     renderer.drawSatchels(this.satchels, this.clock.time, camX, camY);
     // Dead: the player isn't drawn (they're already back at the bed, off screen).
     if (!this.deathScreen) renderer.drawPlayer(player, px, py, camX, camY, this.playerAlpha(), inventory.selectedStack?.item === 'lantern');
+    renderer.drawCages(this.lifts.cages, alpha, camX, camY);
     renderer.drawParticles(this.particles, camX, camY);
     if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
     renderer.drawGlowTint(this.world, this.lightMap, this.clock.time, !reduced, camX, camY);
@@ -805,7 +1027,7 @@ export class Game {
       const t = (this.clock.time - f.at) / f.duration;
       renderer.drawFloatingText(f.text, f.x, f.y - t * 12, f.color, Math.min(1, 3 * (1 - t)), camX, camY);
     }
-    if (!this.inventoryPanel.open && !this.deathScreen) this.drawCursor(camX, camY);
+    if (!this.inventoryPanel.open && !this.liftPanel.open && !this.deathScreen && !this.lifts.ride) this.drawCursor(camX, camY);
     if (this.mining.hint) renderer.drawHint(this.mining.hint, camX, camY);
     // A red flash over the screen when hurt (not with Reduced flashes; the number and hearts still show it).
     const sinceHit = this.lastHit ? this.clock.time - this.lastHit.at : Infinity;
@@ -838,6 +1060,8 @@ export class Game {
     // Depth is measured at the player's feet: standing on the surface level reads 0 m.
     drawDepthMeter(renderer.ctx, Math.floor((player.y + PLAYER_HEIGHT) / TILE_SIZE) - SURFACE_LEVEL, renderer.scale);
     if (this.fullMap.open) this.fullMap.draw(renderer.ctx, this.mapImage, this.mapMarkers(glowX, glowY), renderer.scale);
+    const liftView = this.liftPanel.open ? this.liftView() : null;
+    if (liftView) this.liftPanel.draw(renderer.ctx, liftView, mouse.x, mouse.y, renderer.scale);
     if (this.deathScreen) {
       const ready = performance.now() - this.deathScreen.shownAt >= DEATH_SCREEN_DELAY * 1000;
       drawDeathScreen(renderer.ctx, this.deathScreen.lines, ready ? respawnPrompt() : null, renderer.scale);
@@ -881,6 +1105,14 @@ export class Game {
       }
     }
     if (player.floating) y = drawHudLine(renderer.ctx, 'Floatstone: gravity is lighter here', y, u, '#bfefff');
+    // A lift trip, or a cage on its way to fetch the player.
+    const trip = this.lifts.ride ?? this.lifts.pickup;
+    if (trip) {
+      const to = this.lifts.ride ? this.lifts.ride.to : this.lifts.pickup!.from;
+      const name = stopName(this.tileEntities, to.sx, to.sy);
+      const text = this.lifts.ride ? `Lift: riding to ${name} (${depthText(stopDepth(to.sy))})` : `Lift: the cage is on its way to ${name}`;
+      y = drawHudLine(renderer.ctx, text, y, u, '#e0e4ea');
+    }
     const satchel = this.nearestSatchel();
     if (satchel) {
       const dx = (satchel.x + SATCHEL_SIZE / 2 - player.centerX) / TILE_SIZE;
@@ -998,6 +1230,8 @@ export class Game {
       bed: this.activeBed(),
       satchels: this.satchels.map((s) => ({ tx: (s.x + SATCHEL_SIZE / 2) / TILE_SIZE, ty: (s.y + SATCHEL_SIZE / 2) / TILE_SIZE })),
       heart: this.world.heart && this.explored.isExplored(this.world.heart.tx, this.world.heart.ty) ? { tx: this.world.heart.tx, ty: this.world.heart.ty } : null,
+      camp: this.campAt(),
+      liftStops: this.tileEntities.entries().flatMap(({ tx, ty, entity }) => (entity.kind === 'liftStop' ? [{ tx, ty, name: entity.name }] : [])),
       pins: this.mapPins.pins,
       trackedPin: this.mapPins.tracked,
     };
@@ -1026,7 +1260,16 @@ export class Game {
     }
     if (isBed(tile) && this.bed && this.bed.ty === ty && this.bed.tx === (tile === Tile.BedLeft ? tx : tx - 1)) {
       this.bed = null;
-      this.toasts.show('Your bed is gone. Without one you respawn near the world spawn.', 4);
+      this.toasts.show(this.campAt() ? 'Your bed is gone. You will respawn at your camp.' : 'Your bed is gone. Without one you respawn near the world spawn.', 4);
+    }
+    // Breaking any part of the camp packs up all of it (one camp kit drops, from this part).
+    if (isCamp(tile)) {
+      for (const [px, py] of campPartners(this.world, tx, ty, tile)) {
+        this.world.setTile(px, py, Tile.Air);
+        this.particles.breakBurst(px, py, tileDef(tile).color);
+      }
+      const after = this.activeBed() ? 'in your bed' : 'near the world spawn';
+      this.toasts.show(`Camp packed up. Until you set it up again, you respawn ${after}.`, 4);
     }
     // Cutting a trunk (or a giant mushroom's stem) brings down the rest of it above the cut.
     if (isTrunk(tile)) {
@@ -1106,9 +1349,21 @@ export class Game {
   /** Drag-building: place the selected block at (tx, ty) unless this hold already did. */
   private buildAt(tx: number, ty: number): void {
     const key = ty * this.world.width + tx;
-    if (this.builtThisHold.has(key) || !tryPlace(this.world, this.player, this.inventory, tx, ty)) return;
+    if (this.builtThisHold.has(key)) return;
+    // Only one camp can stand at a time (it's the one you move around).
+    const camp = this.campAt();
+    if (this.inventory.selectedStack?.item === 'camp_kit' && camp) {
+      if (!this.campRefusedThisHold && campSpot(this.world, this.player, tx, ty)) {
+        this.campRefusedThisHold = true;
+        this.toasts.show(`You already have a camp (${depthText(camp.ty + 2 - SURFACE_LEVEL)}). Break it to pack it up, then set it up here.`, 4);
+      }
+      return;
+    }
+    if (!tryPlace(this.world, this.player, this.inventory, tx, ty)) return;
     this.builtThisHold.add(key);
     const placed = this.world.getTile(tx, ty);
+    if (placed === Tile.LiftStop) this.placedLiftStop(tx, ty);
+    if (isCamp(placed)) this.setUpCamp(tx, ty);
     if (placed === Tile.Beam || placed === Tile.Crossbeam) markHintSeen(this.supportHintId(placed));
     if (tileDef(placed).plant) this.tileEntities.set(tx, ty, newPlant(this.clock.time, plantGrowTime(Math.random())));
     sfx.place(tileDef(this.world.getTile(tx, ty)).material, this.pan(tx));
@@ -1116,13 +1371,53 @@ export class Game {
     if (isBed(this.world.getTile(tx, ty))) this.toasts.show(`${mainKey('interact')} the bed to respawn there`, 4);
   }
 
+  /** A lift stop was just placed: give it a name, and say how to use it the first time. */
+  private placedLiftStop(tx: number, ty: number): void {
+    const name = defaultStopName(this.world, this.tileEntities, tx, ty);
+    this.tileEntities.set(tx, ty, { kind: 'liftStop', name });
+    this.toasts.show(`Lift stop "${name}": ${mainKey('interact').toLowerCase()} it to call the cage and ride. Build more stops along the rail.`, 5);
+  }
+
+  /** A camp was just set up with a part at (tx, ty): it's the camp now, and the respawn point. */
+  private setUpCamp(tx: number, ty: number): void {
+    const [cx, cy] = campTopLeft(this.world, tx, ty)!;
+    this.tileEntities.set(cx, cy, { kind: 'camp' });
+    this.respawnAt = 'camp';
+    sfx.bedSet();
+    this.floaters.push({ text: 'Respawn point: camp', color: '#ffd0a0', x: (cx + 1) * TILE_SIZE, y: cy * TILE_SIZE - 2, at: this.clock.time, duration: 2 });
+    this.toasts.show(`Camp set up (${depthText(cy + 2 - SURFACE_LEVEL)}): it's a workbench and a furnace, and you'll respawn here. Break it to pack it up and move it.`, 6);
+  }
+
+  /** The camp's top-left tile, if one is set up and whole. */
+  private campAt(): BedSpot | null {
+    let found: BedSpot | null = null;
+    this.tileEntities.forEach((tx, ty, entity) => {
+      if (entity.kind === 'camp' && isWholeCamp(this.world, tx, ty)) found = { tx, ty };
+    });
+    return found;
+  }
+
+  /** Right-click on the camp in reach: it becomes the respawn point. Returns false if (tx, ty) isn't the camp in reach. */
+  private useCamp(tx: number, ty: number): boolean {
+    const top = campTopLeft(this.world, tx, ty);
+    if (!top || !inReach(this.player, tx, ty)) return false;
+    const already = this.respawnAt === 'camp';
+    this.respawnAt = 'camp';
+    sfx.bedSet();
+    const [cx, cy] = top;
+    this.floaters.push({ text: already ? 'Already your respawn point' : 'Respawn point: camp', color: '#ffd0a0', x: (cx + 1) * TILE_SIZE, y: cy * TILE_SIZE - 2, at: this.clock.time, duration: 1.6 });
+    if (!already) this.toasts.show('Respawn point set: you will wake up at your camp', 3);
+    return true;
+  }
+
   /** Right-click on a bed in reach: it becomes the respawn point. Returns false if (tx, ty) isn't a bed in reach. */
   private useBed(tx: number, ty: number): boolean {
     const left = bedLeft(this.world, tx, ty);
     if (!left || !inReach(this.player, tx, ty)) return false;
     const [lx, ly] = left;
-    const already = this.bed?.tx === lx && this.bed.ty === ly;
+    const already = this.bed?.tx === lx && this.bed.ty === ly && this.respawnAt === 'bed';
     this.bed = { tx: lx, ty: ly };
+    this.respawnAt = 'bed';
     sfx.bedSet();
     this.floaters.push({
       text: already ? 'Already your bed' : 'Respawn point set',
@@ -1186,8 +1481,12 @@ export class Game {
     }
     const hadBed = this.activeBed() !== null;
     const bedWasSet = this.bed !== null;
-    const spot = findRespawn(world, this.bed);
+    const camp = this.campAt();
+    const spot = findRespawn(world, this.bed, camp, this.respawnAt);
     if (!hadBed) this.bed = null; // a destroyed bed is forgotten; a blocked one is kept for next time
+    this.lifts.ride = null;
+    this.lifts.pickup = null;
+    this.liftPanel.hide();
     const lines = [deathCauseText(cause)];
     const kept = inventory.slots.some((s) => s && itemDef(s.item).pickaxeTier !== undefined);
     lines.push(kept ? 'You kept your hotbar and every pickaxe.' : 'You kept your hotbar.');
@@ -1200,10 +1499,13 @@ export class Game {
     } else {
       lines.push('Your bag was empty, so nothing was left behind.');
     }
-    if (spot.atBed) lines.push('You wake up in your bed.');
+    const wantCamp = this.respawnAt === 'camp';
+    if (spot.atCamp) lines.push(wantCamp ? 'You wake up at your camp.' : 'Your bed is gone or blocked, so you wake up at your camp.');
+    else if (spot.atBed) lines.push(wantCamp ? 'Your camp is packed up or blocked, so you wake up in your bed.' : 'You wake up in your bed.');
+    else if (camp && wantCamp) lines.push('Your camp is blocked, so you wake up near the world spawn.');
     else if (hadBed) lines.push('Your bed is blocked, so you wake up near the world spawn.');
     else if (bedWasSet) lines.push('Your bed is gone, so you wake up near the world spawn.');
-    else lines.push('You have no bed, so you wake up near the world spawn. Craft one at a workbench.');
+    else lines.push('You have no bed or camp, so you wake up near the world spawn. Craft a bed at a workbench.');
     player.placeAt(spot.x, spot.y);
     this.health.refill(player.stats.maxHealth, this.clock.time, RESPAWN_PROTECTION);
     this.dread.level = 0;
@@ -1561,9 +1863,25 @@ export class Game {
     // Empty tile: a faint outline where the selected block could be placed.
     const stack = this.inventory.selectedStack;
     const tile = stack ? itemDef(stack.item).placeTile : null;
-    if (tile !== null && canPlace(world, this.player, tx, ty, tile)) {
+    const camp = tile === Tile.CampTopLeft ? this.campAt() : null;
+    if (camp && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty)) {
+      // One camp at a time: say where the one there is.
+      renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+      const text = `One camp at a time: pack up yours (${depthText(camp.ty + 2 - SURFACE_LEVEL)}) first`;
+      renderer.drawFloatingText(text, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
+    } else if (tile === Tile.CampTopLeft && canPlace(world, this.player, tx, ty, tile)) {
+      // The camp's whole 2 x 2 footprint.
+      const [cx, cy] = campSpot(world, this.player, tx, ty)!;
+      for (const [x, y] of [[cx, cy], [cx + 1, cy], [cx, cy + 1], [cx + 1, cy + 1]]) renderer.drawTileOutline(x, y, 'rgba(255, 255, 255, 0.45)', camX, camY);
+    } else if (tile !== null && canPlace(world, this.player, tx, ty, tile)) {
       if (this.caveIns.isEnabled && isSupport(tile)) this.drawSupportPreview(tx, ty, tile, camX, camY);
       else renderer.drawTileOutline(tx, ty, 'rgba(255, 255, 255, 0.45)', camX, camY);
+    } else if (tile === Tile.LiftStop && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty) && !stopFits(world, tx, ty)) {
+      renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+      renderer.drawFloatingText('Lift stops go beside a lift rail, on a floor', (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
+    } else if (tile === Tile.CampTopLeft && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty)) {
+      renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+      renderer.drawFloatingText('The camp needs a 2 x 2 space on solid ground', (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
     } else if (tile === Tile.Beam && world.inBounds(tx, ty) && inReach(this.player, tx, ty) && !beamFooting(worldGetter(world), tx, ty)) {
       // A beam can't go here only because there's nothing under it: say so (the first few times).
       renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
@@ -1702,6 +2020,15 @@ export class Game {
     return `Torch light here ${torchLight(this.world, tx, ty)}   floatstone ${this.player.floating ? 'yes' : 'no'}   heat ${heat}   ${heartText}`;
   }
 
+  /** F3: the lifts (Phase 15), the camp and the respawn choice. */
+  private liftLine(): string {
+    const { lifts } = this;
+    const moving = lifts.cages.filter((c) => c.target !== null).length;
+    const ride = lifts.ride ? `riding to (${lifts.ride.to.sx}, ${lifts.ride.to.sy})` : lifts.pickup ? `cage fetching at (${lifts.pickup.from.sx}, ${lifts.pickup.from.sy})` : 'not riding';
+    const camp = this.campAt();
+    return `Lifts: ${lifts.cages.length} cage${lifts.cages.length === 1 ? '' : 's'} (${moving} moving), ${ride}   camp ${camp ? `(${camp.tx}, ${camp.ty})` : 'none'}   respawn at ${this.respawnAt}`;
+  }
+
   /** How many planted saplings and sprouts are waiting to grow. */
   private plantCount(): number {
     let n = 0;
@@ -1734,6 +2061,7 @@ export class Game {
       `Goal ${this.pinnedRecipe ?? 'none'}   map pins ${this.mapPins.pins.length} (tracked ${this.mapPins.trackedPin?.name ?? 'none'})`,
       this.rulesLine(tx, ty),
       `Cave-ins ${this.caveIns.isEnabled ? 'on' : 'off (Cozy)'}   shaking ${this.caveIns.warnings.size}   falling ${this.caveIns.falling.length}   rechecks queued ${this.tileUpdates.size}`,
+      this.liftLine(),
       ...overlayHelpLines(),
       ...debugLines,
     ]);

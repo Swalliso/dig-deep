@@ -67,17 +67,20 @@ describe('recipes', () => {
       ['2 platform', '1 planks', 'workbench'],
       ['1 door', '6 planks', 'workbench'],
       ['1 bed', '10 planks + 4 wood', 'workbench'], // Phase 11b
+      ['16 lift_rail', '1 iron_bar + 2 planks', 'workbench'], // Phase 15
+      ['1 lift_stop', '1 iron_bar + 4 planks', 'workbench'], // Phase 15
+      ['1 camp_kit', '1 workbench + 1 furnace + 1 bed + 2 iron_bar', 'workbench'], // Phase 15
     ]);
   });
 
   it('sorts every recipe into a group', () => {
     const byGroup = Object.fromEntries(RECIPE_GROUPS.map((g) => [g, RECIPES.filter((r) => r.group === g).map((r) => r.output)]));
     expect(byGroup).toEqual({
-      blocks: ['planks', 'stone_bricks', 'mudstone_bricks', 'deepstone_bricks', 'basalt_bricks', 'beam', 'crossbeam', 'ladder', 'platform', 'door'],
+      blocks: ['planks', 'stone_bricks', 'mudstone_bricks', 'deepstone_bricks', 'basalt_bricks', 'beam', 'crossbeam', 'ladder', 'platform', 'door', 'lift_rail'],
       light: ['torch', 'ruby_lamp', 'sapphire_lamp', 'lantern', 'flare'],
       tools: ['stone_pickaxe', 'copper_pickaxe', 'iron_pickaxe', 'gold_pickaxe', 'emberite_pickaxe'],
       materials: ['copper_bar', 'iron_bar', 'gold_bar', 'emberite_bar'],
-      stations: ['workbench', 'furnace', 'chest', 'bed'],
+      stations: ['workbench', 'furnace', 'chest', 'bed', 'lift_stop', 'camp_kit'],
     });
   });
 

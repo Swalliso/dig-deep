@@ -1,6 +1,6 @@
 import { delMany, get, getMany, keys, set, setMany } from 'idb-keyval';
 import { storageKey } from '../channel';
-import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, TILE_SIZE, WORLD_HEIGHT, WORLD_WIDTH } from '../config';
+import { CHEST_SLOTS, CHUNK_SIZE, DROP_SIZE, HOTBAR_SIZE, LIFT_STOP_NAME_MAX, TILE_SIZE, WORLD_HEIGHT, WORLD_WIDTH } from '../config';
 import { savedFlares, type Flare, type SavedFlare } from '../entities/flare';
 import { ItemDrop } from '../entities/itemDrop';
 import type { Player } from '../entities/player';
@@ -11,10 +11,11 @@ import { Tile, TILE_COUNT, tileDef } from '../world/tiles';
 import type { World } from '../world/world';
 import type { CaveIns, SavedCaveIns } from './caveIns';
 import type { Dread, SavedDread } from './dread';
-import type { BedSpot, Satchel } from './death';
+import type { BedSpot, RespawnChoice, Satchel } from './death';
 import { Health, type Difficulty, type SavedHealth } from './health';
 import { Inventory, type ItemStack, type Slots } from './inventory';
 import { ITEMS, itemDef, type ItemId } from './items';
+import type { Lifts, SavedLifts } from './lifts';
 import type { MapPins, SavedMapPins } from './mapPins';
 
 /**
@@ -67,8 +68,10 @@ export interface SaveData {
   difficulty?: Difficulty;
   /** HP and the hurt-protection and regeneration times (on the session clock). Missing means full. */
   health?: SavedHealth;
-  /** Where the player respawns, by the bed's left tile, or null for no bed. */
+  /** The player's bed, by its left tile, or null for no bed. */
   bed?: BedSpot | null;
+  /** 'camp' if the camp was set as the respawn point after the bed (Phase 15). Missing means the bed. */
+  respawnAt?: RespawnChoice;
   /** Bags left where the player died. */
   satchels?: Satchel[];
   /** Shaking gravel, falling blocks and tiles waiting for a recheck (Phase 12). */
@@ -86,6 +89,8 @@ export interface SaveData {
    * Missing means not claimed.
    */
   heartClaimedAt?: number | null;
+  /** Lift cages, each parked where it was or where it was heading (Phase 15). */
+  lifts?: SavedLifts;
 }
 
 /**
@@ -106,10 +111,15 @@ export interface WorldMeta {
   heartClaimed?: boolean;
 }
 
-/** A tile entity and where it is: a chest's contents, or when a planted sapling or sprout grows (Phase 14a). */
+/**
+ * A tile entity and where it is: a chest's contents, when a planted sapling or sprout grows
+ * (Phase 14a), a lift stop's name or the camp (Phase 15).
+ */
 export type SavedTileEntity =
   | { tx: number; ty: number; kind: 'chest'; slots: (ItemStack | null)[] }
-  | { tx: number; ty: number; kind: 'plant'; growAt: number };
+  | { tx: number; ty: number; kind: 'plant'; growAt: number }
+  | { tx: number; ty: number; kind: 'liftStop'; name: string }
+  | { tx: number; ty: number; kind: 'camp' };
 
 export interface SavedDrop {
   item: ItemId;
@@ -173,11 +183,20 @@ export interface SurvivalState {
   mapPins?: MapPins;
   /** Phase 14b. */
   heartClaimedAt?: number | null;
+  /** Phase 15. */
+  respawnAt?: RespawnChoice;
+  lifts?: Lifts;
 }
+
+/**
+ * Where the player is saved: the player, or (riding a lift) where the ride ends, so a save made
+ * during a trip loads with the trip done.
+ */
+export type SavedPlayer = Pick<Player, 'x' | 'y' | 'fallTop' | 'centerX' | 'centerY'>;
 
 export function createSave(
   world: World,
-  player: Player,
+  player: SavedPlayer,
   inventory: Inventory,
   drops: readonly ItemDrop[],
   entities?: TileEntities,
@@ -222,10 +241,12 @@ export type SavedState = Pick<
   | 'pinnedRecipe'
   | 'mapPins'
   | 'heartClaimedAt'
+  | 'respawnAt'
+  | 'lifts'
 >;
 
 export function savedState(
-  player: Player,
+  player: SavedPlayer,
   inventory: Inventory,
   drops: readonly ItemDrop[],
   entities?: TileEntities,
@@ -253,16 +274,25 @@ export function savedState(
     ...(survival?.pinnedRecipe !== undefined && { pinnedRecipe: survival.pinnedRecipe }),
     ...(survival?.mapPins && { mapPins: survival.mapPins.saved() }),
     ...(survival?.heartClaimedAt !== undefined && { heartClaimedAt: survival.heartClaimedAt }),
+    ...(survival?.respawnAt === 'camp' && { respawnAt: 'camp' }),
+    ...(survival?.lifts && { lifts: survival.lifts.saved() }),
   };
 }
 
 /** Tile entities as saved (copies, so later changes don't leak into a save waiting to be written). */
 export function savedTileEntities(entities: TileEntities): SavedTileEntity[] {
-  return entities
-    .entries()
-    .map(({ tx, ty, entity }): SavedTileEntity =>
-      entity.kind === 'chest' ? { tx, ty, kind: 'chest', slots: entity.slots.map((s) => s && { ...s }) } : { tx, ty, kind: 'plant', growAt: entity.growAt },
-    );
+  return entities.entries().map(({ tx, ty, entity }): SavedTileEntity => {
+    switch (entity.kind) {
+      case 'chest':
+        return { tx, ty, kind: 'chest', slots: entity.slots.map((s) => s && { ...s }) };
+      case 'plant':
+        return { tx, ty, kind: 'plant', growAt: entity.growAt };
+      case 'liftStop':
+        return { tx, ty, kind: 'liftStop', name: entity.name };
+      case 'camp':
+        return { tx, ty, kind: 'camp' };
+    }
+  });
 }
 
 /**
@@ -361,8 +391,8 @@ export function restoreDrops(save: SaveData, world: World): ItemDrop[] {
 
 /**
  * Tile entities for a world that already has its saved chunks applied. Entries that are
- * unrecognisable, or whose tile isn't a chest (or a sapling or sprout, for a plant) any more,
- * are skipped.
+ * unrecognisable, or whose tile isn't a chest (or a sapling or sprout for a plant, a lift stop,
+ * or the top-left of a camp) any more, are skipped.
  */
 export function restoreTileEntities(save: SaveData, world: World): TileEntities {
   const entities = new TileEntities(world);
@@ -375,6 +405,10 @@ export function restoreTileEntities(save: SaveData, world: World): TileEntities 
       entities.set(e.tx, e.ty, { kind: 'chest', slots });
     } else if (e.kind === 'plant' && typeof e.growAt === 'number' && Number.isFinite(e.growAt) && tileDef(tile).plant) {
       entities.set(e.tx, e.ty, { kind: 'plant', growAt: e.growAt });
+    } else if (e.kind === 'liftStop' && typeof e.name === 'string' && tile === Tile.LiftStop) {
+      entities.set(e.tx, e.ty, { kind: 'liftStop', name: e.name.slice(0, LIFT_STOP_NAME_MAX) });
+    } else if (e.kind === 'camp' && tile === Tile.CampTopLeft) {
+      entities.set(e.tx, e.ty, { kind: 'camp' });
     }
   }
   return entities;
@@ -421,7 +455,9 @@ export function checkSave(raw: unknown): SaveStatus {
     (save.caveIns === undefined || (typeof save.caveIns === 'object' && save.caveIns !== null)) &&
     (save.flares === undefined || Array.isArray(save.flares)) &&
     (save.mapPins === undefined || (typeof save.mapPins === 'object' && save.mapPins !== null)) &&
-    (save.heartClaimedAt === undefined || save.heartClaimedAt === null || typeof save.heartClaimedAt === 'number');
+    (save.heartClaimedAt === undefined || save.heartClaimedAt === null || typeof save.heartClaimedAt === 'number') &&
+    (save.respawnAt === undefined || save.respawnAt === 'bed' || save.respawnAt === 'camp') &&
+    (save.lifts === undefined || (typeof save.lifts === 'object' && save.lifts !== null));
   return valid ? { kind: 'ok', save: save as SaveData } : { kind: 'broken' };
 }
 

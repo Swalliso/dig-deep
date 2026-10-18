@@ -604,6 +604,84 @@ function crossbeam(img: ImageData, rng: Rng): void {
   for (const x of [3, 12]) put(img, x, 2, [70, 70, 76]); // pegs
 }
 
+/** Lift rail (Phase 15): two steel rails with cross ties, which double as rungs to climb. */
+function liftRail(img: ImageData): void {
+  const c = rgb(tileDef(Tile.LiftRail).color);
+  const tie: RGB = [74, 78, 86];
+  for (const y of [2, 6, 10, 14]) {
+    for (let x = 4; x < 12; x++) {
+      put(img, x, y, tie, 1.15);
+      put(img, x, y + 1, tie, 0.7);
+    }
+  }
+  for (let y = 0; y < S; y++) {
+    put(img, 3, y, c, 1.25);
+    put(img, 4, y, c, 0.8);
+    put(img, 11, y, c, 1.25);
+    put(img, 12, y, c, 0.8);
+  }
+  for (const y of [2, 10]) {
+    put(img, 3, y, [210, 214, 220]);
+    put(img, 11, y, [210, 214, 220]);
+  }
+}
+
+/** Lift stop (Phase 15): a call box on a post, with an amber lamp and a call button. */
+function liftStop(img: ImageData): void {
+  const box: RGB = [86, 92, 102];
+  const lamp = rgb(tileDef(Tile.LiftStop).color);
+  for (let y = 9; y < S; y++) {
+    put(img, 7, y, box, 0.9);
+    put(img, 8, y, box, 0.65);
+  }
+  for (let y = 2; y < 10; y++) {
+    for (let x = 4; x < 12; x++) {
+      const edge = x === 4 || x === 11 || y === 2 || y === 9;
+      put(img, x, y, box, edge ? 0.6 : y === 3 ? 1.2 : 1);
+    }
+  }
+  for (const [x, y] of [[7, 4], [8, 4], [7, 5], [8, 5]] as [number, number][]) put(img, x, y, lamp, y === 4 ? 1.2 : 1);
+  put(img, 6, 7, [200, 60, 50]);
+  put(img, 9, 7, [80, 200, 90]);
+  for (let x = 5; x < 11; x++) put(img, x, S - 1, box, 0.55);
+}
+
+const CAMP_CANVAS: RGB = [192, 138, 62];
+const CAMP_STONE: RGB = [116, 116, 122];
+
+/**
+ * The camp (Phase 15), drawn as one 32 x 32 picture and cut into its four tiles: a canvas tent
+ * with a bedroll in its doorway on the left, and a small stone furnace with a chimney on the right.
+ */
+function campPixel(x: number, y: number, rng: Rng): RGB | null {
+  // The tent: an A-frame from its peak at (10, 3) down to the ground across x 0..20.
+  const half = ((y - 3) / 28) * 10.5;
+  if (y >= 3 && Math.abs(x - 10) <= half) {
+    const door = y >= 15 && Math.abs(x - 10) <= ((y - 15) / 16) * 4;
+    if (door) return y >= 27 && Math.abs(x - 10) <= 3 ? (y === 27 ? [232, 228, 218] : rgb(tileDef(Tile.BedLeft).color)) : [36, 26, 20];
+    const edge = Math.abs(x - 10) > half - 1;
+    const shade = edge ? 0.6 : x < 10 ? 1.12 : 0.88;
+    return [CAMP_CANVAS[0] * shade * (rng() < 0.1 ? 0.92 : 1), CAMP_CANVAS[1] * shade, CAMP_CANVAS[2] * shade];
+  }
+  // The furnace: a stone box on the ground with a glowing mouth, and a chimney pipe.
+  if (x >= 21 && x <= 30 && y >= 18) {
+    if (x >= 23 && x <= 28 && y >= 24 && y <= 29) return y >= 28 ? [255, 150, 50] : y >= 26 ? [200, 70, 30] : [30, 22, 18];
+    const edge = x === 21 || x === 30 || y === 18;
+    return [CAMP_STONE[0] * (edge ? 0.7 : rng() < 0.2 ? 0.85 : 1), CAMP_STONE[1] * (edge ? 0.7 : 1), CAMP_STONE[2] * (edge ? 0.7 : 1)];
+  }
+  if (x >= 25 && x <= 26 && y >= 10 && y < 18) return [70, 70, 76];
+  return null;
+}
+
+function campPart(img: ImageData, rng: Rng, dx: number, dy: number): void {
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const c = campPixel(x + dx * S, y + dy * S, rng);
+      if (c) put(img, x, y, c);
+    }
+  }
+}
+
 function drawTile(img: ImageData, id: number, rng: Rng): void {
   switch (id) {
     case Tile.Grass: return grass(img, rng);
@@ -655,6 +733,12 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.Floatstone: return floatstone(img, rng);
     case Tile.Heartstone: return heartstone(img, rng);
     case Tile.HeartCore: return heartCore(img);
+    case Tile.LiftRail: return liftRail(img);
+    case Tile.LiftStop: return liftStop(img);
+    case Tile.CampTopLeft: return campPart(img, rng, 0, 0);
+    case Tile.CampTopRight: return campPart(img, rng, 1, 0);
+    case Tile.CampBottomLeft: return campPart(img, rng, 0, 1);
+    case Tile.CampBottomRight: return campPart(img, rng, 1, 1);
   }
 }
 
@@ -764,6 +848,22 @@ function gemIcon(img: ImageData, color: string): void {
   put(img, 5, 7, [255, 255, 255], 0.9);
 }
 
+/** The camp kit: a little tent with a fire glowing beside it. */
+function campIcon(img: ImageData, color: string): void {
+  const c = rgb(color);
+  for (let y = 3; y < 14; y++) {
+    const half = ((y - 3) / 10) * 5.5;
+    for (let x = 1; x < 13; x++) {
+      if (Math.abs(x - 6.5) > half) continue;
+      const door = y >= 9 && Math.abs(x - 6.5) <= (y - 9) * 0.6;
+      put(img, x, y, door ? [36, 26, 20] : c, door ? 1 : x < 6 ? 1.12 : 0.85);
+    }
+  }
+  for (const [x, y, k] of [[12, 13, 0], [13, 13, 0], [14, 13, 0], [13, 12, 1], [12, 11, 2], [13, 10, 2], [14, 11, 1]] as [number, number, number][]) {
+    put(img, x, y, k === 0 ? [110, 74, 44] : k === 1 ? [255, 150, 50] : [255, 220, 120]);
+  }
+}
+
 /** Item icons: ITEM_IDS[i] lives at x = i * TILE_SIZE. Tile items reuse their tile texture. */
 export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement {
   const atlas = document.createElement('canvas');
@@ -784,6 +884,7 @@ export function buildItemAtlas(tileAtlas: HTMLCanvasElement): HTMLCanvasElement 
     else if (icon.shape === 'lantern') lanternIcon(img, icon.color);
     else if (icon.shape === 'flare') flareIcon(img, icon.color);
     else if (icon.shape === 'gem') gemIcon(img, icon.color);
+    else if (icon.shape === 'camp') campIcon(img, icon.color);
     else pickaxeIcon(img, icon.color);
     ctx.putImageData(img, i * S, 0);
   });

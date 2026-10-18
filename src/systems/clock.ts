@@ -4,10 +4,11 @@
 
 /**
  * What pauses the simulation: the pause menu, the window losing focus (or the tab being
- * hidden), the inventory/crafting panel, the full map, or the death screen (until the player
- * respawns). The panel and the map still take input while they're open; only the world stands still.
+ * hidden), the inventory/crafting panel, the full map, the lift panel (Phase 15), or the death
+ * screen (until the player respawns). The panels and the map still take input while they're
+ * open; only the world stands still.
  */
-export type PauseReason = 'menu' | 'focus' | 'panel' | 'map' | 'dead';
+export type PauseReason = 'menu' | 'focus' | 'panel' | 'map' | 'lift' | 'dead';
 
 /** Seconds of simulated play in this world (saved with it). */
 export class SessionClock {

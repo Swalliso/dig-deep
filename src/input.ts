@@ -27,7 +27,7 @@ const ACTION_DEFS = {
   climbUp: { label: 'Climb up (pan the map up)', keys: ['KeyW', 'ArrowUp'] },
   climbDown: { label: 'Climb down, or drop through a platform', keys: ['KeyS', 'ArrowDown'] },
   use: { label: 'Dig, place the held block or throw a flare', keys: ['MouseLeft'] },
-  interact: { label: 'Open a chest or door, or sleep in a bed', keys: ['MouseRight'] },
+  interact: { label: 'Open a chest or door, sleep in a bed or camp, or use a lift stop', keys: ['MouseRight'] },
   pin: { label: 'Pin a recipe (crafting panel) or add or edit a map pin (map)', keys: ['MouseRight'] },
   quickTorch: { label: 'Quick torch: place a carried torch at the cursor or nearby', keys: ['KeyT'] },
   pickBlock: { label: 'Pick block onto the hotbar', keys: ['MouseMiddle'] },
@@ -48,10 +48,10 @@ const ACTION_DEFS = {
   inventory: { label: 'Inventory and crafting', keys: ['KeyE', 'Tab'] },
   map: { label: 'Map', keys: ['KeyM'] },
   minimap: { label: 'Minimap', keys: ['KeyN'] },
-  pause: { label: 'Pause, or close the inventory, map or a menu screen', keys: ['Escape'] },
+  pause: { label: 'Pause, or close the inventory, map, lift panel or a menu screen', keys: ['Escape'] },
   overlay: { label: 'Debug overlay (FPS)', keys: ['F3'] },
   respawn: { label: 'Respawn after dying', keys: ['Space', 'Enter'] },
-  confirm: { label: 'Finish typing a map pin name', keys: ['Enter'] },
+  confirm: { label: 'Finish typing a map pin or lift stop name', keys: ['Enter'] },
   debugGive: { label: 'Debug: materials kit', keys: ['KeyG'], debug: true },
   debugFly: { label: 'Debug: fly mode', keys: ['KeyF'], debug: true },
   debugInstantMine: { label: 'Debug: instant mining', keys: ['KeyI'], debug: true },
@@ -67,6 +67,7 @@ const ACTION_DEFS = {
   debugGrowPlants: { label: 'Debug: grow planted saplings and spores now', keys: ['KeyP'], debug: true },
   debugHeart: { label: 'Debug: go to the Heart of the Deep', keys: ['KeyX'], debug: true },
   debugLava: { label: 'Debug: lava pool at the cursor', keys: ['KeyZ'], debug: true },
+  debugLiftShaft: { label: 'Debug: 300 m lift down from the cursor', keys: ['KeyR'], debug: true },
 } satisfies Record<string, ActionDef>;
 
 export type Action = keyof typeof ACTION_DEFS;
