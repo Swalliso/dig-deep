@@ -49,21 +49,41 @@ and pick **Normal** or **Cozy**).
   no emberite, so gold is their best).
 - Chop trees for wood, turn it into planks and a **Workbench**, then mine stone for a
   **Furnace** to smelt ore into bars. Crafting needs the right station within 4 tiles.
-- **Strata** (new worlds): the underground is five layers, each with its own rock, ores, look and
-  ambient sound. Crossing into one shows its name, depth and what's found there near the top of
-  the screen. Each layer's ore makes the pickaxe you need for the next layer's rock and ore.
+- **Strata** (new worlds): the underground is five layers, each with its own rock, ores, look,
+  ambient sound and (below the Stone Caverns) a rule of its own. Crossing into one shows its name,
+  depth, what's found there and its rule near the top of the screen. Each layer's ore makes the
+  pickaxe you need for the next layer's rock and ore.
   - **Topsoil** (0–15 m): dirt over the first stone, with the trees on top.
   - **Stone Caverns** (15–110 m): coal and copper, and pockets of loose gravel.
   - **Fungal Hollows** (110–230 m): damp **mudstone** (needs a stone pickaxe), iron, glowshrooms
-    that light the caves teal, and giant mushrooms whose stems give wood.
+    that light the caves teal, and giant mushrooms whose stems give wood. **Damp air**: torches
+    only light 5 tiles here (8 elsewhere), a little less at first and fully once you're a dozen
+    metres in. Glowshrooms, gem lamps, the lantern and flares don't mind the damp, so a lit way
+    through is grown: mine glowshrooms and plant them along it.
   - **Geode Depths** (230–350 m): deepstone (needs copper), gold, **rubies** and **sapphires**
-    (need iron), and huge caverns lit by glow crystals.
+    (need iron), and huge caverns lit by glow crystals. **Floatstone**, pale blue crystals in
+    those caverns, lightens gravity within 5 tiles: you jump about twice as high, fall slowly,
+    and a fall only counts from where you leave its pull. Mine some (needs copper) and put one
+    at the bottom of a long drop.
   - **Magma Layer** (350 m to bedrock): **basalt** (needs iron) and **emberite** ore, which needs
-    a gold pickaxe and makes the emberite pickaxe, the fastest there is.
+    a gold pickaxe and makes the emberite pickaxe, the fastest there is. Below its first 20 m
+    there are **lava** pools and glowing **hot rock**. **Heat**: the tiles near them (3 tiles from
+    lava, 2 from hot rock, through air and rock alike) shimmer orange. Standing there is safe for
+    4 s (the line under the dread meter counts down, and orange closes in from the screen edges),
+    then it burns 1 HP every 1.5 s; the grace comes back twice as fast out of the heat. Lava
+    hurts 2 HP as soon as you touch it, and you can't dig or build in it. **Bricks**, heartstone
+    and closed doors keep heat out, so a room sealed with bricks is a cool place to rest, and a
+    brick wall or floor between you and the lava keeps you cool. No health comes back in the heat.
+  - **The Heart of the Deep**: a chamber of glowing heartstone just above the bedrock, some way
+    to one side of the spawn (reaching the Magma Layer tells you which way). Its walls need the
+    emberite pickaxe. Breaking the Heart inside is the goal of a sandbox world: the moment gets
+    a banner, and the Heart drops as a trophy that glows wherever you place it. The world goes on
+    as before afterwards, and the world list marks it with ♥.
 
-  Worlds made before strata keep the layers they were made with.
+  Worlds made before strata keep the layers they were made with, and strata worlds made before
+  the strata's rules (version 1) get damp torches but no floatstone, lava, hot rock or Heart.
 - **Bricks**: stone, mudstone, deepstone and basalt each fire into their own bricks at a furnace
-  (4 rock make 4 bricks), for building.
+  (4 rock make 4 bricks), for building. Every kind keeps heat out (see the Magma Layer).
 - **Gem lamps**: a gold bar and a ruby (or a sapphire) make 2 lamps at a workbench. They light 10
   tiles around (a torch lights 8) with a red or blue glow, and their light heals like a torch's.
 - **Wood grows back**: leaves sometimes drop a **sapling**, felled trees included. Plant it on
@@ -122,7 +142,7 @@ and pick **Normal** or **Cozy**).
   it. Holding one shows which gravel it would hold up (green), with a
   line of help the first time; the inventory tooltips have the details. Pointing at a beam that
   holds gravel up warns you before you take it out. Worlds from before gravel existed don't get any.
-- **Cozy** worlds have no damage at all, no dread, and their gravel never falls. Worlds from before health existed are Cozy. Change it
+- **Cozy** worlds have no damage at all (heat and lava don't burn), no dread, and their gravel never falls. Worlds from before health existed are Cozy. Change it
   any time from the pause menu.
 - **M** opens the map: drag or use WASD to pan, scroll to zoom. It only shows what you've
   seen: places you've had on screen in the light, and anything close to you in the dark. **N**
@@ -175,9 +195,11 @@ Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing
 100 m ladder shaft down from the cursor, **V** reveals the whole map, **H** toggles god mode
 (and heals), **J** deals 2 damage, **B** puts a 3 x 3 block of gravel at the cursor (it
 falls if nothing holds it up), **U** fills the dread meter (press again to empty it), **Y**
-takes you to the top of the next stratum (from the Magma Layer, back to the spawn) and **P**
-makes planted saplings and spores grow now. The kit includes a lantern, flares, glowshrooms,
-glow crystals, saplings, mushroom spores, gem lamps and the strata's rocks, ores and gems. The
+takes you to the top of the next stratum (from the Magma Layer, back to the spawn), **P**
+makes planted saplings and spores grow now, **X** stands you on the roof of the Heart of the
+Deep's chamber and **Z** puts 4 lava tiles at the cursor (to try heat anywhere). The kit includes
+a lantern, flares, glowshrooms, glow crystals, saplings, mushroom spores, gem lamps, floatstone
+and the strata's rocks, ores and gems. The
 title screen also
 gets a button that marks your most recent world as an older version, and the pause menu a
 **Debug: saves fail** switch for trying a failed Save & quit. In debug mode the game doesn't

@@ -1,6 +1,22 @@
 import { CHUNK_SIZE } from '../config';
 import { Tile, type TileId } from './tiles';
 
+/** The Heart of the Deep's place in a world (tile coordinates). */
+export interface HeartSite {
+  /** The Heart itself. */
+  tx: number;
+  ty: number;
+  /** Its heartstone chamber, walls included. */
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** The cavern around the chamber: its columns and its top row (it reaches down to the floor). */
+  cavernX0: number;
+  cavernX1: number;
+  cavernY0: number;
+}
+
 /** Hears about every tile change, after the new tile is in place. */
 export type TileListener = (tx: number, ty: number) => void;
 
@@ -29,6 +45,11 @@ export class World {
    * in by generation, so a loaded world gets them back from its seed.
    */
   strataTops: Int16Array[] = [];
+  /**
+   * Strata v2 worlds (Phase 14b): where the Heart of the Deep is (the Heart's own tile, its
+   * heartstone chamber and the cavern around it), or null. Filled in by generation, like strataTops.
+   */
+  heart: HeartSite | null = null;
   /** Called after any tile changes. Lighting and tile entities listen here (see onTileChange). */
   private readonly tileListeners: TileListener[] = [];
   /**

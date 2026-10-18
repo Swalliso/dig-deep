@@ -4,14 +4,14 @@ import { FALL_DAMAGE_PER_TILE, HURT_PROTECTION, REGEN_DELAY, REGEN_INTERVAL } fr
 // nothing ticks while the game is paused), plus the world's difficulty and fall damage.
 
 /**
- * A world's difficulty. Cozy has no damage at all, no cave-ins (gravel never falls) and no
- * dread; Normal has them. Worlds from before Phase 11b load as Cozy.
+ * A world's difficulty. Cozy has no damage at all (so heat and lava don't hurt), no cave-ins
+ * (gravel never falls) and no dread; Normal has them. Worlds from before Phase 11b load as Cozy.
  */
 export type Difficulty = 'cozy' | 'normal';
 
 export const DIFFICULTIES: readonly { id: Difficulty; name: string; description: string }[] = [
-  { id: 'normal', name: 'Normal', description: 'Falls, falling gravel and the dark hurt. Dying leaves your bag in a satchel.' },
-  { id: 'cozy', name: 'Cozy', description: 'Nothing can hurt you, gravel never falls and the dark holds no dread. Build and explore at your own pace.' },
+  { id: 'normal', name: 'Normal', description: 'Falls, falling gravel, the dark, heat and lava hurt. Dying leaves your bag in a satchel.' },
+  { id: 'cozy', name: 'Cozy', description: 'Nothing can hurt you, gravel never falls, the dark holds no dread and heat never burns. Build and explore at your own pace.' },
 ];
 
 export function difficultyName(difficulty: Difficulty): string {
@@ -19,13 +19,21 @@ export function difficultyName(difficulty: Difficulty): string {
 }
 
 /** What hurt the player. */
-export type DamageCause = { kind: 'fall'; tiles: number } | { kind: 'gravel' } | { kind: 'dread' } | { kind: 'debug' };
+export type DamageCause =
+  | { kind: 'fall'; tiles: number }
+  | { kind: 'gravel' }
+  | { kind: 'dread' }
+  | { kind: 'heat' }
+  | { kind: 'lava' }
+  | { kind: 'debug' };
 
 /** "You fell 24 m." */
 export function deathCauseText(cause: DamageCause): string {
   if (cause.kind === 'fall') return `You fell ${Math.round(cause.tiles)} m.`;
   if (cause.kind === 'gravel') return 'Falling gravel crushed you.';
   if (cause.kind === 'dread') return 'The dark got to you.';
+  if (cause.kind === 'heat') return 'The heat got to you.';
+  if (cause.kind === 'lava') return 'You touched lava.';
   return 'Debug damage finished you off.';
 }
 

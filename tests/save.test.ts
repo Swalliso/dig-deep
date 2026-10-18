@@ -356,6 +356,7 @@ describe('save reliability', () => {
       flares: [throwFlare(10, 20, 100, 20)],
       pinnedRecipe: 'torch' as const,
       mapPins: new MapPins(),
+      heartClaimedAt: 12.5,
     };
     const save = createSave(world, player, inventory, [], new TileEntities(world), { explored: new ExploredMap(world), playTime: 5, survival });
     const state = savedState(player, inventory, [], new TileEntities(world), survival);

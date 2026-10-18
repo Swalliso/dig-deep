@@ -13,6 +13,7 @@ import {
   DEEPSTONE_JITTER,
   DEEPSTONE_NOISE_SCALE,
   DEEPSTONE_ROW,
+  DEPTHS_GEN,
   DIRT_DEPTH_MAX,
   DIRT_DEPTH_MIN,
   DIRT_NOISE_SCALE,
@@ -42,6 +43,7 @@ import {
   TREE_TRUNK_MIN,
   WORLD_HEIGHT,
   WORLD_WIDTH,
+  type DepthsGenSpec,
   type GravelSpec,
   type OreSpec,
   type StrataGenSpec,
@@ -49,7 +51,7 @@ import {
 import { createRng, randInt, type Rng } from '../util/rng';
 import { growGiantMushroom } from './plants';
 import { STRATA, stratumAt } from './strata';
-import { Tile, tileDef, type TileId } from './tiles';
+import { isSolid, Tile, tileDef, type TileId } from './tiles';
 import { World } from './world';
 
 export interface GenProgress {
@@ -93,6 +95,11 @@ export interface GenProfile {
    * of stone over deepstone.
    */
   strata: StrataGenSpec | null;
+  /**
+   * The strata's rules (Phase 14b, needs strata): floatstone, hot rock, lava pools and the Heart
+   * of the Deep, or null for none.
+   */
+  depths: DepthsGenSpec | null;
 }
 
 /** Which profile a world was generated with, as saved. */
@@ -102,18 +109,24 @@ export interface ProfileRef {
 }
 
 /** Generation as it was up to Phase 11: frozen, so worlds made then keep regenerating the same. */
-export const CLASSIC_PROFILE: GenProfile = { name: 'classic', version: 1, ores: ORE_LAYERS, gravel: null, strata: null };
+export const CLASSIC_PROFILE: GenProfile = { name: 'classic', version: 1, ores: ORE_LAYERS, gravel: null, strata: null, depths: null };
 /** Phase 12: classic plus gravel pockets. Frozen too. */
-export const GRAVEL_PROFILE: GenProfile = { name: 'gravel', version: 1, ores: ORE_LAYERS, gravel: GRAVEL_POCKETS, strata: null };
+export const GRAVEL_PROFILE: GenProfile = { name: 'gravel', version: 1, ores: ORE_LAYERS, gravel: GRAVEL_POCKETS, strata: null, depths: null };
 /**
  * Phase 14a: strata (Topsoil, Stone Caverns, Fungal Hollows, Geode Depths, Magma Layer), each
  * with its own rock and ores; giant mushrooms and glowshrooms in the Hollows, huge glowing
- * crystal caverns in the Geode Depths; and the gravel pockets.
+ * crystal caverns in the Geode Depths; and the gravel pockets. Frozen too.
  */
-export const STRATA_PROFILE: GenProfile = { name: 'strata', version: 1, ores: STRATA_ORES, gravel: GRAVEL_POCKETS, strata: STRATA_GEN };
-export const PROFILES: readonly GenProfile[] = [CLASSIC_PROFILE, GRAVEL_PROFILE, STRATA_PROFILE];
+export const STRATA_PROFILE: GenProfile = { name: 'strata', version: 1, ores: STRATA_ORES, gravel: GRAVEL_POCKETS, strata: STRATA_GEN, depths: null };
+/**
+ * Phase 14b: strata v1 plus what the strata's rules need: floatstone in the Geode Depths' huge
+ * caverns, hot rock and lava pools in the Magma Layer, and the Heart of the Deep's chamber above
+ * the bedrock. Everything v1 generates is generated the same way first.
+ */
+export const STRATA_V2_PROFILE: GenProfile = { ...STRATA_PROFILE, version: 2, depths: DEPTHS_GEN };
+export const PROFILES: readonly GenProfile[] = [CLASSIC_PROFILE, GRAVEL_PROFILE, STRATA_PROFILE, STRATA_V2_PROFILE];
 /** What new worlds are generated with. */
-export const NEW_WORLD_PROFILE = STRATA_PROFILE;
+export const NEW_WORLD_PROFILE = STRATA_V2_PROFILE;
 
 /** The profile a save names, or null if this version doesn't know it. */
 export function findProfile(ref: ProfileRef): GenProfile | null {
@@ -241,6 +254,19 @@ export function* generateWorldSteps(world: World, profile: GenProfile): Generato
     growHollows(world, subRng(13), createNoise2D(subRng(14)), strata);
     yield progress(4.7, 'Lighting crystals');
     placeGlowCrystals(world, subRng(15), cavernNoise, strata);
+  }
+
+  // 5c. The strata's rules (strata v2): floatstone in the huge caverns, the Heart of the Deep's
+  //     chamber, then hot rock and lava pools in the Magma Layer (kept clear of the chamber).
+  const depths = profile.depths;
+  if (strata && cavernNoise && depths) {
+    yield progress(4.8, 'Floating stones');
+    placeFloatstone(world, subRng(16), cavernNoise, strata, depths);
+    yield progress(4.85, 'Sealing the Heart');
+    placeHeart(world, subRng(17), depths);
+    yield progress(4.9, 'Heating the depths');
+    placeHotRock(world, subRng(18), depths);
+    placeLavaPools(world, subRng(19), depths);
   }
 
   // 6. Bedrock: both side columns and the bottom rows.
@@ -520,6 +546,142 @@ function placeGlowCrystals(world: World, rng: Rng, cavernNoise: NoiseFunction2D,
       if (!open(tx - 1, ty) && !open(tx + 1, ty) && !open(tx, ty - 1) && !open(tx, ty + 1)) continue;
       const cavern = cavernNoise(tx / spec.cavernScaleX, ty / spec.cavernScaleY) > spec.cavernThreshold - 0.1;
       if (rng() < (cavern ? spec.crystalCavernChance : spec.crystalChance)) world.setTile(tx, ty, Tile.GlowCrystal);
+    }
+  }
+}
+
+/**
+ * Floatstone on the rock faces (deepstone next to open air) inside the Geode Depths' huge
+ * caverns, so their open air has low gravity.
+ */
+function placeFloatstone(world: World, rng: Rng, cavernNoise: NoiseFunction2D, strata: StrataGenSpec, spec: DepthsGenSpec): void {
+  const [, , geode, magma] = world.strataTops;
+  const open = (tx: number, ty: number): boolean => world.getTile(tx, ty) === Tile.Air;
+  for (let tx = 1; tx < world.width - 1; tx++) {
+    for (let ty = geode[tx]; ty < magma[tx]; ty++) {
+      if (world.getTile(tx, ty) !== Tile.Deepstone) continue;
+      if (!open(tx - 1, ty) && !open(tx + 1, ty) && !open(tx, ty - 1) && !open(tx, ty + 1)) continue;
+      if (cavernNoise(tx / strata.cavernScaleX, ty / strata.cavernScaleY) <= strata.cavernThreshold - 0.1) continue;
+      if (rng() < spec.floatstoneChance) world.setTile(tx, ty, Tile.Floatstone);
+    }
+  }
+}
+
+/** The last row above the bedrock floor. */
+function lowestRow(world: World): number {
+  return world.height - BEDROCK_BOTTOM_ROWS - 1;
+}
+
+/** Is (tx, ty) inside the Heart of the Deep's cavern, or within `pad` tiles of it? */
+function nearHeart(world: World, tx: number, ty: number, pad: number): boolean {
+  const h = world.heart;
+  return h !== null && tx >= h.cavernX0 - pad && tx <= h.cavernX1 + pad && ty >= h.cavernY0 - pad;
+}
+
+/**
+ * The Heart of the Deep: a chamber of heartstone (spec.heartWall thick) standing on the floor
+ * row above the bedrock, some way to one side of the spawn, with the Heart on its floor inside.
+ * Around it a domed cavern is cleared, with a small lava pool in its floor on each side, so it's
+ * a glowing landmark to find. Records it in world.heart.
+ */
+function placeHeart(world: World, rng: Rng, spec: DepthsGenSpec): void {
+  const side = rng() < 0.5 ? -1 : 1;
+  const cx = Math.floor(world.width / 2) + side * randInt(rng, spec.heartOffsetMin, spec.heartOffsetMax);
+  const floor = lowestRow(world);
+  const half = Math.floor(spec.heartWidth / 2);
+  const x0 = cx - half;
+  const x1 = cx + half;
+  const y0 = floor - spec.heartHeight + 1;
+  const t = spec.heartWall;
+  // The cavern: a half-ellipse over the floor row, a little ragged at its edge.
+  const rx = half + spec.heartCavernMargin;
+  const ry = spec.heartCavernHeight;
+  for (let ty = floor - ry; ty < floor; ty++) {
+    for (let tx = cx - rx; tx <= cx + rx; tx++) {
+      const d = ((tx - cx) / (rx + 0.5)) ** 2 + ((ty - floor) / (ry + 0.5)) ** 2;
+      if (d > 1 || (d > 0.85 && rng() < 0.4)) continue;
+      world.setTile(tx, ty, Tile.Air);
+    }
+  }
+  for (let tx = cx - rx; tx <= cx + rx; tx++) world.setTile(tx, floor, Tile.Basalt);
+  // A small lava pool in the floor on each side, with a rim of rock between it and the chamber.
+  for (let k = 2; k <= spec.heartCavernMargin - 2; k++) {
+    world.setTile(x0 - k, floor, Tile.Lava);
+    world.setTile(x1 + k, floor, Tile.Lava);
+  }
+  // The chamber: a heartstone shell, open inside, with the Heart on its floor.
+  for (let ty = y0; ty <= floor; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      const wall = tx < x0 + t || tx > x1 - t || ty < y0 + t || ty > floor - t;
+      world.setTile(tx, ty, wall ? Tile.Heartstone : Tile.Air);
+    }
+  }
+  world.setTile(cx, floor - t, Tile.HeartCore);
+  world.heart = { tx: cx, ty: floor - t, x0, y0, x1, y1: floor, cavernX0: cx - rx, cavernX1: cx + rx, cavernY0: floor - ry };
+}
+
+/**
+ * Hot rock: random-walk veins replacing the Magma Layer's basalt, below its gentle rows and away
+ * from the Heart's cavern.
+ */
+function placeHotRock(world: World, rng: Rng, spec: DepthsGenSpec): void {
+  const magma = world.strataTops[3];
+  const top = Math.min(...magma) + spec.gentleRows;
+  const bottom = lowestRow(world) - 1;
+  if (bottom < top) return;
+  const veins = Math.round(((bottom - top + 1) * world.width) / spec.hotRockTilesPerVein);
+  for (let v = 0; v < veins; v++) {
+    let tx = randInt(rng, 1, world.width - 2);
+    let ty = randInt(rng, top, bottom);
+    const size = randInt(rng, spec.hotRockVeinMin, spec.hotRockVeinMax);
+    let placed = 0;
+    for (let step = 0; step < size * 4 && placed < size; step++) {
+      if (world.getTile(tx, ty) === Tile.Basalt && ty >= magma[tx] + spec.gentleRows && !nearHeart(world, tx, ty, 2)) {
+        world.setTile(tx, ty, Tile.HotRock);
+        placed++;
+      }
+      const dir = randInt(rng, 0, 3);
+      tx = Math.min(world.width - 2, Math.max(1, tx + DX[dir]));
+      ty = Math.min(bottom, Math.max(top, ty + DY[dir]));
+    }
+  }
+}
+
+/**
+ * Lava pools in the Magma Layer's cave floors, below its gentle rows: a stretch of floor (rock
+ * with open air above and rock below) long enough becomes a pool one tile deep, or two in its
+ * middle, keeping a rim of rock at each end so the lava sits in a basin. Deeper floors get pools
+ * more often. Only basalt and hot rock turn to lava (ore stays).
+ */
+function placeLavaPools(world: World, rng: Rng, spec: DepthsGenSpec): void {
+  const magma = world.strataTops[3];
+  const top = Math.min(...magma) + spec.gentleRows;
+  const bottom = lowestRow(world) - 1;
+  const rock = (tx: number, ty: number): boolean => {
+    const tile = world.getTile(tx, ty);
+    return tile === Tile.Basalt || tile === Tile.HotRock;
+  };
+  const firm = (tx: number, ty: number): boolean => isSolid(world.getTile(tx, ty)) && world.getTile(tx, ty) !== Tile.Bedrock;
+  const floorAt = (tx: number, ty: number): boolean =>
+    firm(tx, ty) && world.getTile(tx, ty - 1) === Tile.Air && isSolid(world.getTile(tx, ty + 1)) && ty >= magma[tx] + spec.gentleRows && !nearHeart(world, tx, ty, 2);
+  for (let ty = top; ty <= bottom; ty++) {
+    const depthT = (ty - top) / Math.max(1, bottom - top);
+    const chance = spec.lavaPoolChance * (0.5 + 0.5 * depthT);
+    let tx = 1;
+    while (tx < world.width - 1) {
+      if (!floorAt(tx, ty)) {
+        tx++;
+        continue;
+      }
+      const start = tx;
+      while (tx < world.width - 1 && tx - start < spec.poolMaxRun && floorAt(tx, ty)) tx++;
+      const end = tx - 1; // the run is start..end; its two ends stay rock
+      if (end - start + 1 < spec.poolMinRun || rng() >= chance) continue;
+      const deep = rng() < 0.5 && firm(start + 1, ty + 1) && firm(end - 1, ty + 1);
+      for (let x = start + 1; x <= end - 1; x++) {
+        if (rock(x, ty)) world.setTile(x, ty, Tile.Lava);
+        if (deep && x >= start + 2 && x <= end - 2 && rock(x, ty + 1) && firm(x, ty + 2)) world.setTile(x, ty + 1, Tile.Lava);
+      }
     }
   }
 }

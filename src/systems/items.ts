@@ -1,6 +1,9 @@
 import {
   BEAM_MAX_HEIGHT,
   CHEST_SLOTS,
+  DAMP_TORCH_LIGHT,
+  FLOAT_RADIUS,
+  HEART_LIGHT,
   FLARE_LIGHT,
   FLARE_TIME,
   LAMP_LIGHT,
@@ -63,6 +66,12 @@ const lamp = (name: string, tile: TileId, glow: string): ItemDef => ({
   details: [`Lights ${LAMP_LIGHT / LIGHT_FALLOFF_AIR} tiles around it (a torch lights ${TORCH_LIGHT / LIGHT_FALLOFF_AIR}).`],
 });
 
+/** Bricks (Phase 14a) keep heat out (Phase 14b). */
+const bricks = (name: string, tile: TileId, description: string): ItemDef => ({
+  ...block(name, tile, description),
+  details: ['Keeps heat out: heat from lava and hot rock', "doesn't pass through it. A room sealed with", 'bricks (and a closed door) stays cool.'],
+});
+
 const pickaxe = (name: string, tier: number, color: string, description: string): ItemDef => ({
   name,
   description,
@@ -79,7 +88,13 @@ export const ITEMS = {
   deepstone: block('Deepstone', Tile.Deepstone, 'Dense rock from deep down. Makes deepstone bricks.'),
   wood: material('Wood', Tile.Wood, 'From trees and giant mushrooms. Makes planks, torches and handles.'),
   planks: block('Planks', Tile.Planks, 'Building block made from wood.'),
-  torch: block('Torch', Tile.Torch, 'Lights up the dark around it.'),
+  torch: {
+    ...block('Torch', Tile.Torch, 'Lights up the dark around it.'),
+    details: [
+      `Lights ${TORCH_LIGHT / LIGHT_FALLOFF_AIR} tiles around it, but only ${DAMP_TORCH_LIGHT / LIGHT_FALLOFF_AIR} in the`,
+      "Fungal Hollows' damp air. Glowshrooms don't mind the damp.",
+    ],
+  },
   workbench: block('Workbench', Tile.Workbench, 'Station for tools, the furnace and chests.'),
   furnace: block('Furnace', Tile.Furnace, 'Station that smelts ore into bars.'),
   coal: material('Coal', Tile.CoalOre, 'Fuel for torches and smelting.'),
@@ -147,20 +162,24 @@ export const ITEMS = {
   glowshroom: block('Glowshroom', Tile.Glowshroom, "A mushroom that glows. Its light heals, like a torch's."),
   glow_crystal: block('Glow crystal', Tile.GlowCrystal, "A crystal that glows. Its light heals, like a torch's."),
   // Placed as the bottom half; building.ts adds the top half above it.
-  door: { ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'), icon: { shape: 'door', color: '#8f6236' } },
+  door: {
+    ...block('Door', Tile.DoorClosedBottom, 'Two tiles tall. Right-click to open or close.'),
+    details: ['Keeps heat out while it is closed, like bricks.'],
+    icon: { shape: 'door', color: '#8f6236' },
+  },
   // Placed as the left half; building.ts adds the right half beside it.
   bed: { ...block('Bed', Tile.BedLeft, 'Two tiles wide. Right-click it to respawn there.'), icon: { shape: 'bed', color: '#b84a4a' } },
   // Phase 14a: each stratum's rock and its bricks.
   mudstone: block('Mudstone', Tile.Mudstone, 'Damp rock from the Fungal Hollows. Makes mudstone bricks.'),
   basalt: block('Basalt', Tile.Basalt, 'Dark rock from the Magma Layer. Makes basalt bricks.'),
-  stone_bricks: block('Stone bricks', Tile.StoneBricks, 'A tidy building block, fired from stone.'),
-  mudstone_bricks: block('Mudstone bricks', Tile.MudstoneBricks, 'A mossy green building block, fired from mudstone.'),
-  deepstone_bricks: block('Deepstone bricks', Tile.DeepstoneBricks, 'A slate-blue building block, fired from deepstone.'),
-  basalt_bricks: block('Basalt bricks', Tile.BasaltBricks, 'A dark building block, fired from basalt.'),
+  stone_bricks: bricks('Stone bricks', Tile.StoneBricks, 'A tidy building block, fired from stone.'),
+  mudstone_bricks: bricks('Mudstone bricks', Tile.MudstoneBricks, 'A mossy green building block, fired from mudstone.'),
+  deepstone_bricks: bricks('Deepstone bricks', Tile.DeepstoneBricks, 'A slate-blue building block, fired from deepstone.'),
+  basalt_bricks: bricks('Basalt bricks', Tile.BasaltBricks, 'A dark building block, fired from basalt.'),
   // Phase 14a: the Magma Layer's ore and the Geode Depths' gems.
   emberite_ore: material('Emberite ore', Tile.EmberiteOre, 'Smelt into emberite bars at a furnace.'),
   emberite_bar: bar('Emberite bar', '#ff7a3a', 'Metal for the emberite pickaxe.'),
-  emberite_pickaxe: pickaxe('Emberite pickaxe', 5, '#ff7a3a', 'The fastest pickaxe.'),
+  emberite_pickaxe: pickaxe('Emberite pickaxe', 5, '#ff7a3a', 'The fastest pickaxe. Breaks heartstone.'),
   ruby: gem('Ruby', '#e3245e', 'A red gem from the Geode Depths. Set in gold, it makes ruby lamps.'),
   sapphire: gem('Sapphire', '#3b7cec', 'A blue gem from the Geode Depths. Set in gold, it makes sapphire lamps.'),
   ruby_lamp: lamp('Ruby lamp', Tile.RubyLamp, 'red'),
@@ -173,6 +192,19 @@ export const ITEMS = {
   mushroom_spores: {
     ...block('Mushroom spores', Tile.MushroomSprout, 'Plant them on mudstone and a giant mushroom grows.'),
     details: [`It grows in ${growTime} of play, once there's room.`, 'Giant mushroom stems give wood, and their caps drop spores.'],
+  },
+  // Phase 14b: the strata's rules and the Heart of the Deep.
+  floatstone: {
+    ...block('Floatstone', Tile.Floatstone, 'A pale crystal from the Geode Depths that lightens gravity.'),
+    details: [`Within ${FLOAT_RADIUS} tiles of one you jump higher and fall`, 'slowly, and a fall only counts from where you', 'leave its pull. Put one under a long drop.'],
+  },
+  heartstone: {
+    ...block('Heartstone', Tile.Heartstone, "The Heart of the Deep's glowing shell. Keeps heat out."),
+    details: ['Only the emberite pickaxe breaks it.'],
+  },
+  heart_of_the_deep: {
+    ...block('Heart of the Deep', Tile.HeartCore, 'The prize at the bottom of the world.'),
+    details: [`It glows ${HEART_LIGHT / LIGHT_FALLOFF_AIR} tiles around wherever you put it.`],
   },
 } satisfies Record<string, ItemDef>;
 

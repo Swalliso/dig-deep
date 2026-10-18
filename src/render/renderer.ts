@@ -6,7 +6,9 @@ import {
   GLOW_PULSE_SPEED,
   GLOW_TINT_RADIUS,
   GLOW_TINT_STRENGTH,
+  HEAT_TINT_ALPHA,
   HINT_DURATION,
+  LAVA_HEAT,
   LIGHT_MAX,
   PLAYER_WIDTH,
   SATCHEL_SIZE,
@@ -28,6 +30,7 @@ import { itemIndex } from '../systems/items';
 import type { Hint } from '../systems/mining';
 import type { PixelScale } from '../systems/settings';
 import type { GenProgress } from '../world/generate';
+import { heatIn, type HeatField } from '../world/heat';
 import { playerGlow, type LightMap } from '../world/lighting';
 import { STRATA } from '../world/strata';
 import { ORE_TILES, Tile, TILE_COUNT, tileDef } from '../world/tiles';
@@ -402,17 +405,17 @@ export class Renderer {
    * (red, so it shows even over a pitch-black cave) of strength `alpha`, plus `pulse` for the
    * heartbeat. Draws in screen space.
    */
-  drawVignette(alpha: number, pulse: number): void {
+  drawVignette(alpha: number, pulse: number, color: readonly [number, number, number] = [110, 0, 16]): void {
     const { ctx, canvas } = this;
     const w = canvas.width;
     const h = canvas.height;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.hypot(w, h) / 2);
-    const r = Math.round(110 + 80 * pulse);
-    g.addColorStop(0, `rgba(${r}, 0, 16, 0)`);
-    g.addColorStop(0.6, `rgba(${r}, 0, 16, ${(alpha + pulse) * 0.35})`);
-    g.addColorStop(1, `rgba(${r}, 0, 16, ${Math.min(1, alpha + pulse)})`);
+    const rgb = `${Math.min(255, Math.round(color[0] + 80 * pulse))}, ${color[1]}, ${color[2]}`;
+    g.addColorStop(0, `rgba(${rgb}, 0)`);
+    g.addColorStop(0.6, `rgba(${rgb}, ${(alpha + pulse) * 0.35})`);
+    g.addColorStop(1, `rgba(${rgb}, ${Math.min(1, alpha + pulse)})`);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
@@ -510,6 +513,57 @@ export class Renderer {
         ctx.fillRect(x + px, y + py, size, size);
       }
     }
+  }
+
+  /**
+   * Hot zones (Phase 14b): an orange haze over every hot tile in `field`, stronger the hotter, that
+   * shimmers unless `shimmer` is false (Reduced flashes). Draw after the darkness, so it shows in
+   * the dark and through rock.
+   */
+  drawHeat(field: HeatField, time: number, shimmer: boolean, camX: number, camY: number): void {
+    const { ctx } = this;
+    const tx0 = Math.max(field.x0, Math.floor(camX / TILE_SIZE));
+    const ty0 = Math.max(field.y0, Math.floor(camY / TILE_SIZE));
+    const tx1 = Math.min(field.x0 + field.width - 1, Math.floor((camX + this.viewWidth) / TILE_SIZE));
+    const ty1 = Math.min(field.y0 + field.height - 1, Math.floor((camY + this.viewHeight) / TILE_SIZE));
+    ctx.fillStyle = '#ff7a1e';
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const heat = heatIn(field, tx, ty);
+        if (heat === 0) continue;
+        const wave = shimmer ? 0.75 + 0.25 * Math.sin(time * 3 + tx * 0.7 + ty * 1.3) : 1;
+        ctx.globalAlpha = HEAT_TINT_ALPHA * Math.min(1, heat / LAVA_HEAT) * wave;
+        ctx.fillRect(tx * TILE_SIZE - camX, ty * TILE_SIZE - camY, TILE_SIZE, TILE_SIZE);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Floatstone (Phase 14b): pale motes drifting up around each floatstone tile on screen, so its
+   * pull is visible from a distance.
+   */
+  drawFloatMotes(world: World, time: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    const tx0 = Math.max(0, Math.floor(camX / TILE_SIZE));
+    const ty0 = Math.max(0, Math.floor(camY / TILE_SIZE));
+    const tx1 = Math.min(world.width - 1, Math.floor((camX + this.viewWidth) / TILE_SIZE));
+    const ty1 = Math.min(world.height - 1, Math.floor((camY + this.viewHeight) / TILE_SIZE));
+    ctx.fillStyle = '#d8f6ff';
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (world.getTile(tx, ty) !== Tile.Floatstone) continue;
+        for (let k = 0; k < 3; k++) {
+          const seed = ((tx * 73856093) ^ (ty * 19349663) ^ (k * 83492791)) >>> 0;
+          const t = (time * 0.35 + (seed % 1000) / 1000) % 1;
+          const x = (tx + 0.5) * TILE_SIZE + ((seed >> 10) % 33) - 16 + Math.sin(time + k) * 2;
+          const y = (ty + 0.5) * TILE_SIZE + 8 - t * 48;
+          ctx.globalAlpha = 0.7 * Math.sin(Math.PI * t);
+          ctx.fillRect(Math.round(x - camX), Math.round(y - camY), 1, 1);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** A see-through fill over a tile, for the support preview. */

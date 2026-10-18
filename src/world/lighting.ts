@@ -7,7 +7,8 @@ import {
   PLAYER_GLOW,
   PLAYER_GLOW_FALLOFF,
 } from '../config';
-import { isSolid, TILE_LIGHT } from './tiles';
+import { torchLight } from './strata';
+import { isSolid, Tile, TILE_LIGHT } from './tiles';
 import type { World } from './world';
 
 /**
@@ -49,7 +50,8 @@ interface MovingLight {
  * Per-tile light level, 0 (black) to LIGHT_MAX (open sky).
  *
  * Sky light falls straight down each column to the first solid tile (which is lit too).
- * Torches and glowing tiles shine at their own level (TileDef.light). From those sources light spreads to neighbouring tiles,
+ * Torches and glowing tiles shine at their own level (TileDef.light; a torch in the Fungal
+ * Hollows' damp air less, see torchLight). From those sources light spreads to neighbouring tiles,
  * losing LIGHT_FALLOFF_AIR per open tile and LIGHT_FALLOFF_SOLID per solid one (a little more
  * for diagonal steps, which round the glow off).
  *
@@ -179,7 +181,9 @@ export class LightMap {
       for (let x = r.x0; x <= r.x1; x++) {
         const sky = y <= this.skyRow[x] ? LIGHT_MAX : 0;
         const i = y * w + x;
-        light[i] = Math.max(sky, TILE_LIGHT[world.getTile(x, y)]);
+        const tile = world.getTile(x, y);
+        // Torches burn dimmer in the Fungal Hollows' damp air (Phase 14b).
+        light[i] = Math.max(sky, tile === Tile.Torch ? torchLight(world, x, y) : TILE_LIGHT[tile]);
         if (light[i] > 0) queue.push(i);
       }
     }

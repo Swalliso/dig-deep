@@ -92,8 +92,10 @@ whole map, **H** toggles god mode (and heals), **J** deals 2 damage (to test fal
 with F and turn fly off), **B** puts a 3 x 3 block of gravel at the cursor (in the open it
 shakes and falls at once; in rock it's a pocket to dig under), **U** fills the dread meter
 (again: empties it), **Y** goes to the top of the next stratum in a strata world (from the Magma
-Layer, back to the spawn; it carves a pocket if there's no open space near the top) and **P**
-makes every planted sapling and mushroom sprout grow now (if it has room). Debug mode also opens the F3 overlay at start, the title screen gets a button
+Layer, back to the spawn; it carves a pocket if there's no open space near the top), **P**
+makes every planted sapling and mushroom sprout grow now (if it has room), **X** stands the
+player on the roof of the Heart of the Deep's chamber (strata v2 worlds) and **Z** puts 4 lava
+tiles at the cursor (to try heat and insulation anywhere). The kit also has floatstone. Debug mode also opens the F3 overlay at start, the title screen gets a button
 that marks the most recent world as an older version (to test the version-mismatch screen), and
 the pause menu gets a **Debug: saves fail** switch (to test a failed Save & quit). In debug
 mode losing focus doesn't pause the game, so checks keep running in a background preview pane,
@@ -151,11 +153,16 @@ src/
                      solid, climbable, one-way, light, plant), floor checks
     world.ts         chunked tile storage (32x32 Uint8Array chunks), get/set tile, the world's
                      generation profile and stratum boundaries
-    generate.ts      generation profiles (frozen 'classic' and 'gravel', 'strata' for new
-                     worlds); seeded terrain, strata, caves, crystal caverns, ores, gravel
-                     pockets, trees, giant mushrooms, glowshrooms, glow crystals, bedrock, spawn
-    strata.ts        the strata table (name, depths, rock, look, ambience), which stratum a tile
-                     is in, the banner's text, the stratum tracker (with hysteresis)
+    generate.ts      generation profiles (frozen 'classic', 'gravel' and 'strata' v1; 'strata'
+                     v2 for new worlds); seeded terrain, strata, caves, crystal caverns, ores,
+                     gravel pockets, trees, giant mushrooms, glowshrooms, glow crystals,
+                     floatstone, the Heart of the Deep's chamber, hot rock, lava pools, bedrock,
+                     spawn
+    strata.ts        the strata table (name, depths, rock, look, ambience, rule), which stratum a
+                     tile is in, the banner's text, the stratum tracker (with hysteresis); damp
+                     torch light and the floatstone field (Phase 14b)
+    heat.ts          heat fields: lava and hot rock heat nearby tiles, kept out by insulating
+                     tiles; worked out on demand for a box (the player, the screen)
     plants.ts        saplings and mushroom sprouts: where they can be planted, growing trees and
                      giant mushrooms (also used by generation), growing the ones due
     supports.ts      loose tiles and what holds them up: firm ground, anchored beams (posts) and
@@ -194,6 +201,8 @@ src/
                      (Cozy/Normal), fall damage
     dread.ts         the dread meter (rises in the dark, hurts when full), light safety (dark /
                      carried / established) and the HUD status line
+    heat.ts          heat exposure: a grace in hot zones, then burns; its HUD status line (it
+                     takes over the dread meter's line)
     death.ts         satchels (the bag left on death) and collecting them, the respawn point
                      (bed, or a safe fallback near spawn)
     crafting.ts      recipe table and groups (the panel's tabs), station range checks, craft()
@@ -262,7 +271,16 @@ they drop.
   banner, ambience or stratum backdrop either. Each stratum has its own rock, and its ores
   (`OreSpec.stratum`) replace only that rock inside its boundaries. Each stratum's rock and ores
   need at most the pickaxe made from the strata above it, so there are no circular
-  requirements (a test walks it). The strata's rules (damp, floatstone, heat) are Phase 14b.
+  requirements (a test walks it). Each has a rule (Phase 14b, `Stratum.rule` names it on the
+  banner): in the Fungal Hollows damp air dims torches (`torchLight`, used by the light map),
+  near floatstone (Geode Depths caverns) gravity is lighter and falls are cushioned
+  (`Player.floating`, set by the game each step), and in the Magma Layer lava and hot rock make
+  hot zones (`world/heat.ts`: heat spreads a level less per tile through anything that doesn't
+  insulate; bricks, heartstone and closed doors do) that burn after a grace (`systems/heat.ts`).
+  Lava is a liquid tile: walk-through, can't be dug or built in, hurts on touch, doesn't flow.
+  Strata v2 worlds (new since 14b; v1 is frozen) also have floatstone, hot rock, lava and the
+  Heart of the Deep (`world.heart`, regenerated from the seed); breaking the Heart is the
+  Sandbox's goal. Cozy worlds take no damage from any of it.
 - **Loop**: fixed-timestep `update(dt)` at 60 Hz; `render()` once per `requestAnimationFrame`.
   Moving things (player, camera) keep `prevX`/`prevY`, and render interpolates between the
   last two update steps so motion stays smooth on high-refresh screens. Keyboard edge
@@ -295,7 +313,8 @@ they drop.
   `LightMap` about every tile change; it relights only the box within light reach of the
   changes (plus any stretch of a column whose sky light moved), once per update step. Light
   sources are tiles with `TileDef.light` (gem lamps shine past LIGHT_MAX, which only means the
-  tiles near them are fully lit for longer). Moving lights (`setMovingLight`: the held lantern,
+  tiles near them are fully lit for longer; a torch in the Fungal Hollows' damp air gives
+  `torchLight()` instead, which depends only on where it is). Moving lights (`setMovingLight`: the held lantern,
   flares) are kept apart from that established light, each in a small patch relit only when it
   moves to another tile or a tile in its patch changes; `level()` is the max of both and
   `established()` leaves moving lights out. Light has no color: glowing tiles' colored glow
@@ -305,12 +324,14 @@ they drop.
   regenerated), so **bump `SAVE_VERSION` in `systems/save.ts` whenever world generation, tile
   ids, chunk/world size or the save format change**; old saves then show "Save from an older
   version" instead of loading wrong. Items lying on the ground are saved (as an optional
-  `drops` field; adding optional fields like that needs no version bump). Chest contents are
+  `drops` field; adding optional fields like that needs no version bump; heat exposure isn't
+  saved, so a reload starts its few seconds of grace again). Chest contents are
   saved the same way, as an optional `tileEntities` field (planted saplings and mushroom
   sprouts are tile entities too, with the session clock time they grow), and so are the map's
   explored tiles
   (`explored`, per chunk, RLE), and so is the session clock (`playTime`), and so are the pinned
-  recipe (`pinnedRecipe`, by the item it makes) and the map pins (`mapPins`). A stack held on the
+  recipe (`pinnedRecipe`, by the item it makes), the map pins (`mapPins`) and when the Heart of
+  the Deep was claimed (`heartClaimedAt`; the world list marks a claimed world). A stack held on the
   mouse is saved as if put away; whatever doesn't fit is saved as a drop at the player, so
   saving never loses it. Particles, half-mined tile damage and the trash slot aren't saved.
   Autosave's change check compares `savedState()` (everything but tiles, map and play time)

@@ -44,8 +44,8 @@ export function brushNeighbours(mode: InstantMine): [number, number][] {
 
 /**
  * Enough of every material to craft every recipe, plus both stations, some chests, the dark's
- * kit (a lantern, flares, glowshrooms and glow crystals), saplings and spores to plant, gem lamps
- * and a stack of ladders, platforms, doors, beds, gravel, beams and crossbeams ready to place.
+ * kit (a lantern, flares, glowshrooms and glow crystals), saplings and spores to plant, gem lamps,
+ * floatstone and a stack of ladders, platforms, doors, beds, gravel, beams and crossbeams ready to place.
  */
 const KIT: ReadonlyArray<[ItemId, number]> = [
   // First, so they always fit.
@@ -57,6 +57,7 @@ const KIT: ReadonlyArray<[ItemId, number]> = [
   ['mushroom_spores', 10],
   ['ruby_lamp', 6],
   ['sapphire_lamp', 6],
+  ['floatstone', 10],
   ['wood', 99],
   ['stone', 200],
   ['coal', 99],
@@ -159,6 +160,32 @@ export function nextStratumSpot(world: World, tx: number, ty: number): { tx: num
   return { tx, ty: top + 1, stratum: next };
 }
 
+/** Width of the debug lava pool. */
+export const LAVA_POOL_WIDTH = 4;
+
+/**
+ * Lava pool: a row of LAVA_POOL_WIDTH lava tiles starting at (tx, ty), replacing whatever is
+ * there except bedrock. For trying heat and insulation anywhere.
+ */
+export function placeLavaPool(world: World, tx: number, ty: number): void {
+  for (let dx = 0; dx < LAVA_POOL_WIDTH; dx++) {
+    if (world.getTile(tx + dx, ty) !== Tile.Bedrock) world.setTile(tx + dx, ty, Tile.Lava);
+  }
+}
+
+/**
+ * Where debug X takes the player: standing on the roof of the Heart of the Deep's chamber, as the
+ * tile their feet go in (the chamber's cavern leaves room above it). Null without a Heart.
+ */
+export function heartSpot(world: World): { tx: number; ty: number } | null {
+  const heart = world.heart;
+  if (!heart) return null;
+  const ty = heart.y0 - 1;
+  world.setTile(heart.tx, ty, Tile.Air);
+  world.setTile(heart.tx, ty - 1, Tile.Air);
+  return { tx: heart.tx, ty };
+}
+
 export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbright: boolean, god: boolean): string[] {
   return [
     `DEBUG  ${mainKey('debugGive')}: give materials   ${mainKey('debugLighting')}: lighting ${fullbright ? 'off (fullbright)' : 'on'}`,
@@ -167,5 +194,6 @@ export function debugHelpLines(flying: boolean, instantMine: InstantMine, fullbr
     `       ${mainKey('debugGodMode')}: god mode ${god ? 'ON' : 'off'} (and heal)   ${mainKey('debugHurt')}: take 2 damage (fly up and turn fly off to test falls)`,
     `       ${mainKey('debugGravel')}: 3 x 3 gravel at the cursor (falls if nothing holds it up)   ${mainKey('debugDread')}: fill or empty dread`,
     `       ${mainKey('debugNextStratum')}: top of the next stratum (from the bottom one, back to spawn)   ${mainKey('debugGrowPlants')}: grow planted saplings and spores now`,
+    `       ${mainKey('debugHeart')}: go to the Heart of the Deep   ${mainKey('debugLava')}: ${LAVA_POOL_WIDTH} lava tiles at the cursor`,
   ];
 }

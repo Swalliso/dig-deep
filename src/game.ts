@@ -23,13 +23,18 @@ import {
   FOOTSTEP_DISTANCE,
   GRAVEL_DUST_RATE,
   GRAVEL_SHAKE_PX,
+  HEART_BANNER_TIME,
   HEART_SHAKE_TIME,
+  HEAT_GRACE,
+  HEAT_HURT,
+  HEAT_VIGNETTE_ALPHA,
   HURT_FLASH_ALPHA,
   HURT_FLASH_TIME,
   HURT_PROTECTION,
   LAND_FULL_SPEED,
   LANTERN_LIGHT,
   LAND_MIN_SPEED,
+  LAVA_HURT,
   PICKAXES,
   PLANT_CHECK_INTERVAL,
   PLAYER_HEIGHT,
@@ -42,16 +47,19 @@ import {
   SURFACE_LEVEL,
   TILE_SIZE,
   TILE_UPDATE_BUDGET,
+  TORCH_LIGHT,
 } from './config';
 import {
   brushNeighbours,
   DEBUG,
   debugHelpLines,
   giveDebugKit,
+  heartSpot,
   nextInstantMine,
   nextStratumSpot,
   placeLadderShaft,
   placeGravelPocket,
+  placeLavaPool,
   placeOreSampler,
   type InstantMine,
 } from './debug';
@@ -87,6 +95,7 @@ import { itemDef, type ItemId } from './systems/items';
 import { MapPins } from './systems/mapPins';
 import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { hintSeen, markHintSeen, type HintId } from './systems/hints';
+import { Heat, heatStatus, type HeatSafety } from './systems/heat';
 import { saveSettings, type Settings } from './systems/settings';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawStratumBanner, drawToasts, Toasts } from './ui/hud';
@@ -98,12 +107,13 @@ import { bedLeft, bedPartner, isBed, isWholeBed } from './world/beds';
 import { ExploredMap } from './world/explored';
 import { doorBottom, doorPartner, isDoorOpen, toggleDoor } from './world/doors';
 import { CLASSIC_PROFILE, findProfile, profileLabel, type GenProfile } from './world/generate';
+import { heatField, maxHeat, type HeatField } from './world/heat';
 import { LightMap } from './world/lighting';
 import { canPlantOn, growDuePlants, newPlant, plantGrowTime } from './world/plants';
-import { bannerTitle, depthRange, STRATA, StratumTracker, stratumAt } from './world/strata';
+import { bannerTitle, depthRange, inFloatField, MAGMA, STRATA, StratumTracker, stratumAt, torchLight } from './world/strata';
 import { beamFooting, columnHeld, holdsLoose, isLoose, isSupport, supportEffect, withTile, worldGetter, type SupportEffect } from './world/supports';
 import { TileEntities, type TileEntity } from './world/tileEntities';
-import { chanceDropFor, Tile, tileDef, type TileId } from './world/tiles';
+import { chanceDropFor, isLiquid, Tile, tileDef, type TileId } from './world/tiles';
 import { fellTreeAbove, isTrunk } from './world/trees';
 import { TileUpdates } from './world/tileUpdates';
 import type { World } from './world/world';
@@ -142,6 +152,8 @@ export interface GameStart {
   pinnedRecipe?: ItemId | null;
   /** The player's map pins; defaults to none. */
   mapPins?: MapPins;
+  /** Session clock time the Heart of the Deep was claimed; defaults to null (not yet). */
+  heartClaimedAt?: number | null;
 }
 
 /** What the death screen says, shown until the player respawns. */
@@ -223,6 +235,10 @@ export class Game {
   pinnedRecipe: ItemId | null;
   /** Named pins on the map; the tracked one shows its direction on the HUD. */
   readonly mapPins: MapPins;
+  /** Session clock time the Heart of the Deep was claimed (the Sandbox's goal), or null. Saved. */
+  heartClaimedAt: number | null;
+  /** How long the player has stood in a hot zone (not saved: a reload starts the grace again). */
+  readonly heat = new Heat();
   /** How the world was generated: its ores (for the goal's hints) and whether it has strata. */
   readonly profile: GenProfile;
   /** The stratum the player is in (strata worlds), for the entry banner, the ambience and F3. */
@@ -235,6 +251,17 @@ export class Game {
   private plantCheckIn = 0;
   /** How lit the player's tile was at the last simulation step. */
   private safety: LightSafety = 'established';
+  /** Whether the player was in a hot zone or in lava at the last simulation step. */
+  private heatSafety: HeatSafety = 'cool';
+  /** Heat over the tiles on screen, for its haze; worked out again when the view or the world changes. */
+  private heatView: { key: string; field: HeatField } | null = null;
+  /** Seconds the Heart of the Deep's completion banner still shows (UI time), or 0. */
+  private heartBanner = 0;
+  /** One-time hints per session: damp torches, floatstone, heat, and where the Heart is. */
+  private dampHintShown = false;
+  private floatHintShown = false;
+  private heatHintShown = false;
+  private heartHintShown = false;
   private flareList: Flare[];
   /** Session clock time of the last heartbeat (dread near full), or -Infinity. */
   private lastBeatAt = -Infinity;
@@ -304,6 +331,7 @@ export class Game {
     this.flareList = start.flares ?? [];
     this.pinnedRecipe = start.pinnedRecipe ?? null;
     this.mapPins = start.mapPins ?? new MapPins();
+    this.heartClaimedAt = start.heartClaimedAt ?? null;
     this.profile = findProfile(world.profile) ?? CLASSIC_PROFILE;
     this.stratum = new StratumTracker(world, ...this.playerTile());
     this.inventory = start.inventory ?? Inventory.withStartingItems();
@@ -416,13 +444,28 @@ export class Game {
     if (entered !== null) {
       this.banner = { stratum: entered, timeLeft: BANNER_TIME };
       this.nextAmbientAt = null;
+      if (entered === MAGMA) this.heartHint();
     }
     if (this.banner) {
       this.banner.timeLeft -= dt;
       if (this.banner.timeLeft <= 0) this.banner = null;
     }
+    this.heartBanner = Math.max(0, this.heartBanner - dt);
     const s = this.stratum.current;
     sfx.setAmbience(s >= 0 ? STRATA[s].ambience : null, this.pausedBy || this.deathScreen ? AMBIENCE_DUCK : 1);
+  }
+
+  /**
+   * The first time in a session the player reaches the Magma Layer: which way the Heart of the
+   * Deep is (unless it's claimed), so it can be found without the map.
+   */
+  private heartHint(): void {
+    const heart = this.world.heart;
+    if (!heart || this.heartClaimedAt !== null || this.heartHintShown) return;
+    this.heartHintShown = true;
+    const dx = heart.tx + 0.5 - this.player.centerX / TILE_SIZE;
+    const way = Math.abs(dx) < 15 ? 'right below you' : `about ${Math.round(Math.abs(dx))} m to the ${dx < 0 ? 'west (left)' : 'east (right)'}`;
+    this.toasts.show(`Deep below, the Heart of the Deep pulses above the bedrock, ${way}. Its walls need an emberite pickaxe.`, 9);
   }
 
   /**
@@ -542,6 +585,12 @@ export class Game {
       toasts.show(`Debug: ${placeLadderShaft(world, lx, ly)} m ladder shaft`);
     }
     if (actionPressed('debugNextStratum')) this.debugNextStratum();
+    if (actionPressed('debugHeart')) this.debugHeart();
+    if (actionPressed('debugLava')) {
+      const [lx, ly] = this.cursorTile();
+      placeLavaPool(world, lx, ly);
+      toasts.show(this.difficulty === 'cozy' ? 'Debug: lava at the cursor (Cozy: it never burns)' : 'Debug: lava at the cursor');
+    }
     if (actionPressed('debugGrowPlants')) {
       let planted = 0;
       this.tileEntities.forEach((_tx, _ty, entity) => {
@@ -568,6 +617,22 @@ export class Game {
     camera.prevX = camera.x;
     camera.prevY = camera.y;
     toasts.show(`Debug: ${STRATA[spot.stratum].name}`);
+  }
+
+  /** Debug: onto the roof of the Heart of the Deep's chamber. */
+  private debugHeart(): void {
+    const { player, camera, toasts } = this;
+    const spot = heartSpot(this.world);
+    if (!spot) {
+      toasts.show(`Debug: this world has no Heart of the Deep (it was made with ${profileLabel(this.world.profile)})`);
+      return;
+    }
+    player.placeAt(spot.tx * TILE_SIZE + (TILE_SIZE - PLAYER_WIDTH) / 2, (spot.ty + 1) * TILE_SIZE - PLAYER_HEIGHT);
+    camera.centerOn(player.centerX, player.centerY);
+    this.clampCamera();
+    camera.prevX = camera.x;
+    camera.prevY = camera.y;
+    toasts.show('Debug: the Heart of the Deep, below you (its walls need the emberite pickaxe)', 4);
   }
 
   /** Right-click (chests and doors) and clicks in the open inventory panel. Not while the map is open. */
@@ -625,6 +690,7 @@ export class Game {
   private simulate(dt: number): void {
     const { world, player } = this;
     this.clock.advance(dt);
+    player.floating = !player.flying && inFloatField(world, ...this.playerTile());
     player.update(dt, world, {
       move: (actionDown('moveRight') ? 1 : 0) - (actionDown('moveLeft') ? 1 : 0),
       jumpPressed: actionPressed('jump'),
@@ -635,9 +701,11 @@ export class Game {
     this.playerFeedback();
     this.checkFall();
     this.feelTheDark(dt);
-    // Health only comes back in the world's own light (not the lantern's).
-    this.health.update(this.clock.time, player.stats.maxHealth, this.safety === 'established');
-    if (this.deathScreen) return; // the fall was fatal: the rest waits for the respawn
+    this.feelTheHeat(dt);
+    this.noticeFloatstone();
+    // Health only comes back in the world's own light (not the lantern's), out of the heat.
+    this.health.update(this.clock.time, player.stats.maxHealth, this.safety === 'established' && this.heatSafety === 'cool');
+    if (this.deathScreen) return; // the fall, the heat or lava was fatal: the rest waits for the respawn
     this.useHeldItem(dt);
     if (actionPressed('quickTorch')) this.quickTorch();
     this.caveIns.update(dt, this.clock.time, TILE_UPDATE_BUDGET, this.caveInHooks);
@@ -727,9 +795,12 @@ export class Game {
     renderer.drawParticles(this.particles, camX, camY);
     if (!this.fullbright) renderer.drawLight(this.lightMap, camX, camY, glowX, glowY);
     renderer.drawGlowTint(this.world, this.lightMap, this.clock.time, !reduced, camX, camY);
+    renderer.drawHeat(this.heatOnScreen(camX, camY), this.clock.time, !reduced, camX, camY);
+    renderer.drawFloatMotes(this.world, this.clock.time, camX, camY);
     if (!reduced) renderer.drawSparkles(this.world, this.fullbright ? null : this.lightMap, this.clock.time, camX, camY, glowX, glowY);
     renderer.drawFlashes(this.flashes, camX, camY);
     this.drawDreadVignette();
+    this.drawHeatVignette();
     for (const f of this.floaters) {
       const t = (this.clock.time - f.at) / f.duration;
       renderer.drawFloatingText(f.text, f.x, f.y - t * 12, f.color, Math.min(1, 3 * (1 - t)), camX, camY);
@@ -752,10 +823,16 @@ export class Game {
       if (this.settings.showMinimap && !this.fullMap.open) drawMinimap(renderer.ctx, this.mapImage, this.mapMarkers(glowX, glowY), renderer.scale);
     }
     drawToasts(renderer.ctx, this.toasts, renderer.scale);
-    if (this.banner && !this.inventoryPanel.open && !this.fullMap.open && !this.deathScreen) {
+    if (this.heartBanner > 0 && !this.inventoryPanel.open && !this.fullMap.open && !this.deathScreen) {
+      const alpha = Math.min(1, (HEART_BANNER_TIME - this.heartBanner) / BANNER_FADE, this.heartBanner / BANNER_FADE);
+      const when = `Claimed after ${playTimeText(this.heartClaimedAt ?? this.clock.time)} of play`;
+      drawStratumBanner(renderer.ctx, 'The Heart of the Deep', when, alpha, renderer.scale, 'The deep is yours. Build on!');
+    } else if (this.banner && !this.inventoryPanel.open && !this.fullMap.open && !this.deathScreen) {
       const { stratum, timeLeft } = this.banner;
       const alpha = Math.min(1, (BANNER_TIME - timeLeft) / BANNER_FADE, timeLeft / BANNER_FADE);
-      drawStratumBanner(renderer.ctx, bannerTitle(stratum), STRATA[stratum].finds, alpha, renderer.scale);
+      const rule = STRATA[stratum].rule;
+      const ruleText = rule && (!rule.needsDepths || this.profile.depths) ? rule.text : undefined;
+      drawStratumBanner(renderer.ctx, bannerTitle(stratum), STRATA[stratum].finds, alpha, renderer.scale, ruleText);
     }
     const hudBottom = this.fullMap.open ? 6 * renderer.scale : this.drawVitals(sinceHit);
     // Depth is measured at the player's feet: standing on the surface level reads 0 m.
@@ -795,12 +872,15 @@ export class Game {
       );
       if (health.god) y = drawHudLine(renderer.ctx, 'God mode', y, u, '#ffe066');
       const { dread, safety } = this;
-      if (dread.level > 0 || safety !== 'established') {
+      // Heat takes the safety line over while it matters (it's a zone, not another meter).
+      const heatLine = heatStatus(this.heatSafety, this.heat);
+      if (dread.level > 0 || safety !== 'established' || heatLine) {
         const carrier = this.inventory.selectedStack?.item === 'lantern' ? 'Lantern' : 'Flare';
-        const status = dreadStatus(safety, dread.level, health.hp < player.stats.maxHealth, carrier);
+        const status = heatLine ?? dreadStatus(safety, dread.level, health.hp < player.stats.maxHealth, carrier);
         y = drawDreadMeter(renderer.ctx, dread.level, status, this.settings.reducedFlashes ? 0 : this.heartbeat(), y, u);
       }
     }
+    if (player.floating) y = drawHudLine(renderer.ctx, 'Floatstone: gravity is lighter here', y, u, '#bfefff');
     const satchel = this.nearestSatchel();
     if (satchel) {
       const dx = (satchel.x + SATCHEL_SIZE / 2 - player.centerX) / TILE_SIZE;
@@ -838,6 +918,24 @@ export class Game {
     const strength = (level - DREAD_VIGNETTE_FROM) / (1 - DREAD_VIGNETTE_FROM);
     const pulse = this.settings.reducedFlashes ? 0 : this.heartbeat();
     this.renderer.drawVignette(DREAD_VIGNETTE_ALPHA * strength, pulse * (this.dread.full ? 0.35 : 0.15));
+  }
+
+  /** Orange closing in from the screen edges as a hot zone's grace runs out (no pulse, so Reduced flashes needs nothing). */
+  private drawHeatVignette(): void {
+    if (this.difficulty === 'cozy' || this.heat.exposure <= 0) return;
+    const strength = this.heatSafety === 'lava' ? 1 : this.heat.exposure / HEAT_GRACE;
+    this.renderer.drawVignette(HEAT_VIGNETTE_ALPHA * strength, 0, [190, 70, 0]);
+  }
+
+  /** Heat over the tiles on screen (with a tile to spare around it), cached until the view or the world changes. */
+  private heatOnScreen(camX: number, camY: number): HeatField {
+    const tx0 = Math.floor(camX / TILE_SIZE) - 1;
+    const ty0 = Math.floor(camY / TILE_SIZE) - 1;
+    const tx1 = Math.floor((camX + this.renderer.viewWidth) / TILE_SIZE) + 1;
+    const ty1 = Math.floor((camY + this.renderer.viewHeight) / TILE_SIZE) + 1;
+    const key = `${tx0},${ty0},${tx1},${ty1},${this.world.revision}`;
+    if (this.heatView?.key !== key) this.heatView = { key, field: heatField(this.world, tx0, ty0, tx1, ty1) };
+    return this.heatView.field;
   }
 
   /** How opaque to draw the player: protection blinks it, or (Reduced flashes) shows it see-through. */
@@ -899,6 +997,7 @@ export class Game {
       chests: this.tileEntities.entries().flatMap(({ tx, ty, entity }) => (entity.kind === 'chest' ? [{ tx, ty }] : [])),
       bed: this.activeBed(),
       satchels: this.satchels.map((s) => ({ tx: (s.x + SATCHEL_SIZE / 2) / TILE_SIZE, ty: (s.y + SATCHEL_SIZE / 2) / TILE_SIZE })),
+      heart: this.world.heart && this.explored.isExplored(this.world.heart.tx, this.world.heart.ty) ? { tx: this.world.heart.tx, ty: this.world.heart.ty } : null,
       pins: this.mapPins.pins,
       trackedPin: this.mapPins.tracked,
     };
@@ -933,6 +1032,20 @@ export class Game {
     if (isTrunk(tile)) {
       for (const felled of fellTreeAbove(this.world, tx, ty, tile)) this.shatter(felled.tx, felled.ty, felled.tile);
     }
+    if (tile === Tile.HeartCore && this.heartClaimedAt === null) this.claimHeart(tx, ty);
+  }
+
+  /**
+   * The Heart of the Deep was broken for the first time: the Sandbox's goal. A banner, a chord and a
+   * burst of sparks mark the moment; the world carries on as before (the Heart drops as an item).
+   */
+  private claimHeart(tx: number, ty: number): void {
+    this.heartClaimedAt = this.clock.time;
+    this.heartBanner = HEART_BANNER_TIME;
+    sfx.heartClaimed();
+    for (const [dx, dy] of [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, -2]]) this.particles.breakBurst(tx + dx, ty + dy, '#ffb066');
+    this.floaters.push({ text: 'The Heart of the Deep!', color: '#ffd27a', x: (tx + 0.5) * TILE_SIZE, y: ty * TILE_SIZE - 4, at: this.clock.time, duration: 3 });
+    this.toasts.show('You claimed the Heart of the Deep, the bottom of the world. Place it at home: it glows. Keep building!', 8);
   }
 
   /** The chest at (tx, ty), or null if that tile isn't a chest. */
@@ -999,6 +1112,7 @@ export class Game {
     if (placed === Tile.Beam || placed === Tile.Crossbeam) markHintSeen(this.supportHintId(placed));
     if (tileDef(placed).plant) this.tileEntities.set(tx, ty, newPlant(this.clock.time, plantGrowTime(Math.random())));
     sfx.place(tileDef(this.world.getTile(tx, ty)).material, this.pan(tx));
+    if (placed === Tile.Torch) this.noticeDamp(tx, ty);
     if (isBed(this.world.getTile(tx, ty))) this.toasts.show(`${mainKey('interact')} the bed to respawn there`, 4);
   }
 
@@ -1032,7 +1146,7 @@ export class Game {
     if (difficulty === this.difficulty) return;
     this.difficulty = difficulty;
     this.caveIns.setEnabled(difficulty === 'normal');
-    this.toasts.show(difficulty === 'cozy' ? 'Cozy: nothing can hurt you now, and gravel stays put' : 'Normal: falls, falling gravel and the dark hurt now', 3);
+    this.toasts.show(difficulty === 'cozy' ? 'Cozy: nothing can hurt you now, and gravel stays put' : 'Normal: falls, falling gravel, the dark and heat hurt now', 3);
   }
 
   /** Take damage (ignored in Cozy worlds, in god mode and while protected). Dying shows the death screen. */
@@ -1066,7 +1180,10 @@ export class Game {
     const leftover = inventory.returnCursor();
     if (leftover) this.dropAtPlayer(leftover.item, leftover.count);
     const satchel = dropSatchel(player, takeBag(inventory));
-    if (satchel) this.satchels.push(satchel);
+    if (satchel) {
+      this.liftOutOfLava(satchel);
+      this.satchels.push(satchel);
+    }
     const hadBed = this.activeBed() !== null;
     const bedWasSet = this.bed !== null;
     const spot = findRespawn(world, this.bed);
@@ -1090,10 +1207,24 @@ export class Game {
     player.placeAt(spot.x, spot.y);
     this.health.refill(player.stats.maxHealth, this.clock.time, RESPAWN_PROTECTION);
     this.dread.level = 0;
+    this.heat.exposure = 0;
     this.leftAction = null;
     this.touchingSatchels.clear();
     this.deathScreen = { lines, shownAt: performance.now() };
     sfx.death();
+  }
+
+  /** A satchel left in lava floats up to the first spot above it that's out of the lava, so it can be collected. */
+  private liftOutOfLava(satchel: Satchel): void {
+    const inLava = (): boolean => {
+      for (const x of [satchel.x, satchel.x + SATCHEL_SIZE - 1]) {
+        for (const y of [satchel.y, satchel.y + SATCHEL_SIZE - 1]) {
+          if (isLiquid(this.world.getTile(Math.floor(x / TILE_SIZE), Math.floor(y / TILE_SIZE)))) return true;
+        }
+      }
+      return false;
+    };
+    for (let i = 0; i < 8 && inLava(); i++) satchel.y -= TILE_SIZE;
   }
 
   /** On the death screen: the respawn key (after a moment) brings the view back to the player. */
@@ -1151,6 +1282,55 @@ export class Game {
     world.setTile(tx, ty, Tile.Torch);
     inventory.remove('torch', 1);
     sfx.place(tileDef(Tile.Torch).material, this.pan(tx));
+    this.noticeDamp(tx, ty);
+  }
+
+  /** The first torch placed in damp air in a session: say why it's dim and what to use instead. */
+  private noticeDamp(tx: number, ty: number): void {
+    if (this.dampHintShown || torchLight(this.world, tx, ty) >= TORCH_LIGHT) return;
+    this.dampHintShown = true;
+    this.toasts.show("Damp air: torches don't light as far in the Fungal Hollows. Glowshrooms don't mind the damp: mine them and plant them along your way.", 8);
+  }
+
+  /** The first time in a session the player feels floatstone's pull: what it does and what it's good for. */
+  private noticeFloatstone(): void {
+    if (this.floatHintShown || !this.player.floating) return;
+    this.floatHintShown = true;
+    this.toasts.show('Floatstone lightens gravity near it: you jump higher and fall gently. Mine some to cushion a long drop.', 7);
+  }
+
+  /**
+   * Heat (Phase 14b): standing in a hot zone uses up a short grace, then burns now and then;
+   * touching lava hurts straight away. Neither hurts in Cozy worlds.
+   */
+  private feelTheHeat(dt: number): void {
+    const { player, world } = this;
+    const x0 = Math.floor(player.x / TILE_SIZE);
+    const y0 = Math.floor(player.y / TILE_SIZE);
+    const x1 = Math.floor((player.x + PLAYER_WIDTH - 0.001) / TILE_SIZE);
+    const y1 = Math.floor((player.y + PLAYER_HEIGHT - 0.001) / TILE_SIZE);
+    let lava = false;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (isLiquid(world.getTile(tx, ty))) lava = true;
+    this.heatSafety = lava ? 'lava' : maxHeat(world, x0, y0, x1, y1) > 0 ? 'hot' : 'cool';
+    const normal = this.difficulty === 'normal';
+    if (this.heatSafety !== 'cool' && !this.heatHintShown) {
+      this.heatHintShown = true;
+      this.toasts.show(
+        normal
+          ? 'Heat! Near lava and glowing hot rock you start to burn after a few seconds. Bricks and closed doors keep heat out: a sealed brick room stays cool.'
+          : 'Heat: near lava and hot rock it would burn in a Normal world. Bricks and closed doors keep it out.',
+        8,
+      );
+    }
+    if (this.heat.update(dt, this.clock.time, this.heatSafety, normal)) this.burn(HEAT_HURT, { kind: 'heat' });
+    if (lava && normal) this.burn(LAVA_HURT, { kind: 'lava' });
+  }
+
+  /** Damage from heat or lava, with a sizzle when it lands. */
+  private burn(amount: number, cause: DamageCause): void {
+    const before = this.health.hp;
+    this.hurt(amount, cause);
+    if (this.health.hp < before || this.deathScreen) sfx.sizzle();
   }
 
   /** Throw one of the held flares from the player toward tile (tx, ty)'s centre. */
@@ -1388,6 +1568,10 @@ export class Game {
       // A beam can't go here only because there's nothing under it: say so (the first few times).
       renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
       this.drawSupportHint('placeBeam', 'Beams stand on solid ground or on another beam', tx, ty, '#ffc080', camX, camY);
+    } else if (tile !== null && isLiquid(world.getTile(tx, ty)) && inReach(this.player, tx, ty)) {
+      // Lava can't be built in (or dug): say so, and what does work.
+      renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+      renderer.drawFloatingText("Can't build in lava. Bricks over it keep the heat off.", (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
     } else if (tile !== null && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty) && !canPlantOn(tile, world.getTile(tx, ty + 1))) {
       // A sapling or spores over the wrong ground: say what they grow on.
       const on = tileDef(tile).plant!.on.map((t) => tileDef(t).name.toLowerCase());
@@ -1509,6 +1693,15 @@ export class Game {
     return `Stratum: ${STRATA[s].name} (${depthRange(s)}; here ${top} to ${bottom})   ambience ${STRATA[s].ambience}   plants growing ${this.plantCount()}`;
   }
 
+  /** F3: the strata's rules where the player is (Phase 14b), and the Heart of the Deep. */
+  private rulesLine(tx: number, ty: number): string {
+    const heart = this.world.heart;
+    const claimed = this.heartClaimedAt === null ? 'not claimed' : `claimed at ${playTimeText(this.heartClaimedAt)}`;
+    const heartText = heart ? `Heart (${heart.tx}, ${heart.ty}) ${claimed}` : 'no Heart';
+    const heat = `${this.heatSafety}, grace ${this.heat.graceLeft.toFixed(1)} s`;
+    return `Torch light here ${torchLight(this.world, tx, ty)}   floatstone ${this.player.floating ? 'yes' : 'no'}   heat ${heat}   ${heartText}`;
+  }
+
   /** How many planted saplings and sprouts are waiting to grow. */
   private plantCount(): number {
     let n = 0;
@@ -1539,9 +1732,18 @@ export class Game {
       `Pickaxe: ${tier >= 0 ? PICKAXES[tier].name : 'none'} (tier ${tier})`,
       `${difficultyName(this.difficulty)}   HP ${this.health.hp}/${player.stats.maxHealth}   protected ${protectedFor.toFixed(1)} s   fall ${fall}   bed ${this.activeBed() ? `(${this.bed!.tx}, ${this.bed!.ty})` : 'none'}   satchels ${this.satchels.length}`,
       `Goal ${this.pinnedRecipe ?? 'none'}   map pins ${this.mapPins.pins.length} (tracked ${this.mapPins.trackedPin?.name ?? 'none'})`,
+      this.rulesLine(tx, ty),
       `Cave-ins ${this.caveIns.isEnabled ? 'on' : 'off (Cozy)'}   shaking ${this.caveIns.warnings.size}   falling ${this.caveIns.falling.length}   rechecks queued ${this.tileUpdates.size}`,
       ...overlayHelpLines(),
       ...debugLines,
     ]);
   }
+}
+
+/** "2 h 14 min", "35 min" or "40 s": seconds of play, for the Heart of the Deep's banner. */
+export function playTimeText(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }

@@ -446,6 +446,25 @@ export function heartbeat(strength = 1): void {
   });
 }
 
+/** Heat burns, or lava touched: a hiss with a crackle in it. */
+export function sizzle(): void {
+  play({ volume: SFX_VOLUMES.sizzle, key: 'sizzle' }, (v) => {
+    const p = jitter();
+    noiseBurst(v, { filter: 'highpass', freq: 2500 * p, to: 4500 * p, attack: 0.01, decay: 0.35, gain: 0.6 });
+    noiseBurst(v, { filter: 'bandpass', freq: 900 * p, q: 3, delay: 0.05, attack: 0.002, decay: 0.05, gain: 0.5 });
+    noiseBurst(v, { filter: 'bandpass', freq: 1300 * p, q: 3, delay: 0.14, attack: 0.002, decay: 0.04, gain: 0.4 });
+  });
+}
+
+/** The Heart of the Deep claimed: a low swell under a rising major arpeggio that rings out. */
+export function heartClaimed(): void {
+  play({ volume: SFX_VOLUMES.heart, key: 'heart' }, (v) => {
+    tone(v, { type: 'sine', freq: 65, attack: 0.4, decay: 2.6, gain: 0.7 });
+    [262, 330, 392, 523, 659, 784].forEach((f, i) => tone(v, { type: 'triangle', freq: f, delay: 0.15 + i * 0.14, attack: 0.02, decay: 1.6 - i * 0.12, gain: 0.45 }));
+    tone(v, { type: 'sine', freq: 1047, delay: 1.0, attack: 0.05, decay: 1.8, gain: 0.25 });
+  });
+}
+
 /** A flare thrown: a whoosh, then it catches with a fizz. */
 export function flareThrow(): void {
   play({ volume: SFX_VOLUMES.flare, key: 'flare' }, (v) => {
