@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CLIMB_SPEED, PLAYER_HEIGHT, TILE_SIZE } from '../src/config';
 import { Player, type PlayerControls } from '../src/entities/player';
-import { canPlace, doorSpot, tryPlace } from '../src/systems/building';
+import { canPlace, doorSpot, itemForTile, tryPlace } from '../src/systems/building';
 import { Inventory } from '../src/systems/inventory';
 import { doorBottom, doorPartner, isDoorOpen, toggleDoor } from '../src/world/doors';
 import { isFloor, Tile, type TileId } from '../src/world/tiles';
@@ -236,8 +236,8 @@ describe('doors', () => {
   it('are placed as two tiles on the ground, with the cursor on either half', () => {
     const { world, player, inventory } = doorWorld();
     expect(tryPlace(world, player, inventory, 8, FLOOR - 1)).toBe(true);
-    expect(world.getTile(8, FLOOR - 1)).toBe(Tile.DoorClosedBottom);
-    expect(world.getTile(8, FLOOR - 2)).toBe(Tile.DoorClosedTop);
+    expect(world.getTile(8, FLOOR - 1)).toBe(Tile.DoorRightClosedBottom);
+    expect(world.getTile(8, FLOOR - 2)).toBe(Tile.DoorRightClosedTop);
     expect(inventory.count('door')).toBe(1);
     // Cursor on what would be the top half: the door still goes on the ground.
     expect(doorSpot(world, player, 9, FLOOR - 2)).toEqual([9, FLOOR - 1]);
@@ -254,7 +254,7 @@ describe('doors', () => {
     expect(doorBottom(world, 8, FLOOR - 2)).toEqual([8, FLOOR - 1]);
     expect(toggleDoor(world, 8, FLOOR - 1, () => false)).toBe(true);
     expect(isDoorOpen(world, 8, FLOOR - 1)).toBe(true);
-    expect(world.getTile(8, FLOOR - 2)).toBe(Tile.DoorOpenTop);
+    expect(world.getTile(8, FLOOR - 2)).toBe(Tile.DoorRightOpenTop);
     run(player, world, 60, { ...IDLE, move: 1 });
     expect(player.x).toBeGreaterThan(9 * TILE_SIZE);
   });
@@ -271,7 +271,30 @@ describe('doors', () => {
     const { world, player, inventory } = doorWorld();
     tryPlace(world, player, inventory, 8, FLOOR - 1);
     world.setTile(8, FLOOR - 2, Tile.Air); // the top half broke
-    expect(doorPartner(world, 8, FLOOR - 2, Tile.DoorClosedTop)).toEqual([8, FLOOR - 1]);
-    expect(doorPartner(world, 8, FLOOR - 1, Tile.DoorClosedBottom)).toBeNull(); // its top is already gone
+    expect(doorPartner(world, 8, FLOOR - 2, Tile.DoorRightClosedTop)).toEqual([8, FLOOR - 1]);
+    expect(doorPartner(world, 8, FLOOR - 1, Tile.DoorRightClosedBottom)).toBeNull(); // its top is already gone
+  });
+
+  it('open toward the way the player faced when placing them, and keep that side', () => {
+    const { world, player, inventory } = doorWorld();
+    // Facing right (the start): hinged on the right.
+    tryPlace(world, player, inventory, 8, FLOOR - 1);
+    player.facing = -1;
+    tryPlace(world, player, inventory, 3, FLOOR - 1);
+    expect(world.getTile(3, FLOOR - 1)).toBe(Tile.DoorClosedBottom);
+    expect(world.getTile(3, FLOOR - 2)).toBe(Tile.DoorClosedTop);
+    // Facing no longer matters once it's placed: each door opens and closes on its own side.
+    for (const [bx, open, closed] of [
+      [8, [Tile.DoorRightOpenTop, Tile.DoorRightOpenBottom], [Tile.DoorRightClosedTop, Tile.DoorRightClosedBottom]],
+      [3, [Tile.DoorOpenTop, Tile.DoorOpenBottom], [Tile.DoorClosedTop, Tile.DoorClosedBottom]],
+    ] as const) {
+      toggleDoor(world, bx, FLOOR - 1, () => false);
+      expect([world.getTile(bx, FLOOR - 2), world.getTile(bx, FLOOR - 1)]).toEqual(open);
+      expect(isDoorOpen(world, bx, FLOOR - 1)).toBe(true);
+      toggleDoor(world, bx, FLOOR - 1, () => false);
+      expect([world.getTile(bx, FLOOR - 2), world.getTile(bx, FLOOR - 1)]).toEqual(closed);
+    }
+    // Either kind drops a door.
+    expect(itemForTile(Tile.DoorRightOpenTop)).toBe('door');
   });
 });

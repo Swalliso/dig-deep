@@ -1,6 +1,7 @@
 import { BACKDROP_BRIGHTNESS, CRACK_STAGES, TEXTURE_SEED, TILE_SIZE } from '../config';
 import { ITEM_IDS, itemDef } from '../systems/items';
 import { createRng, randInt, type Rng } from '../util/rng';
+import type { DoorHinge } from '../world/doors';
 import { Tile, TILE_COUNT, tileDef } from '../world/tiles';
 
 // Procedural 16x16 tile textures, generated once at startup into one atlas canvas.
@@ -492,8 +493,9 @@ function platform(img: ImageData, rng: Rng): void {
 /**
  * One half of a closed door: vertical boards in a frame. The door is 12 px wide (x 2..13) and
  * two tiles tall, so the top half has the top rail and the bottom half the handle and bottom rail.
+ * The handle is on the side away from the hinge.
  */
-function doorClosed(img: ImageData, rng: Rng, top: boolean): void {
+function doorClosed(img: ImageData, rng: Rng, top: boolean, hinge: DoorHinge): void {
   const c = rgb(tileDef(Tile.DoorClosedTop).color);
   for (let y = 0; y < S; y++) {
     for (let x = 2; x < 14; x++) {
@@ -505,19 +507,22 @@ function doorClosed(img: ImageData, rng: Rng, top: boolean): void {
   // A cross rail near the middle of the door (bottom of the top half, top of the bottom half).
   for (let x = 3; x < 13; x++) put(img, x, top ? S - 2 : 1, c, 0.7);
   if (!top) {
-    put(img, 11, 4, [242, 201, 76]);
-    put(img, 11, 5, [160, 120, 40]);
+    const handle = hinge === 'left' ? 11 : 4;
+    put(img, handle, 4, [242, 201, 76]);
+    put(img, handle, 5, [160, 120, 40]);
   }
 }
 
-/** One half of an open door: just its edge, swung against the left of the frame. */
-function doorOpen(img: ImageData, top: boolean): void {
+/** One half of an open door: just its edge, swung against the hinge side of the frame. */
+function doorOpen(img: ImageData, top: boolean, hinge: DoorHinge): void {
   const c = rgb(tileDef(Tile.DoorOpenTop).color);
+  // x 2..4 for a left hinge, mirrored to 13..11 for a right one.
+  const at = (x: number): number => (hinge === 'left' ? x : S - 1 - x);
   for (let y = 0; y < S; y++) {
     const end = (top && y === 0) || (!top && y === S - 1);
-    put(img, 2, y, c, 0.62);
-    put(img, 3, y, c, end ? 0.62 : 1.1);
-    put(img, 4, y, c, end ? 0.62 : 0.8);
+    put(img, at(2), y, c, 0.62);
+    put(img, at(3), y, c, end ? 0.62 : 1.1);
+    put(img, at(4), y, c, end ? 0.62 : 0.8);
   }
 }
 
@@ -702,10 +707,14 @@ function drawTile(img: ImageData, id: number, rng: Rng): void {
     case Tile.Chest: return chest(img, rng);
     case Tile.Ladder: return ladder(img);
     case Tile.Platform: return platform(img, rng);
-    case Tile.DoorClosedTop: return doorClosed(img, rng, true);
-    case Tile.DoorClosedBottom: return doorClosed(img, rng, false);
-    case Tile.DoorOpenTop: return doorOpen(img, true);
-    case Tile.DoorOpenBottom: return doorOpen(img, false);
+    case Tile.DoorClosedTop: return doorClosed(img, rng, true, 'left');
+    case Tile.DoorClosedBottom: return doorClosed(img, rng, false, 'left');
+    case Tile.DoorOpenTop: return doorOpen(img, true, 'left');
+    case Tile.DoorOpenBottom: return doorOpen(img, false, 'left');
+    case Tile.DoorRightClosedTop: return doorClosed(img, rng, true, 'right');
+    case Tile.DoorRightClosedBottom: return doorClosed(img, rng, false, 'right');
+    case Tile.DoorRightOpenTop: return doorOpen(img, true, 'right');
+    case Tile.DoorRightOpenBottom: return doorOpen(img, false, 'right');
     case Tile.BedLeft: return bed(img, rng, true);
     case Tile.BedRight: return bed(img, rng, false);
     case Tile.Gravel: return gravel(img, rng);

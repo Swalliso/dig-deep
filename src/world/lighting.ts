@@ -8,6 +8,7 @@ import {
   PLAYER_GLOW_FALLOFF,
 } from '../config';
 import { torchLight } from './strata';
+import { isDoor } from './doors';
 import { isSolid, Tile, TILE_LIGHT } from './tiles';
 import type { World } from './world';
 
@@ -49,7 +50,9 @@ interface MovingLight {
 /**
  * Per-tile light level, 0 (black) to LIGHT_MAX (open sky).
  *
- * Sky light falls straight down each column to the first solid tile (which is lit too).
+ * Sky light falls straight down each column to the first solid tile (which is lit too). A
+ * closed door is a thin upright panel, so sky light falls past it (it would otherwise shade its
+ * own bottom half and the ground under it), but light spreading sideways still dims through it.
  * Torches and glowing tiles shine at their own level (TileDef.light; a torch in the Fungal
  * Hollows' damp air less, see torchLight). From those sources light spreads to neighbouring tiles,
  * losing LIGHT_FALLOFF_AIR per open tile and LIGHT_FALLOFF_SOLID per solid one (a little more
@@ -63,6 +66,11 @@ interface MovingLight {
  * to it without touching it: each one relights only its own small patch, when it moves to
  * another tile or a tile in its patch changes. `level` is the brightest of all of them.
  */
+/** Stops sky light falling down a column: any solid tile but a door. */
+function blocksSky(tile: number): boolean {
+  return isSolid(tile) && !isDoor(tile);
+}
+
 export class LightMap {
   readonly width: number;
   readonly height: number;
@@ -162,7 +170,7 @@ export class LightMap {
   }
 
   private findSkyRow(x: number): number {
-    for (let y = 0; y < this.height; y++) if (isSolid(this.world.getTile(x, y))) return y;
+    for (let y = 0; y < this.height; y++) if (blocksSky(this.world.getTile(x, y))) return y;
     return this.height;
   }
 

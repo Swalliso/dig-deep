@@ -3,21 +3,45 @@ import type { World } from './world';
 
 // Doors are the first object bigger than one tile: a top and a bottom tile, one above the
 // other. Open and closed are separate tiles (closed blocks movement and light, open doesn't),
-// so toggling a door swaps both of its tiles.
+// so toggling a door swaps both of its tiles. A door is hinged on the left or the right, picked
+// when it's placed, and the hinge is part of the tile id, so it's kept while open or closed.
 
-const OTHER_STATE: Partial<Record<TileId, TileId>> = {
-  [Tile.DoorClosedTop]: Tile.DoorOpenTop,
-  [Tile.DoorClosedBottom]: Tile.DoorOpenBottom,
-  [Tile.DoorOpenTop]: Tile.DoorClosedTop,
-  [Tile.DoorOpenBottom]: Tile.DoorClosedBottom,
+export type DoorHinge = 'left' | 'right';
+
+/** Each hinge's tiles: closed top and bottom, then open top and bottom. */
+const DOOR_TILES: Record<DoorHinge, readonly [TileId, TileId, TileId, TileId]> = {
+  left: [Tile.DoorClosedTop, Tile.DoorClosedBottom, Tile.DoorOpenTop, Tile.DoorOpenBottom],
+  right: [Tile.DoorRightClosedTop, Tile.DoorRightClosedBottom, Tile.DoorRightOpenTop, Tile.DoorRightOpenBottom],
 };
+
+const OTHER_STATE: Partial<Record<TileId, TileId>> = {};
+const TOPS = new Set<number>();
+const OPEN_BOTTOMS = new Set<number>();
+for (const [closedTop, closedBottom, openTop, openBottom] of Object.values(DOOR_TILES)) {
+  OTHER_STATE[closedTop] = openTop;
+  OTHER_STATE[closedBottom] = openBottom;
+  OTHER_STATE[openTop] = closedTop;
+  OTHER_STATE[openBottom] = closedBottom;
+  TOPS.add(closedTop).add(openTop);
+  OPEN_BOTTOMS.add(openBottom);
+}
+
+/** The top and bottom tiles of a closed door with this hinge, as it's placed. */
+export function closedDoorTiles(hinge: DoorHinge): [top: TileId, bottom: TileId] {
+  return [DOOR_TILES[hinge][0], DOOR_TILES[hinge][1]];
+}
+
+/** A door placed by a player facing right opens to the right, so it's hinged on the right. */
+export function hingeFacing(facing: 1 | -1): DoorHinge {
+  return facing > 0 ? 'right' : 'left';
+}
 
 export function isDoor(tile: number): boolean {
   return OTHER_STATE[tile as TileId] !== undefined;
 }
 
 function isTop(tile: number): boolean {
-  return tile === Tile.DoorClosedTop || tile === Tile.DoorOpenTop;
+  return TOPS.has(tile);
 }
 
 /** The bottom tile of the door that (tx, ty) belongs to, or null if it isn't a door. */
@@ -28,7 +52,7 @@ export function doorBottom(world: World, tx: number, ty: number): [number, numbe
 }
 
 export function isDoorOpen(world: World, bx: number, by: number): boolean {
-  return world.getTile(bx, by) === Tile.DoorOpenBottom;
+  return OPEN_BOTTOMS.has(world.getTile(bx, by));
 }
 
 /**
@@ -38,7 +62,7 @@ export function isDoorOpen(world: World, bx: number, by: number): boolean {
 export function toggleDoor(world: World, bx: number, by: number, blocked: (bx: number, by: number) => boolean): boolean {
   const bottom = world.getTile(bx, by);
   const top = world.getTile(bx, by - 1);
-  const closing = bottom === Tile.DoorOpenBottom;
+  const closing = OPEN_BOTTOMS.has(bottom);
   if (closing && blocked(bx, by)) return false;
   const nextBottom = OTHER_STATE[bottom];
   if (nextBottom === undefined || isTop(bottom)) return false;

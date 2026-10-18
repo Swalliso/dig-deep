@@ -39,7 +39,8 @@ export const Tile = {
   Chest: 16,
   Ladder: 17,
   Platform: 18,
-  // A door is two tiles, one above the other; open and closed are separate tiles.
+  // A door is two tiles, one above the other; open and closed are separate tiles. These are
+  // hinged on the left (they open to the left); the right-hinged ones come after the camp.
   DoorClosedTop: 19,
   DoorClosedBottom: 20,
   DoorOpenTop: 21,
@@ -86,6 +87,11 @@ export const Tile = {
   CampTopRight: 53,
   CampBottomLeft: 54,
   CampBottomRight: 55,
+  // Doors hinged on the right, so they open to the right (see doors.ts).
+  DoorRightClosedTop: 56,
+  DoorRightClosedBottom: 57,
+  DoorRightOpenTop: 58,
+  DoorRightOpenBottom: 59,
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -213,6 +219,11 @@ const defs: TileDef[] = [
   { id: Tile.CampTopRight, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
   { id: Tile.CampBottomLeft, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood' },
   { id: Tile.CampBottomRight, name: 'Camp', hardness: 0.6, minTier: 0, color: '#c08a3e', drop: 'camp_kit', solid: false, material: 'wood', light: CAMP_LIGHT, glowColor: '#ff9a3c' },
+  // The same door hinged on the other side (doors.ts).
+  { id: Tile.DoorRightClosedTop, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: true, material: 'wood', insulates: true },
+  { id: Tile.DoorRightClosedBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: true, material: 'wood', insulates: true },
+  { id: Tile.DoorRightOpenTop, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
+  { id: Tile.DoorRightOpenBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
 ];
 
 /** Indexed by tile id. */

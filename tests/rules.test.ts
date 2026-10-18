@@ -216,7 +216,7 @@ describe('heat', () => {
   it('only every brick, heartstone and closed door insulates', () => {
     const insulating = TILES.filter((def) => TILE_INSULATES[def.id]).map((def) => def.id);
     expect(insulating.sort((a, b) => a - b)).toEqual(
-      [Tile.DoorClosedTop, Tile.DoorClosedBottom, Tile.StoneBricks, Tile.MudstoneBricks, Tile.DeepstoneBricks, Tile.BasaltBricks, Tile.Heartstone].sort((a, b) => a - b),
+      [Tile.DoorClosedTop, Tile.DoorClosedBottom, Tile.DoorRightClosedTop, Tile.DoorRightClosedBottom, Tile.StoneBricks, Tile.MudstoneBricks, Tile.DeepstoneBricks, Tile.BasaltBricks, Tile.Heartstone].sort((a, b) => a - b),
     );
   });
 });

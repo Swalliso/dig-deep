@@ -155,6 +155,14 @@ Notes:
 - **Platform** (planks): one-way. Jump up through it, and press S + jump to drop through.
 - **Door**: 1×2, right-click to open or close. The first multi-tile object, and the pattern for
   lifts and the camp later.
+  - Extra (after Phase 15, from playtesting): doors open either way. A door is hinged on the
+    side the player faces when placing it, so it opens toward that side, and keeps its hinge
+    while opening and closing; a closed door shows its handle on the other side. The hinge is
+    part of the tile id (four right-hinged door tiles appended after the camp; the original
+    door tiles are the left-hinged ones), so old worlds keep their doors and no save version
+    bump was needed.
+    Sky light also falls past doors now (a closed door used to shade its own bottom half and
+    the ground under it like a roof); light spreading sideways is still dimmed by a closed door.
 - **Map**:
   - M opens a full-screen map with pan and zoom, and a corner minimap can be toggled.
   - Fog of war: a tile counts as explored once it's been lit or come within a few tiles of the
@@ -836,7 +844,7 @@ phase with acceptance criteria when playtests show it solves a real problem.
   no required daily chores. (The Heart of the Deep's completion moment is part of 14b.)
 - **Building comfort**: clearer placement ghosts for doors, camp and lift pieces; preview
   invalid footprints and safe dismantling. Consider decorative variants after functional
-  underground building feels useful.
+  underground building feels useful. (Doors opening either way is done; see Phase 10.)
 - **Replay and sharing**: copy a world/run seed with its rules version and offer a clean
   screenshot view. Sharing is explicit and local-first; no account or leaderboard is required.
 - **Run variety**: test an optional cache or side objective that offers supplies versus a
