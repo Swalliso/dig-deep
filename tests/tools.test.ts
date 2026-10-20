@@ -6,7 +6,7 @@ import { primaryAction } from '../src/systems/building';
 import { checkSave, createSave } from '../src/systems/save';
 import { Health } from '../src/systems/health';
 import { Inventory } from '../src/systems/inventory';
-import { blastHits, blastTiles, drillTilesLeft, hangRope, rollUpRope, ROPE_PREVIEW_BELOW, ropePlan, ropePlanText } from '../src/systems/tools';
+import { blastHits, blastTiles, drillTilesLeft, hangRope, rollUpRope, ROPE_PREVIEW_BELOW, ropePlan, ropePlanText, RopeSlack, ropeSlack, unrollSlack } from '../src/systems/tools';
 import { isClimbable, isOneWayFloor, Tile } from '../src/world/tiles';
 import { World } from '../src/world/world';
 
@@ -116,6 +116,65 @@ describe('rope coils', () => {
     hangRope(world, 21, FLOOR, 5);
     world.setTile(21, FLOOR + 4, Tile.Air);
     expect(rollUpRope(world, 21, FLOOR + 4)).toBe(1);
+  });
+
+  it('unroll into new air when the floor under their end opens up, up to the rest of their coils', () => {
+    const world = shaftWorld();
+    const ropes = new RopeSlack(world);
+    expect(ropeSlack(6)).toBe(ROPE_LENGTH - 6);
+    expect(ropeSlack(ROPE_LENGTH)).toBe(0);
+    expect(ropeSlack(ROPE_LENGTH + 5)).toBe(ROPE_LENGTH - 5);
+    // A 6-tile rope over a floor, with another floor 4 tiles under that.
+    world.setTile(20, FLOOR + 6, Tile.Stone);
+    world.setTile(20, FLOOR + 11, Tile.Stone);
+    hangRope(world, 20, FLOOR, 6);
+    expect(ropes.update(8)).toEqual([]);
+    // Dig out the floor: it unrolls down to the next one.
+    world.setTile(20, FLOOR + 6, Tile.Air);
+    expect(ropes.size).toBe(1);
+    expect(ropes.update(8)).toEqual([{ tx: 20, ty: FLOOR + 10 }]);
+    for (let y = FLOOR; y <= FLOOR + 10; y++) expect(world.getTile(20, y)).toBe(Tile.Rope);
+    // Dig that one too: the rest of its coil, and no further.
+    world.setTile(20, FLOOR + 11, Tile.Air);
+    expect(ropes.update(8)).toEqual([{ tx: 20, ty: FLOOR + ROPE_LENGTH - 1 }]);
+    expect(world.getTile(20, FLOOR + ROPE_LENGTH)).toBe(Tile.Air);
+    // All its coil is out now: the floor under its end opening up again changes nothing.
+    world.setTile(20, FLOOR + ROPE_LENGTH, Tile.Stone);
+    world.setTile(20, FLOOR + ROPE_LENGTH, Tile.Air);
+    expect(ropes.size).toBe(1);
+    expect(ropes.update(8)).toEqual([]);
+    // It still rolls up into the one coil it took.
+    world.setTile(20, FLOOR + 3, Tile.Air);
+    expect(rollUpRope(world, 20, FLOOR + 3)).toBe(1);
+    expect(ropes.update(8)).toEqual([]); // the broken tile was under rope a moment ago, but it's all rolled up
+    for (let y = FLOOR; y < FLOOR + 40; y++) expect(world.getTile(20, y)).toBe(Tile.Air);
+  });
+
+  it("never unroll past the coils they took, and handle a few ropes each step", () => {
+    const world = shaftWorld();
+    const ropes = new RopeSlack(world);
+    // Two coils hung end to end, 25 tiles long over a floor: 15 tiles of slack.
+    world.setTile(21, FLOOR + 25, Tile.Stone);
+    hangRope(world, 21, FLOOR, 25);
+    world.setTile(21, FLOOR + 25, Tile.Air);
+    expect(unrollSlack(world, 21, FLOOR + 25)).toBe(15);
+    expect(unrollSlack(world, 21, FLOOR + 40)).toBe(0); // not under a rope
+    world.setTile(21, FLOOR + 10, Tile.Air);
+    expect(rollUpRope(world, 21, FLOOR + 10)).toBe(2);
+    ropes.update(8);
+    // Three short ropes whose floors go at once, two unrolled per step.
+    const short = new World(60, 100, 0);
+    const queue = new RopeSlack(short);
+    for (const x of [5, 7, 9]) {
+      short.setTile(x - 1, 9, Tile.Stone); // a wall to hang from
+      short.setTile(x, 12, Tile.Stone);
+      hangRope(short, x, 10, 2);
+    }
+    for (const x of [5, 7, 9]) short.setTile(x, 12, Tile.Air);
+    expect(queue.update(2)).toHaveLength(2);
+    expect(queue.size).toBe(1);
+    expect(queue.update(2)).toHaveLength(1);
+    for (const x of [5, 7, 9]) expect(short.getTile(x, 10 + ROPE_LENGTH - 1)).toBe(Tile.Rope);
   });
 });
 

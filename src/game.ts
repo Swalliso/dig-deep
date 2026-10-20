@@ -49,6 +49,7 @@ import {
   PROTECTION_BLINK,
   RESPAWN_PROTECTION,
   ROPE_LENGTH,
+  ROPE_UNROLL_BUDGET,
   SATCHEL_SIZE,
   SPAN_MAX,
   SURFACE_LEVEL,
@@ -110,7 +111,7 @@ import { hintSeen, markHintSeen, type HintId } from './systems/hints';
 import { Heat, heatStatus, type HeatSafety } from './systems/heat';
 import { saveSettings, type Settings } from './systems/settings';
 import { computeStats, statChanges, type PlayerStats } from './systems/stats';
-import { blastBreaks, blastHits, blastTiles, drillTilesLeft, hangRope, rollUpRope, ropePlan, ropePlanText } from './systems/tools';
+import { blastBreaks, blastHits, blastTiles, drillTilesLeft, hangRope, rollUpRope, ropePlan, ropePlanText, RopeSlack } from './systems/tools';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawStratumBanner, drawToasts, Toasts } from './ui/hud';
 import { goalHudLines } from './ui/guidance';
@@ -126,7 +127,7 @@ import { CLASSIC_PROFILE, findProfile, profileLabel, type GenProfile } from './w
 import { heatField, maxHeat, type HeatField } from './world/heat';
 import { stopFits } from './world/lifts';
 import { LightMap } from './world/lighting';
-import { canPlantOn, growDuePlants, newPlant, plantGrowTime } from './world/plants';
+import { canPlantOn, growDuePlants, newPlant, plantGrowTime, plantStatus, plantStatusText, type PlantStatus } from './world/plants';
 import { bannerTitle, depthRange, inFloatField, MAGMA, STRATA, StratumTracker, stratumAt, torchLight } from './world/strata';
 import { beamFooting, columnHeld, holdsLoose, isLoose, isSupport, supportEffect, withTile, worldGetter, type SupportEffect } from './world/supports';
 import { TileEntities, type TileEntity } from './world/tileEntities';
@@ -256,6 +257,8 @@ export class Game {
   deathScreen: DeathScreen | null = null;
   /** Active tile updates: tiles to recheck after nearby changes (cave-ins use them). */
   readonly tileUpdates: TileUpdates;
+  /** Ropes whose end opened up, waiting to unroll into the new air. */
+  private readonly ropeSlack: RopeSlack;
   /** Shaking and falling gravel (off in Cozy worlds). */
   readonly caveIns: CaveIns;
   /** Builds up in the dark and hurts when full (none in Cozy worlds). */
@@ -384,6 +387,7 @@ export class Game {
     this.tileEntities.onRemove = (tx, ty, entity) => this.spill(tx, ty, entity);
     this.lightMap = new LightMap(world);
     this.tileUpdates = new TileUpdates(world);
+    this.ropeSlack = new RopeSlack(world);
     this.caveIns = new CaveIns(world, this.tileUpdates, this.difficulty === 'normal', start.caveIns);
     this.caveInHooks = {
       touchesPlayer: (x, y) => this.blockTouchesPlayer(x, y),
@@ -545,17 +549,22 @@ export class Game {
     this.nextAmbientAt = now + min + Math.random() * (max - min);
   }
 
-  /** Every PLANT_CHECK_INTERVAL: grow the planted saplings and sprouts whose time has come, if there's room. */
+  /** Every PLANT_CHECK_INTERVAL: grow the planted saplings and sprouts whose time has come, if they can (see growDuePlants). */
   private growPlants(dt: number): void {
     this.plantCheckIn -= dt;
     if (this.plantCheckIn > 0) return;
     this.plantCheckIn = PLANT_CHECK_INTERVAL;
     for (const [tx, ty] of growDuePlants(this.world, this.tileEntities, this.clock.time)) {
       // A rustle when it happens on screen.
-      const dx = Math.abs((tx + 0.5) * TILE_SIZE - this.player.centerX);
-      const dy = Math.abs((ty + 0.5) * TILE_SIZE - this.player.centerY);
-      if (dx < this.renderer.viewWidth / 2 && dy < this.renderer.viewHeight / 2) sfx.place('plant', this.pan(tx));
+      if (this.onScreen(tx, ty)) sfx.place('plant', this.pan(tx));
     }
+  }
+
+  /** Is tile (tx, ty) within a screen's view of the player? */
+  private onScreen(tx: number, ty: number): boolean {
+    const dx = Math.abs((tx + 0.5) * TILE_SIZE - this.player.centerX);
+    const dy = Math.abs((ty + 0.5) * TILE_SIZE - this.player.centerY);
+    return dx < this.renderer.viewWidth / 2 && dy < this.renderer.viewHeight / 2;
   }
 
   /** Keys, the map and the panel: everything that takes input while the player is alive. */
@@ -678,7 +687,7 @@ export class Game {
         planted++;
       });
       this.plantCheckIn = 0;
-      toasts.show(planted > 0 ? `Debug: ${planted} planted sapling${planted === 1 ? '' : 's'} or spores grow now (if there's room)` : 'Debug: nothing planted');
+      toasts.show(planted > 0 ? `Debug: ${planted} planted sapling${planted === 1 ? '' : 's'} or spores grow now if they can (the rest start their time again)` : 'Debug: nothing planted');
     }
   }
 
@@ -973,6 +982,7 @@ export class Game {
     if (actionPressed('quickTorch')) this.quickTorch();
     this.caveIns.update(dt, this.clock.time, TILE_UPDATE_BUDGET, this.caveInHooks);
     if (this.deathScreen) return; // crushed: the rest waits for the respawn
+    for (const end of this.ropeSlack.update(ROPE_UNROLL_BUDGET)) if (this.onScreen(end.tx, end.ty)) sfx.rope(this.pan(end.tx));
     const bombs = updateBombs(this.bombList, dt, world);
     this.bombList = bombs.live;
     for (const bomb of bombs.exploded) this.explode(bomb);
@@ -2049,6 +2059,7 @@ export class Game {
       renderer.drawTileOutline(tx, ty, check === 'ok' ? '#ffffff' : '#ff4040', camX, camY);
       const here = world.getTile(tx, ty);
       if (this.caveIns.isEnabled && isSupport(here)) this.drawRemovalWarning(tx, ty, here, camX, camY);
+      this.drawPlantStatus(tx, ty, camX, camY);
       return;
     }
     // A rope coil: the rope it would unroll, and how far it reaches (Phase 16).
@@ -2171,6 +2182,14 @@ export class Game {
     renderer.drawFloatingText(text, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ff9a8a', 1, camX, camY);
   }
 
+  /** A planted sapling or sprout under the cursor: whether it's growing, or why it can't. */
+  private drawPlantStatus(tx: number, ty: number, camX: number, camY: number): void {
+    const status = plantStatus(this.world, tx, ty);
+    if (!status || !this.tileEntities.get(tx, ty)) return;
+    const text = plantStatusText(this.world.getTile(tx, ty), status);
+    this.renderer.drawFloatingText(text, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, status === 'growing' ? '#a8f0b0' : '#ffc080', 1, camX, camY);
+  }
+
   /** Loose tiles on screen that nothing holds up (the bottoms of their columns), for their dangling-pebble mark. */
   private unsupportedOnScreen(camX: number, camY: number): [number, number][] {
     const { world, renderer } = this;
@@ -2211,7 +2230,7 @@ export class Game {
     const at = (row: number): string => `${row - SURFACE_LEVEL} m`;
     const top = s === 0 ? 'the surface' : at(tops[s - 1][tx]);
     const bottom = s < tops.length ? at(tops[s][tx]) : 'bedrock';
-    return `Stratum: ${STRATA[s].name} (${depthRange(s)}; here ${top} to ${bottom})   ambience ${STRATA[s].ambience}   plants growing ${this.plantCount()}`;
+    return `Stratum: ${STRATA[s].name} (${depthRange(s)}; here ${top} to ${bottom})   ambience ${STRATA[s].ambience}   ${this.plantLine()}`;
   }
 
   /** F3: the strata's rules where the player is (Phase 14b), and the Heart of the Deep. */
@@ -2245,13 +2264,18 @@ export class Game {
     );
   }
 
-  /** How many planted saplings and sprouts are waiting to grow. */
-  private plantCount(): number {
+  /** F3: the planted saplings and sprouts and how they stand, e.g. "plants 3 (2 growing, 1 noSky)". */
+  private plantLine(): string {
     let n = 0;
-    this.tileEntities.forEach((_tx, _ty, entity) => {
-      if (entity.kind === 'plant') n++;
+    const counts = new Map<PlantStatus, number>();
+    this.tileEntities.forEach((tx, ty, entity) => {
+      if (entity.kind !== 'plant') return;
+      n++;
+      const status = plantStatus(this.world, tx, ty) ?? 'noGround';
+      counts.set(status, (counts.get(status) ?? 0) + 1);
     });
-    return n;
+    const parts = [...counts].map(([status, count]) => `${count} ${status}`);
+    return `plants ${n}${parts.length > 0 ? ` (${parts.join(', ')})` : ''}`;
   }
 
   /** F3 debug overlay. */

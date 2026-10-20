@@ -55,6 +55,50 @@ describe('felling trees', () => {
     expect(count(world, Tile.Wood, 16, 16)).toBe(5);
   });
 
+  it("takes only its own leaves where its canopy touches a neighbour's", () => {
+    // Trunks 4 apart: the canopies meet in column 12, which is as near one trunk as the other.
+    const world = groundWorld();
+    plantTree(world, 10, 5);
+    plantTree(world, 14, 5);
+    const neighbourLeaves = count(world, Tile.Leaves, 12, 16);
+    world.setTile(10, GROUND - 1, Tile.Air);
+    const felled = fellTreeAbove(world, 10, GROUND - 1);
+    expect(count(world, Tile.Leaves, 8, 11)).toBe(0);
+    expect(count(world, Tile.Leaves, 12, 16)).toBe(neighbourLeaves); // ties stay with the tree still standing
+    expect(felled.filter((t) => t.tile === Tile.Leaves)).toHaveLength(11);
+    // Felling the neighbour now takes all of its canopy, column 12 too.
+    world.setTile(14, GROUND - 1, Tile.Air);
+    fellTreeAbove(world, 14, GROUND - 1);
+    expect(count(world, Tile.Leaves)).toBe(0);
+  });
+
+  it('splits overlapping canopies by which trunk is nearer, stumps included', () => {
+    // Trunks 3 apart: column 11 is nearer the first, column 12 the second.
+    const world = groundWorld();
+    plantTree(world, 10, 5);
+    plantTree(world, 13, 5);
+    world.setTile(10, GROUND - 3, Tile.Air); // cut above a two-tile stump
+    fellTreeAbove(world, 10, GROUND - 3);
+    expect(count(world, Tile.Leaves, 8, 11)).toBe(0);
+    expect(count(world, Tile.Leaves, 12, 15)).toBe(11);
+    expect(count(world, Tile.Wood, 10, 10)).toBe(2);
+    expect(count(world, Tile.Wood, 13, 13)).toBe(5);
+  });
+
+  it('leaves a neighbouring giant mushroom its cap', () => {
+    const world = groundWorld();
+    // Stems 5 apart, their 5-wide caps meeting at the edges.
+    for (const x of [10, 15]) {
+      for (let i = 1; i <= 4; i++) world.setTile(x, GROUND - i, Tile.MushroomStem);
+      for (let dx = -2; dx <= 2; dx++) world.setTile(x + dx, GROUND - 5, Tile.MushroomCap);
+      for (let dx = -1; dx <= 1; dx++) world.setTile(x + dx, GROUND - 6, Tile.MushroomCap);
+    }
+    world.setTile(10, GROUND - 1, Tile.Air);
+    fellTreeAbove(world, 10, GROUND - 1, Tile.MushroomStem);
+    expect(count(world, Tile.MushroomCap, 8, 12)).toBe(0);
+    expect(count(world, Tile.MushroomCap, 13, 17)).toBe(8);
+  });
+
   it('fells every generated tree cleanly from its base', () => {
     const world = generateWorld(42);
     let trees = 0;

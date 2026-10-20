@@ -24,6 +24,12 @@ paths:
   starts on the first click or key press. A stratum's ambience (a looping bed plus events) is
   quieter while the panel, the map or the death screen pauses the world, fades out on the pause
   menu and the title screen, and its events (drips, chimes) are timed on the session clock.
+- **Mixing** (playtest P1-01): effects → SFX volume → effects limiter → master volume → master
+  limiter; the ambience joins at the master volume, skipping the effects limiter, so a burst of
+  effects never pushes it down. Ambient events have their own voice budget
+  (`AMBIENCE_MAX_VOICES`). Noise layers loop their buffer, so a layer longer than what's left
+  after its random start never stops dead. Check level changes offline (an OfflineAudioContext
+  standing in for `AudioContext` before the first gesture renders the real sounds).
 - **`public/og-image.png`**: the 1200x630 link-preview image (used by the og:/twitter: tags in
   `index.html`, which need absolute swalliso.github.io URLs). It was rendered with the game's own
   renderer: seed 42, view centred on tile x 821 from row 112, with a shaft, three torches and a

@@ -89,9 +89,11 @@ and pick **Normal** or **Cozy**).
 - **Gem lamps**: a gold bar and a ruby (or a sapphire) make 2 lamps at a workbench. They light 10
   tiles around (a torch lights 8) with a red or blue glow, and their light heals like a torch's.
 - **Wood grows back**: leaves sometimes drop a **sapling**, felled trees included. Plant it on
-  grass or dirt and it grows into a tree after 4–7 minutes of play, once there's room above it.
-  Giant mushroom caps drop **mushroom spores**, which grow into a giant mushroom on mudstone.
-  Nothing grows while the game is paused.
+  grass or dirt under open sky and it grows into a tree after 4–7 minutes of play, if there's
+  room above it and no other tree within 3 tiles; if not, its time starts again. Point at a
+  planted one to see how it's doing. Giant mushroom caps drop **mushroom spores**, which grow
+  into a giant mushroom on mudstone, dark or not, if there's room for the cap. Nothing grows
+  while the game is paused.
 - **The dark hurts** (Normal worlds). Standing where it's too dark (more than about 6 tiles
   from a torch) fills the **dread** meter under your hearts in about 25 s; in light it drains in
   a few seconds. When it's full you hear a heartbeat, red closes in from the screen edges and
@@ -169,6 +171,8 @@ and pick **Normal** or **Cozy**).
   - **Rope coil** (5 planks): left mouse on an empty spot with something solid above or beside
     it (the lip of a shaft) hangs a rope ladder up to 20 tiles straight down. The cursor shows
     how far it reaches first. Climb it like a ladder; break any part of it to roll it back up.
+    If the floor under its end opens up (dug, fallen or blown away), it unrolls further into the
+    gap, up to the rest of its coil (a 6-tile rope can grow to 20).
   - **Drill** (8 emberite bars and 4 iron bars): with it in hand, it mines anything the
     emberite pickaxe can, about twice as fast, burning one coal from your inventory every 8
     tiles. The hotbar shows how much drilling your coal is good for. You keep it when you die.

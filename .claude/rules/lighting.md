@@ -38,3 +38,5 @@ paths:
 - Light spreads diagonally too (reviewed and kept).
 - Sky light falls straight past doors (`blocksSky`): a closed door is a thin panel and mustn't
   shade its bottom half or the ground under it. Light spreading sideways is still dimmed by it.
+- Saplings only grow under open sky (`openToSky` in `world/plants.ts` uses `blocksSky`); torches
+  don't count. Giant mushroom spores grow in the dark.
