@@ -85,6 +85,8 @@ src/systems/     items, inventory, mining, building, crafting, chests, saves and
 src/render/      camera, textures, renderer, parallax, particles, juice, map image
 src/ui/          HUD, vitals, menus and panels, the lift panel, map, controls and key hints, guidance
 src/audio/sfx.ts every sound effect and stratum ambience (Web Audio)
+src/analysis/    measuring reports for playtests (caves and ore per stratum, backup timelines);
+                 not part of the game, run by scripts/report.mjs (npm run report:world / report:backup)
 tests/           Vitest unit tests
 ```
 

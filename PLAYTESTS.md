@@ -19,6 +19,60 @@ Kinds: **Bug** (not what we meant), **Tuning** (works as designed, numbers or fe
 Status: `open` (needs a decision), `planned` (in a package), `keep` (intended, stays),
 `done` (PR link), `won't do` (reason).
 
+## How to playtest
+
+For us and anyone else who plays. There are two kinds of testing, and they don't mix:
+
+- **Does a change work?** Debug mode is fine (`?debug`): follow the phase's or package's test steps.
+- **How does the game feel?** No debug mode, a fresh world. Debug mode spoils this: the kit, fly
+  mode and the revealed map skip exactly the parts we want to feel.
+
+**One goal per round**, such as "the early game, up to the iron pickaxe or 90 minutes". After a
+change, repeat the same round the same way, so the numbers compare like with like.
+
+**The run**: the dev site (https://swalliso.github.io/dig-deep/dev/), a new Normal world, no
+`?debug`. Play like a player, not like a tester. Export a backup from the pause menu ("Export
+backup") at each milestone (each pickaxe, the first time in a new stratum) and whenever something
+odd happens, and rename it after the round and moment: `r3-copper.json`.
+
+**Notes while playing**: one line each, with a tag and roughly where (stratum or depth):
+
+| Tag | Means |
+| --- | --- |
+| `+` | felt good |
+| `-` | felt bad |
+| `?` | confusing |
+| `zzz` | boring or grindy |
+| `!` | bug |
+
+For example: `zzz Stone Caverns ~60 m: 10 minutes of tunnelling for one copper vein`.
+
+**Debrief**, short, per stratum reached:
+
+- **Caves**: how often did one worth exploring turn up, how big were they, and did they pay?
+- **Ore**: how did you mostly find it: cave walls, tunnelling, the map, glints?
+- **Light**: did torches or coal run short?
+- **Time**: roughly how it split between exploring, tunnelling, travelling and managing items.
+
+Then the **three things to change first**.
+
+Report what happened and how it felt rather than the fix, and mark how much each point matters
+(blocker, annoying or nitpick; once or every time). Any shape is fine (a list, a voice note, a
+chat): it gets triaged here as a new round.
+
+**The numbers** (`src/analysis/`, run from a checkout after `npm install`):
+
+- `npm run report:world -- --seeds 1,2,3,4,5`: generates worlds with the profile new worlds get
+  and prints, per stratum, open space, cave sizes, ore and veins per type, and how much ore a cave
+  shows (exposed) versus how much is buried; then the cave mouths at the surface.
+- `npm run report:backup -- r3-stone.json r3-copper.json`: compares each backup with its world
+  regenerated from the seed and prints a timeline (play time, pickaxe, depth, tiles dug, ore mined
+  and how much came from veins a cave showed, torches placed), then per backup the tiles dug and
+  explored per stratum, the ore mined per type, and the bars, ore, coal and torches carried and in
+  chests.
+
+Both print markdown, so a round's tables can be pasted straight into its entry below.
+
 ## Packages
 
 | Package | Items | Where | Status |
