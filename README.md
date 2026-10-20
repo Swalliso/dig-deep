@@ -246,6 +246,8 @@ npm test          # unit tests (Vitest)
 npm run build     # type-check, then build the static site into dist/
 npm run build:dev # the same, as the dev-site build (own save slot, "DEV BUILD" tag)
 npm run preview   # serve the built dist/ locally
+npm run report:world -- --seeds 1,2,3     # caves and ore per stratum (see PLAYTESTS.md)
+npm run report:backup -- r3-copper.json   # what a playthrough dug, mined and explored
 ```
 
 Add `?debug` to the URL (for example `http://localhost:5173/?debug`) for testing shortcuts:
