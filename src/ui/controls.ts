@@ -57,6 +57,7 @@ export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
   return [
     ['Move', keyPairs('moveLeft', 'moveRight', table)],
     ['Jump', list('jump')],
+    ['Careful walk (no auto step-up)', `Hold ${key('careful')} and move`],
     ['Dig', `Hold ${use} on a tile`],
     ['Place the held block', `${key('use')} on empty space`],
     ['Build a row', `Hold ${use} and sweep`],
@@ -90,7 +91,8 @@ export function overlayHelpLines(table: ActionTable = ACTIONS): string[] {
   const key = (action: Action): string => mainKey(action, table);
   const list = (action: Action): string => keyList(action, table);
   return [
-    `${keyPairs('moveLeft', 'moveRight', table, '/')}: move   ${list('jump')}: jump   ${keyPairs('climbUp', 'climbDown', table, '/')} on a ladder: climb   ${key('climbDown')} on a platform: drop through`,
+    `${keyPairs('moveLeft', 'moveRight', table, '/')}: move   ${list('jump')}: jump   hold ${key('careful')}: careful walk (no auto step-up onto ledges)`,
+    `${keyPairs('climbUp', 'climbDown', table, '/')} on a ladder: climb   ${key('climbDown')} on a platform: drop through`,
     `${key('use')}: dig, or place the held block on an empty spot (hold to sweep), or use the held tool (flare, bomb, rope coil, drill)`,
     `${key('interact')}: open chest or door, sleep in bed or camp (respawn there), ride a lift from a stop   ${key('pickBlock')}: pick block   ${list('quickTorch')}: quick torch`,
     `${hotbarRange(table)} or wheel: select   ${list('dropStack')}: drop stack   ${list('quickStack')}: quick stack to nearby chests`,

@@ -56,6 +56,7 @@ import {
   TILE_SIZE,
   TILE_UPDATE_BUDGET,
   TORCH_LIGHT,
+  WALK_OFF_CATCH_TILES,
 } from './config';
 import {
   brushNeighbours,
@@ -110,6 +111,7 @@ import { checkMine, inReach, Mining, type BrokenTile } from './systems/mining';
 import { hintSeen, markHintSeen, type HintId } from './systems/hints';
 import { Heat, heatStatus, type HeatSafety } from './systems/heat';
 import { saveSettings, type Settings } from './systems/settings';
+import { smartDigTarget, smartPlaceTarget } from './systems/smartCursor';
 import { computeStats, statChanges, type PlayerStats } from './systems/stats';
 import { blastBreaks, blastHits, blastTiles, drillTilesLeft, hangRope, rollUpRope, ropePlan, ropePlanText, RopeSlack } from './systems/tools';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
@@ -344,6 +346,8 @@ export class Game {
   private lastBuildTile: [number, number] = [0, 0];
   /** Tiles placed during this hold (keys ty * width + tx), so a tile mined meanwhile isn't refilled. */
   private readonly builtThisHold = new Set<number>();
+  /** Smart cursor: cursor tiles that have placed their block during this hold (same keys). */
+  private readonly aimedThisHold = new Set<number>();
   private floaters: Floater[] = [];
   private lastHit: Hit | null = null;
   /** The "hold W or S to grab" hint shows the first time the player falls past a ladder. */
@@ -965,6 +969,7 @@ export class Game {
         jumpPressed: actionPressed('jump'),
         jumpHeld: actionDown('jump'),
         climb: (actionDown('climbDown') ? 1 : 0) - (actionDown('climbUp') ? 1 : 0),
+        careful: actionDown('careful'),
         fast: actionDown('modifier'),
       });
     }
@@ -1018,11 +1023,14 @@ export class Game {
       this.leftAction = primaryAction(stack ? stack.item : null, world.getTile(tx, ty));
       this.lastBuildTile = [tx, ty];
       this.builtThisHold.clear();
+      this.aimedThisHold.clear();
       this.campRefusedThisHold = false;
     }
     if (actionPressed('use') && this.leftAction === 'throw') this.throwAt(tx, ty);
     if (actionPressed('use') && this.leftAction === 'rope') this.hangRopeAt(tx, ty);
     let held = this.leftAction === 'dig' && actionDown('use');
+    // The tile being dug: the one under the cursor, or with the smart cursor the nearest one toward it.
+    const [mx, my] = held ? this.digTarget(tx, ty) : [tx, ty];
     let tier = inventory.bestPickaxeTier();
     // The drill (Phase 16) mines at least DRILL_TIER and much faster, while there's coal to burn.
     const drill = inventory.selectedStack?.item === 'drill';
@@ -1032,27 +1040,30 @@ export class Game {
         tier = Math.max(tier, DRILL_TIER);
         speed = DRILL_SPEED;
       } else {
-        mining.say('The drill needs coal', tx, ty);
+        mining.say('The drill needs coal', mx, my);
         held = false;
       }
     }
     const instant = this.instantMine !== 'off';
-    const broken = mining.update(dt, world, player, tx, ty, held, tier, instant, speed);
+    const broken = mining.update(dt, world, player, mx, my, held, tier, instant, speed);
     if (broken) {
       if (speed !== undefined) this.burnDrillFuel();
       this.onTileBroken(broken);
     } else {
-      this.digTick(dt, held && !instant && checkMine(world, player, tx, ty, tier) === 'ok', tx, ty, speed !== undefined);
+      this.digTick(dt, held && !instant && checkMine(world, player, mx, my, tier) === 'ok', mx, my, speed !== undefined);
     }
     if (held) {
       for (const [dx, dy] of brushNeighbours(this.instantMine)) {
-        const extra = mining.breakInstantly(world, player, tx + dx, ty + dy, tier);
+        const extra = mining.breakInstantly(world, player, mx + dx, my + dy, tier);
         if (extra) this.onTileBroken(extra);
       }
     }
     if (this.leftAction === 'build') {
       const [lx, ly] = this.lastBuildTile;
-      for (const [bx, by] of tilesOnLine(lx, ly, tx, ty)) this.buildAt(bx, by);
+      for (const [bx, by] of tilesOnLine(lx, ly, tx, ty)) {
+        if (this.settings.smartCursor) this.smartBuildAt(bx, by, bx === tx && by === ty);
+        else this.buildAt(bx, by);
+      }
       this.lastBuildTile = [tx, ty];
     }
     // Checked after placing, so a click shorter than one step still places once.
@@ -1349,11 +1360,57 @@ export class Game {
     this.camera.clampTo(this.world.width * TILE_SIZE, this.world.height * TILE_SIZE);
   }
 
+  /** The mouse pointer in world px. */
+  private cursorPoint(): [number, number] {
+    return [Math.round(this.camera.x) + mouse.x / this.renderer.scale, Math.round(this.camera.y) + mouse.y / this.renderer.scale];
+  }
+
   /** Tile under the mouse pointer. */
   private cursorTile(): [number, number] {
-    const x = Math.round(this.camera.x) + mouse.x / this.renderer.scale;
-    const y = Math.round(this.camera.y) + mouse.y / this.renderer.scale;
+    const [x, y] = this.cursorPoint();
     return [Math.floor(x / TILE_SIZE), Math.floor(y / TILE_SIZE)];
+  }
+
+  /**
+   * The tile a dig works on, with (tx, ty) the tile under the cursor: that one, or with the smart
+   * cursor the nearest diggable tile toward the cursor (see smartDigTarget), falling back to
+   * (tx, ty) when there's none, so "Too far away" still shows.
+   */
+  private digTarget(tx: number, ty: number): [number, number] {
+    if (!this.settings.smartCursor) return [tx, ty];
+    const [x, y] = this.cursorPoint();
+    return smartDigTarget(this.world, this.player, x, y) ?? [tx, ty];
+  }
+
+  /**
+   * Smart cursor building: with the cursor on tile (cx, cy), place the held block at the nearest
+   * spot toward it (see smartPlaceTarget; toward the pointer itself when `exact`, else toward the
+   * tile's centre, for tiles a fast sweep crossed). Each cursor tile places at most one block per
+   * hold, so holding still places one block and a sweep places one for each tile it crosses.
+   * With no spot that way it tries the cursor tile itself, like the normal cursor.
+   */
+  private smartBuildAt(cx: number, cy: number, exact: boolean): void {
+    const key = cy * this.world.width + cx;
+    if (this.aimedThisHold.has(key)) return;
+    const stack = this.inventory.selectedStack;
+    const tile = stack ? itemDef(stack.item).placeTile : null;
+    const [x, y] = exact ? this.cursorPoint() : [(cx + 0.5) * TILE_SIZE, (cy + 0.5) * TILE_SIZE];
+    const [bx, by] = (tile !== null && smartPlaceTarget(this.world, this.player, x, y, tile)) || [cx, cy];
+    if (this.buildAt(bx, by)) this.aimedThisHold.add(key);
+  }
+
+  /**
+   * With the smart cursor, the tile the left button aims at now (the dig or the block it would
+   * place, for the press being held or one about to start), or null if it uses the tile under
+   * the cursor (cx, cy): other held items, or nothing to aim at that way.
+   */
+  private smartAim(cx: number, cy: number): [number, number] | null {
+    const stack = this.inventory.selectedStack;
+    const action = this.leftAction ?? primaryAction(stack ? stack.item : null, this.world.getTile(cx, cy));
+    const [x, y] = this.cursorPoint();
+    if (action === 'dig') return smartDigTarget(this.world, this.player, x, y);
+    const tile = stack ? itemDef(stack.item).placeTile : null;
+    return action === 'build' && tile !== null ? smartPlaceTarget(this.world, this.player, x, y, tile) : null;
   }
 
   private onTileBroken({ tx, ty, tile }: BrokenTile): void {
@@ -1474,10 +1531,10 @@ export class Game {
     return best;
   }
 
-  /** Drag-building: place the selected block at (tx, ty) unless this hold already did. */
-  private buildAt(tx: number, ty: number): void {
+  /** Drag-building: place the selected block at (tx, ty) unless this hold already did. Returns true if it was placed. */
+  private buildAt(tx: number, ty: number): boolean {
     const key = ty * this.world.width + tx;
-    if (this.builtThisHold.has(key)) return;
+    if (this.builtThisHold.has(key)) return false;
     // Only one camp can stand at a time (it's the one you move around).
     const camp = this.campAt();
     if (this.inventory.selectedStack?.item === 'camp_kit' && camp) {
@@ -1485,9 +1542,9 @@ export class Game {
         this.campRefusedThisHold = true;
         this.toasts.show(`You already have a camp (${depthText(camp.ty + 2 - SURFACE_LEVEL)}). Break it to pack it up, then set it up here.`, 4);
       }
-      return;
+      return false;
     }
-    if (!tryPlace(this.world, this.player, this.inventory, tx, ty)) return;
+    if (!tryPlace(this.world, this.player, this.inventory, tx, ty)) return false;
     this.builtThisHold.add(key);
     const placed = this.world.getTile(tx, ty);
     if (placed === Tile.LiftStop) this.placedLiftStop(tx, ty);
@@ -1497,6 +1554,7 @@ export class Game {
     sfx.place(tileDef(this.world.getTile(tx, ty)).material, this.pan(tx));
     if (placed === Tile.Torch) this.noticeDamp(tx, ty);
     if (isBed(this.world.getTile(tx, ty))) this.toasts.show(`${mainKey('interact')} the bed to respawn there`, 4);
+    return true;
   }
 
   /** A lift stop was just placed: give it a name, and say how to use it the first time. */
@@ -1866,7 +1924,8 @@ export class Game {
       const damage = fallDamage(player.fallLanded, player.stats.safeFallTiles);
       if (damage > 0) this.hurt(damage, { kind: 'fall', tiles: player.fallLanded });
     }
-    const falling = player.fallTop !== null && player.vy > 0 && player.y - player.fallTop > 2 * TILE_SIZE;
+    // Past where walking off into a ladder shaft catches you, so the hint is only for falls it won't.
+    const falling = player.fallTop !== null && player.vy > 0 && player.y - player.fallTop > (WALK_OFF_CATCH_TILES + 1) * TILE_SIZE;
     if (!this.ladderHintShown && falling && player.onLadder(this.world)) {
       this.ladderHintShown = true;
       this.toasts.show(ladderGrabHint(), 4);
@@ -2047,13 +2106,27 @@ export class Game {
   }
 
   /**
-   * Outline the tile under the cursor: white if it can be mined, red if not. With cave-ins on,
-   * a support under the cursor shows the gravel that would fall without it, and a support about
-   * to be placed shows the gravel it would hold up.
+   * Outline the tile under the cursor (see drawCursorAt). With the smart cursor, the tile the
+   * left button aims at instead (see smartAim), marked with yellow corner brackets.
    */
   private drawCursor(camX: number, camY: number): void {
+    const [cx, cy] = this.cursorTile();
+    const aim = this.settings.smartCursor ? this.smartAim(cx, cy) : null;
+    if (!aim) {
+      this.drawCursorAt(cx, cy, camX, camY);
+      return;
+    }
+    this.drawCursorAt(aim[0], aim[1], camX, camY);
+    this.renderer.drawSmartTarget(aim[0], aim[1], camX, camY);
+  }
+
+  /**
+   * Outline tile (tx, ty): white if it can be mined, red if not. With cave-ins on, a support
+   * there shows the gravel that would fall without it, and a support about to be placed shows
+   * the gravel it would hold up.
+   */
+  private drawCursorAt(tx: number, ty: number, camX: number, camY: number): void {
     const { world, renderer } = this;
-    const [tx, ty] = this.cursorTile();
     const check = checkMine(world, this.player, tx, ty, this.inventory.bestPickaxeTier());
     if (check !== 'empty') {
       renderer.drawTileOutline(tx, ty, check === 'ok' ? '#ffffff' : '#ff4040', camX, camY);

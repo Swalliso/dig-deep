@@ -24,6 +24,12 @@ export interface Settings {
   showFps: boolean;
   /** Minimap in the top-right corner (N toggles it while playing). */
   showMinimap: boolean;
+  /**
+   * Smart cursor (an accessibility option): digging and placing aim along the line from the
+   * player toward the pointer, at the nearest tile that can be dug or the nearest spot a block
+   * can go (see systems/smartCursor.ts), so the pointer needn't be on the exact tile.
+   */
+  smartCursor: boolean;
 }
 
 export const SETTINGS_KEY = storageKey('settings');
@@ -38,6 +44,7 @@ export function defaultSettings(): Settings {
     pixelScale: 'auto',
     showFps: false,
     showMinimap: true,
+    smartCursor: false,
   };
 }
 
@@ -62,6 +69,7 @@ export function parseSettings(json: string | null): Settings {
   if (s.pixelScale === 'auto' || s.pixelScale === 2 || s.pixelScale === 3) settings.pixelScale = s.pixelScale;
   if (typeof s.showFps === 'boolean') settings.showFps = s.showFps;
   if (typeof s.showMinimap === 'boolean') settings.showMinimap = s.showMinimap;
+  if (typeof s.smartCursor === 'boolean') settings.smartCursor = s.smartCursor;
   return settings;
 }
 

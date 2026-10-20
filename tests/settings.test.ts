@@ -21,6 +21,7 @@ describe('settings', () => {
       pixelScale: 'auto',
       showFps: false,
       showMinimap: true,
+      smartCursor: false,
     });
     expect(parseSettings(null)).toEqual(defaults);
     expect(parseSettings('not json')).toEqual(defaults);
@@ -28,8 +29,15 @@ describe('settings', () => {
   });
 
   it('round-trip through JSON', () => {
-    const settings = { masterVolume: 0, sfxVolume: 0.35, ambienceVolume: 0.2, screenShake: false, reducedFlashes: true, pixelScale: 3 as const, showFps: true, showMinimap: false };
+    const settings = { masterVolume: 0, sfxVolume: 0.35, ambienceVolume: 0.2, screenShake: false, reducedFlashes: true, pixelScale: 3 as const, showFps: true, showMinimap: false, smartCursor: true };
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
+  });
+
+  it('keep the smart cursor off unless it was switched on', () => {
+    // Settings saved before the smart cursor existed get it off.
+    expect(parseSettings(JSON.stringify({ masterVolume: 0.5 })).smartCursor).toBe(false);
+    expect(parseSettings(JSON.stringify({ smartCursor: 'yes' })).smartCursor).toBe(false);
+    expect(parseSettings(JSON.stringify({ smartCursor: true })).smartCursor).toBe(true);
   });
 
   it('fill in missing or invalid fields with defaults and clamp volumes', () => {

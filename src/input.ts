@@ -17,8 +17,9 @@ export interface ActionDef {
  * tooltips and hints all read key names from here (see ui/controls.ts), so a remapping screen
  * only has to edit this table. Some actions share a key on purpose: W/↑ both jumps and climbs,
  * Space also respawns from the death screen, Enter also finishes typing a pin name, the left
- * mouse button uses the held item in the world and clicks in menus, and the right one interacts
- * in the world and pins things in the crafting panel and on the map.
+ * mouse button uses the held item in the world and clicks in menus, the right one interacts
+ * in the world and pins things in the crafting panel and on the map, and Shift is careful walk
+ * in the world and the shift-click modifier in the inventory panel (the world is paused there).
  */
 const ACTION_DEFS = {
   moveLeft: { label: 'Move left', keys: ['KeyA', 'ArrowLeft'] },
@@ -26,6 +27,7 @@ const ACTION_DEFS = {
   jump: { label: 'Jump', keys: ['Space', 'KeyW', 'ArrowUp'] },
   climbUp: { label: 'Climb up (pan the map up)', keys: ['KeyW', 'ArrowUp'] },
   climbDown: { label: 'Climb down, or drop through a platform', keys: ['KeyS', 'ArrowDown'] },
+  careful: { label: 'Careful walk: no auto step-up onto 1-tile ledges', keys: ['ShiftLeft', 'ShiftRight'] },
   use: { label: 'Dig, place the held block or use the held tool', keys: ['MouseLeft'] },
   interact: { label: 'Open a chest or door, sleep in a bed or camp, or use a lift stop', keys: ['MouseRight'] },
   pin: { label: 'Pin a recipe (crafting panel) or add or edit a map pin (map)', keys: ['MouseRight'] },

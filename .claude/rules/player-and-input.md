@@ -4,6 +4,7 @@ paths:
   - "src/input.ts"
   - "src/systems/building.ts"
   - "src/systems/mining.ts"
+  - "src/systems/smartCursor.ts"
   - "src/ui/controls.ts"
   - "tests/player.test.ts"
   - "tests/traversal.test.ts"
@@ -11,6 +12,7 @@ paths:
   - "tests/mining.test.ts"
   - "tests/actions.test.ts"
   - "tests/controls.test.ts"
+  - "tests/smartCursor.test.ts"
 ---
 
 # Player, physics, mining and input
@@ -22,6 +24,14 @@ paths:
   `JUMP_CORNER_CORRECTION` (6 px), slides sideways past it and keeps rising, so jumping into a
   one-tile hole doesn't need perfect alignment. Only if the shifted box is clear; a head-on hit
   still stops the jump, and jump height is unchanged. Not on ladders or in fly mode.
+- **Careful walk** (playtest, the `careful` action, Shift): while held there's no auto step-up
+  onto 1-tile ledges, so shaving a layer off the ground while walking doesn't lift the player
+  onto it. It doesn't stop the player walking off ledges (decided). Shift is also the `modifier`
+  (panel only, where the world is paused) and debug fly's fast key.
+- **Walk-off ladder catch** (Phase 11b, changed in playtesting): walking off a ledge into a
+  ladder or rope column catches the player only once the fall has passed
+  `WALK_OFF_CATCH_TILES` (3), so a one-tile step down beside a rope doesn't latch on. W or S
+  grab one at any height; jumping or dropping in never catches.
 - **S drops through platforms**: pressing S while standing on a platform drops through it
   (ROADMAP's Phase 10 had S + Space, which still works). Holding S keeps dropping through the
   platforms below; letting go stops on the next one. S held since before landing (falling or off
@@ -37,6 +47,17 @@ paths:
   the nearest chest in reach. (The spec had left mine and right place; a tester found right-click
   doing both placing and interacting confusing.)
 - The floating "Need better pickaxe" hint (instead of a toast) was reviewed and kept.
+- **Smart cursor** (playtest, a Settings switch framed as accessibility, off by default; no key,
+  since Ctrl+W can close the tab and a toggle key waits for the remapping screen): a dig aims at
+  the first tile on the line from the player's centre toward the pointer that's solid (or is the
+  pointed tile itself, so ladders, torches and trees are only dug when pointed at), within reach;
+  a held block goes in the first spot on that line that `canPlace` accepts (tiles on the line
+  don't block it, so a row grows outward; the player's own tiles are skipped unless pointed at).
+  Both lines run out to reach, past the pointer. With nothing found, the tile under the pointer
+  is used as before (so its hints show). Smart drag-building places at most one block per cursor
+  tile per hold (`aimedThisHold` in game.ts), so a click places one and a sweep one per tile
+  crossed. The target gets yellow corner brackets around its usual outline. Throwing, ropes,
+  right-click, middle-click and quick torch keep using the tile under the pointer.
 - **Input**: game code reads keys only through actions (`actionDown('jump')`,
   `actionPressed('inventory')`) from the table in `input.ts`. Any text that names a key builds it
   with the helpers in `ui/controls.ts`, so a remapping screen only edits the table. A test

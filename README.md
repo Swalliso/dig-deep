@@ -16,6 +16,7 @@ and pick **Normal** or **Cozy**).
 | ---------------------------------- | ------------------------- |
 | Move                               | A / D or ← / →            |
 | Jump                               | Space, W or ↑             |
+| Careful walk (no auto step-up)     | Hold Shift and move       |
 | Dig                                | Hold left mouse on a tile |
 | Place the held block               | Left mouse on empty space |
 | Build a row                        | Hold left mouse and sweep |
@@ -43,6 +44,8 @@ and pick **Normal** or **Cozy**).
   it (hold and sweep to build a row); pointing at a tile digs it with your best pickaxe,
   whatever is selected. **Right mouse interacts**: it opens chests and doors, sets your bed or
   camp as the respawn point and calls a lift at a lift stop, and never digs or places. In the crafting panel it pins a recipe, and on the map it adds a pin.
+- **Walking into a 1-tile ledge steps you up onto it.** Hold **Shift** while walking to stay
+  down (careful walk), for shaving a layer off the ground without climbing onto it.
 - **T places a torch** from anywhere in your inventory without changing what you hold: at the
   cursor, or when that spot can't take one, right next to you. It tells you when you have no
   torches or there's nowhere to put one.
@@ -124,7 +127,8 @@ and pick **Normal** or **Cozy**).
   is on the other side).
 - **Health** (Normal worlds): 10 HP, shown as 5 hearts in the top left. Falls of more than 12
   tiles hurt; grab a ladder on the way down (hold W or S) and the fall ends safely, and walking
-  off a ledge into a ladder shaft catches you on the ladder. Health comes back slowly after 5 s
+  off a ledge into a ladder shaft catches you on the ladder once you've fallen 3 tiles (so a
+  small step down beside a ladder or rope doesn't latch on). Health comes back slowly after 5 s
   without damage, but only in established light (see the dark, above). Right after a hit you can't be hurt again for a moment (the hearts get a light
   outline and a bar under them).
 - **Beds** (10 planks and 4 wood at a workbench) are two tiles wide. Right-click one to respawn
@@ -222,9 +226,14 @@ and pick **Normal** or **Cozy**).
   twice. Backups only import into the version of the game that saved them.
 - **Settings** (on the title screen and the pause menu) has the master, sound-effect and
   ambience volumes (ambience is each stratum's quiet background sound), screen shake, reduced
-  flashes (no break flash, ore glints or red hurt flash), pixel scale (auto, 2x or 3x), an FPS
-  counter and the minimap. They're kept per browser. Sound starts after your first click or key
-  press, as browsers require.
+  flashes (no break flash, ore glints or red hurt flash), the smart cursor, pixel scale (auto,
+  2x or 3x), an FPS counter and the minimap. They're kept per browser. Sound starts after your
+  first click or key press, as browsers require.
+- **Smart cursor** (Settings, off at first) makes aiming easier: digging works on the nearest
+  tile toward the pointer (you only need to point the right way, within reach), and a held
+  block goes in the nearest spot toward the pointer where it can be placed. Ladders, torches,
+  platforms and trees are only dug when you point right at them. The target gets yellow corner
+  brackets. Throwing, ropes and right-click still use the tile under the pointer.
 
 ## Development
 

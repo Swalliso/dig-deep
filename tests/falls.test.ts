@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_HEIGHT, SAFE_FALL_TILES, TILE_SIZE } from '../src/config';
+import { PLAYER_HEIGHT, SAFE_FALL_TILES, TILE_SIZE, WALK_OFF_CATCH_TILES } from '../src/config';
 import { Player, type PlayerControls } from '../src/entities/player';
 import { Inventory } from '../src/systems/inventory';
 import { fallDamage } from '../src/systems/health';
@@ -95,12 +95,44 @@ describe('falls', () => {
     }
     expect(player.climbing).toBe(true);
     expect(caught).toBe(true);
-    // Caught at once: barely below the tunnel floor, and no fall in progress.
-    expect(player.y + PLAYER_HEIGHT).toBeLessThan(30 * TILE_SIZE + 2);
+    // Caught just past WALK_OFF_CATCH_TILES below the tunnel floor, long before any damage, and
+    // no fall in progress.
+    const caughtAt = player.y + PLAYER_HEIGHT;
+    expect(caughtAt).toBeGreaterThan((30 + WALK_OFF_CATCH_TILES) * TILE_SIZE);
+    expect(caughtAt).toBeLessThan((30 + WALK_OFF_CATCH_TILES) * TILE_SIZE + 10);
+    expect(WALK_OFF_CATCH_TILES).toBeLessThan(SAFE_FALL_TILES);
     expect(player.fallTop).toBeNull();
     for (let i = 0; i < 60; i++) player.update(DT, world, IDLE);
     expect(player.climbing).toBe(true);
-    expect(player.y + PLAYER_HEIGHT).toBeLessThan(30 * TILE_SIZE + 2);
+    expect(player.y + PLAYER_HEIGHT).toBe(caughtAt);
+  });
+
+  it('a small step down beside a ladder or rope does not catch you', () => {
+    // Ground at row 30 up to column 9, then one tile lower; a rope hangs down column 10 from an
+    // overhang to the lower ground, so walking right steps down a tile through the rope's column.
+    for (const hanging of [Tile.Rope, Tile.Ladder]) {
+      const world = new World(30, 60, 0);
+      fill(world, 0, 30, 9, 59, Tile.Stone);
+      fill(world, 10, 31, 29, 59, Tile.Stone);
+      fill(world, 10, 20, 12, 20, Tile.Stone); // the overhang
+      fill(world, 10, 21, 10, 30, hanging);
+      const player = new Player(7, 29);
+      player.update(DT, world, IDLE);
+      expect(player.grounded).toBe(true);
+      let climbed = false;
+      for (let i = 0; i < 60; i++) {
+        player.update(DT, world, RIGHT);
+        climbed ||= player.climbing;
+      }
+      expect(climbed, `${hanging}`).toBe(false);
+      expect(player.x).toBeGreaterThan(12 * TILE_SIZE); // walked on past it
+      expect(player.y + PLAYER_HEIGHT).toBe(31 * TILE_SIZE);
+      // W or S still grabs it at any height.
+      const grabber = new Player(10, 30);
+      grabber.update(DT, world, IDLE);
+      grabber.update(DT, world, { ...IDLE, climb: -1 });
+      expect(grabber.climbing).toBe(true);
+    }
   });
 
   it('jumping into a ladder shaft does not catch you', () => {

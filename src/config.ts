@@ -134,6 +134,10 @@ export const CLIMB_SPEED = 140; // px/s up or down (a 100 m shaft takes about 11
 export const CLIMB_SIDE_SPEED = 60; // px/s sideways while on a ladder; stepping off its column lets go
 export const LADDER_REGRAB_DELAY = 0.25; // s after letting go before the ladder can be grabbed again
 export const CLIMB_STEP_DISTANCE = 16; // px climbed per rung sound
+// Walking off a ledge into a ladder (or rope) column catches you on it once you have fallen this
+// far, so walking into a shaft isn't a long fall but stepping down a small ledge beside a rope
+// doesn't latch on. W or S grab one at any height.
+export const WALK_OFF_CATCH_TILES = 3;
 
 // --- Health, falls and respawn (Phase 11b) ---
 // Base values for the player's stats; src/systems/stats.ts adds equipment and boons on top.
