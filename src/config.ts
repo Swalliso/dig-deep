@@ -210,8 +210,10 @@ export const BOMB_GRAVITY = 900; // px/s^2
 export const BOMB_MAX = 8; // fused at once; throwing another sets off the oldest early
 // Rope coil: hung from an empty spot (with something solid above it or beside it), it unrolls
 // a rope ladder straight down, through open space, up to ROPE_LENGTH tiles. Breaking any part of
-// it rolls the whole rope back up into coils.
+// it rolls the whole rope back up into coils. When the tile under its end opens up, it unrolls
+// further into the open, up to the rest of its coils (at most ROPE_UNROLL_BUDGET ropes a step).
 export const ROPE_LENGTH = 20; // tiles
+export const ROPE_UNROLL_BUDGET = 8; // ropes unrolled into new air per step
 // Drill: mines at least the emberite pickaxe's tier, much faster, as long as there's coal to
 // burn: one coal per DRILL_TILES_PER_COAL tiles broken.
 export const DRILL_TIER = 5;
@@ -429,6 +431,22 @@ export const SFX_VOLUMES = {
   bomb: 0.7,
 } as const;
 export const SFX_SAME_SOUND_GAP = 0.03; // s; the same sound (e.g. a break of one material) plays at most this often
+// Mixing (playtest P1-01): effects play through their own limiter, which holds a pile-up of
+// sounds down without touching the ambience, and the master has a limiter that only catches what
+// would still clip. Neither engages when felling or digging fast, even with every volume at 100%
+// (measured offline). Web Audio's compressor adds makeup gain that grows as its threshold drops:
+// the effects limiter's (+2.8 dB) and AMBIENCE_TRIM keep the default volumes about as loud as the
+// old 12:1 master compressor (with its +3.7 dB) made them.
+export const SFX_LIMIT_THRESHOLD = -6; // dBFS where the effects limiter starts holding sounds down
+export const SFX_LIMIT_ATTACK = 0.005; // s
+export const SFX_LIMIT_RELEASE = 0.15; // s
+export const MASTER_LIMIT_THRESHOLD = -1; // dBFS
+export const MASTER_LIMIT_ATTACK = 0.003; // s
+export const MASTER_LIMIT_RELEASE = 0.1; // s
+export const LIMITER_RATIO = 12;
+export const LIMITER_KNEE = 3; // dB
+export const AMBIENCE_TRIM = 1.45; // fixed gain on the ambience bus, under the settings' volume
+export const AMBIENCE_MAX_VOICES = 6; // ambient events playing at once (their own budget, apart from SFX_MAX_VOICES)
 export const DIG_TICK_INTERVAL = 0.13; // s between dig ticks while holding the mine button on a tile
 export const DIG_TICK_FREQ = 180; // Hz of a dig tick on a tile of hardness 0...
 export const DIG_TICK_FREQ_PER_HARDNESS = 320; // ...plus this per point of hardness (dirt ~280 Hz, deepstone ~980 Hz)
@@ -541,13 +559,16 @@ export const DEBUG_STRATUM_SEARCH_COLUMNS = 40;
 // --- Renewable wood (Phase 14a) ---
 // Leaves drop a sapling now and then (felled canopies too), and giant mushroom caps drop
 // mushroom spores. Planted (a sapling on grass or dirt, spores on mudstone), they grow into a
-// tree or a giant mushroom after PLANT_GROW_MIN..PLANT_GROW_MAX seconds of play, once there's
-// room. Growth runs on the session clock, checked every PLANT_CHECK_INTERVAL.
+// tree or a giant mushroom after PLANT_GROW_MIN..PLANT_GROW_MAX seconds of play, if they can
+// then: a sapling needs open sky, room above it and no other trunk within PLANT_SPACING columns;
+// spores need room for the whole mushroom. One that can't starts a fresh grow time. Growth runs
+// on the session clock, checked every PLANT_CHECK_INTERVAL.
 export const SAPLING_CHANCE = 0.12;
 export const SPORE_CHANCE = 0.15;
 export const PLANT_GROW_MIN = 240; // s
 export const PLANT_GROW_MAX = 420; // s
 export const PLANT_CHECK_INTERVAL = 1; // s
+export const PLANT_SPACING = 3; // columns either side of a sapling that must be free of trunks (three clear tiles between trees)
 export const GIANT_MUSHROOM_STEM_MIN = 3; // tiles under the cap
 export const GIANT_MUSHROOM_STEM_MAX = 6;
 

@@ -66,8 +66,8 @@ interface MovingLight {
  * to it without touching it: each one relights only its own small patch, when it moves to
  * another tile or a tile in its patch changes. `level` is the brightest of all of them.
  */
-/** Stops sky light falling down a column: any solid tile but a door. */
-function blocksSky(tile: number): boolean {
+/** Stops sky light falling down a column: any solid tile but a door. (Saplings need sky: see plants.ts.) */
+export function blocksSky(tile: number): boolean {
   return isSolid(tile) && !isDoor(tile);
 }
 

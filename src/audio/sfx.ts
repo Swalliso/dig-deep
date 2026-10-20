@@ -1,16 +1,26 @@
 import {
   AMBIENCE_FADE,
+  AMBIENCE_MAX_VOICES,
+  AMBIENCE_TRIM,
   AMBIENCE_VOLUMES,
   DEFAULT_AMBIENCE_VOLUME,
   DEFAULT_MASTER_VOLUME,
   DEFAULT_SFX_VOLUME,
   DIG_TICK_FREQ,
   DIG_TICK_FREQ_PER_HARDNESS,
+  LIMITER_KNEE,
+  LIMITER_RATIO,
+  MASTER_LIMIT_ATTACK,
+  MASTER_LIMIT_RELEASE,
+  MASTER_LIMIT_THRESHOLD,
   PICKUP_FREQ,
   PICKUP_MAX_DELAY,
   PICKUP_RUN_STEPS,
   PICKUP_RUN_WINDOW,
   PICKUP_SPACING,
+  SFX_LIMIT_ATTACK,
+  SFX_LIMIT_RELEASE,
+  SFX_LIMIT_THRESHOLD,
   SFX_MAX_VOICES,
   SFX_PAN,
   SFX_PITCH_JITTER,
@@ -29,6 +39,10 @@ import type { TileMaterial } from '../world/tiles';
 // Strata worlds also have ambience (Phase 14a): a quiet bed of sound per stratum that loops for
 // as long as the player is in it, plus events played now and then on top. It has its own bus
 // and volume setting, under the master volume.
+//
+// Mixing: effects → SFX volume → effects limiter → master volume → master limiter → speakers, and
+// ambience → ambience volume → master volume, so a burst of effects never pushes the ambience
+// down. The limiters are there for pile-ups and loud settings; at normal levels neither engages.
 
 let ctx: AudioContext | null = null;
 /** SFX volume; every sound plays into it. */
@@ -36,14 +50,16 @@ let sfxBus: GainNode | null = null;
 /** Ambience volume; the stratum beds and ambient events play into it. */
 let ambienceBus: GainNode | null = null;
 let masterBus: GainNode | null = null;
-/** One second of white noise, played from a random offset by every noise layer. */
+/** One second of white noise, looped from a random offset by every noise layer. */
 let noise: AudioBuffer | null = null;
 /** Four seconds of brown (deep) noise, looped under the ambience beds. */
 let brownNoise: AudioBuffer | null = null;
 let masterVolume = DEFAULT_MASTER_VOLUME;
 let sfxVolume = DEFAULT_SFX_VOLUME;
 let ambienceVolume = DEFAULT_AMBIENCE_VOLUME;
+/** Effects playing now (up to SFX_MAX_VOICES), and ambient events (up to AMBIENCE_MAX_VOICES). */
 let voices = 0;
+let ambientVoices = 0;
 /** Context time each sound key last played, for SFX_SAME_SOUND_GAP. */
 const lastPlayed = new Map<string, number>();
 /** Pickup run: the scale step of the last blip and when it plays. */
@@ -68,18 +84,21 @@ function createContext(): void {
   } catch {
     return; // no Web Audio: the game stays silent
   }
-  // The compressor keeps a pile-up of sounds (a felled tree) from clipping.
-  const compressor = ctx.createDynamicsCompressor();
-  compressor.connect(ctx.destination);
+  // The effects' limiter holds a pile-up of sounds (a felled tree) down; the ambience skips it.
+  // The master limiter only catches what would still clip.
+  const masterLimiter = limiter(ctx, MASTER_LIMIT_THRESHOLD, MASTER_LIMIT_ATTACK, MASTER_LIMIT_RELEASE);
+  masterLimiter.connect(ctx.destination);
   masterBus = ctx.createGain();
-  masterBus.connect(compressor);
+  masterBus.connect(masterLimiter);
+  const sfxLimiter = limiter(ctx, SFX_LIMIT_THRESHOLD, SFX_LIMIT_ATTACK, SFX_LIMIT_RELEASE);
+  sfxLimiter.connect(masterBus);
   sfxBus = ctx.createGain();
-  sfxBus.connect(masterBus);
+  sfxBus.connect(sfxLimiter);
   ambienceBus = ctx.createGain();
   ambienceBus.connect(masterBus);
   masterBus.gain.value = gainFor(masterVolume);
   sfxBus.gain.value = gainFor(sfxVolume);
-  ambienceBus.gain.value = gainFor(ambienceVolume);
+  ambienceBus.gain.value = gainFor(ambienceVolume) * AMBIENCE_TRIM;
 
   noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const data = noise.getChannelData(0);
@@ -94,6 +113,17 @@ function createContext(): void {
   }
 }
 
+/** A compressor set up as a limiter: it leaves sounds alone up to `threshold` dBFS. */
+function limiter(c: AudioContext, threshold: number, attack: number, release: number): DynamicsCompressorNode {
+  const node = c.createDynamicsCompressor();
+  node.threshold.value = threshold;
+  node.knee.value = LIMITER_KNEE;
+  node.ratio.value = LIMITER_RATIO;
+  node.attack.value = attack;
+  node.release.value = release;
+  return node;
+}
+
 /** Volumes from the settings, 0..1 each. */
 export function setVolumes(master: number, sfx: number, ambience = ambienceVolume): void {
   masterVolume = master;
@@ -103,14 +133,14 @@ export function setVolumes(master: number, sfx: number, ambience = ambienceVolum
   // A short glide instead of a jump, so dragging a slider doesn't click.
   masterBus.gain.setTargetAtTime(gainFor(master), ctx.currentTime, 0.02);
   sfxBus.gain.setTargetAtTime(gainFor(sfx), ctx.currentTime, 0.02);
-  ambienceBus.gain.setTargetAtTime(gainFor(ambience), ctx.currentTime, 0.02);
+  ambienceBus.gain.setTargetAtTime(gainFor(ambience) * AMBIENCE_TRIM, ctx.currentTime, 0.02);
 }
 
 const gainFor = (volume: number): number => volume * volume;
 
 /** For the F3 overlay. */
 export function audioStatus(): string {
-  return ctx ? `${ctx.state}, ${voices} playing, ambience ${bed?.id ?? 'none'}` : 'starts on the first click';
+  return ctx ? `${ctx.state}, ${voices} playing (+${ambientVoices} ambient), ambience ${bed?.id ?? 'none'}` : 'starts on the first click';
 }
 
 // --- Building blocks ---
@@ -133,15 +163,17 @@ interface PlayOptions {
   delay?: number;
   /** Skip it if a sound with this key played less than SFX_SAME_SOUND_GAP ago. */
   key?: string;
-  /** Ambient events play into the ambience bus instead of the SFX bus. */
+  /** Ambient events play into the ambience bus instead of the SFX bus, with their own voice budget. */
   ambience?: boolean;
 }
 
 /** Play one sound made of the layers `build` adds, unless audio is off or too busy. */
 function play(options: PlayOptions, build: (v: Voice) => void): void {
-  const bus = options.ambience ? ambienceBus : sfxBus;
+  const ambient = options.ambience === true;
+  const bus = ambient ? ambienceBus : sfxBus;
   if (!ctx || !bus || !noise || ctx.state === 'closed') return;
-  if (masterVolume <= 0 || (options.ambience ? ambienceVolume : sfxVolume) <= 0 || voices >= SFX_MAX_VOICES) return;
+  if (masterVolume <= 0 || (ambient ? ambienceVolume : sfxVolume) <= 0) return;
+  if (ambient ? ambientVoices >= AMBIENCE_MAX_VOICES : voices >= SFX_MAX_VOICES) return;
   const now = ctx.currentTime;
   if (options.key) {
     if (now - (lastPlayed.get(options.key) ?? -Infinity) < SFX_SAME_SOUND_GAP) return;
@@ -159,9 +191,11 @@ function play(options: PlayOptions, build: (v: Voice) => void): void {
   }
   const v: Voice = { t: now + (options.delay ?? 0), out, last: null, end: 0 };
   build(v);
-  voices++;
+  if (ambient) ambientVoices++;
+  else voices++;
   const done = (): void => {
-    voices--;
+    if (ambient) ambientVoices--;
+    else voices--;
     out.disconnect();
   };
   if (v.last) v.last.onended = done;
@@ -207,6 +241,9 @@ function noiseBurst(v: Voice, layer: NoiseLayer): void {
   const t0 = v.t + (layer.delay ?? 0);
   const src = c.createBufferSource();
   src.buffer = noise;
+  // Looped, so a layer longer than what's left of the buffer after its random start doesn't stop
+  // dead partway (a click, and the voice's other layers cut off with it).
+  src.loop = true;
   const filter = c.createBiquadFilter();
   filter.type = layer.filter;
   filter.Q.value = layer.q ?? 1;

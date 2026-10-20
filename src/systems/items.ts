@@ -27,6 +27,7 @@ import {
   MAX_STACK,
   PLANT_GROW_MAX,
   PLANT_GROW_MIN,
+  PLANT_SPACING,
   SPAN_MAX,
   SUPPORT_REACH,
   TILE_SIZE,
@@ -227,11 +228,21 @@ export const ITEMS = {
   // Phase 14a: renewable wood.
   sapling: {
     ...block('Sapling', Tile.Sapling, 'Plant it on grass or dirt and it grows into a tree.'),
-    details: [`It grows in ${growTime} of play, once there's room.`, 'Leaves drop saplings now and then.'],
+    details: [
+      `It grows in ${growTime} of play under open sky,`,
+      `with room above it and ${PLANT_SPACING} clear tiles from other trees.`,
+      "If it can't when its time comes, its time starts again.",
+      "Point at a planted one to see how it's doing.",
+      'Leaves drop saplings now and then.',
+    ],
   },
   mushroom_spores: {
     ...block('Mushroom spores', Tile.MushroomSprout, 'Plant them on mudstone and a giant mushroom grows.'),
-    details: [`It grows in ${growTime} of play, once there's room.`, 'Giant mushroom stems give wood, and their caps drop spores.'],
+    details: [
+      `It grows in ${growTime} of play, even in the dark,`,
+      "if there's room for its cap (if not, its time starts again).",
+      'Giant mushroom stems give wood, and their caps drop spores.',
+    ],
   },
   // Phase 14b: the strata's rules and the Heart of the Deep.
   floatstone: {
@@ -323,6 +334,8 @@ export const ITEMS = {
       'Click an empty spot with something solid above',
       'or beside it, over a shaft. You can climb it like',
       'a ladder. Break any part of it to roll it back up.',
+      'Dig out the floor under its end and it unrolls',
+      'further, up to the rest of its coil.',
     ],
     maxStack: MAX_STACK,
     placeTile: null,

@@ -4,8 +4,8 @@ import { isSolid, Tile, tileDef } from '../world/tiles';
 import type { World } from '../world/world';
 import { inReach } from './mining';
 
-// Phase 16's tools: what a bomb's blast breaks and whom it hurts, where a rope coil hangs and how
-// a rope rolls back up, and the drill's fuel. Plain functions over the world, so they're tested
+// Phase 16's tools: what a bomb's blast breaks and whom it hurts, where a rope coil hangs, how
+// a rope rolls back up and unrolls into new air, and the drill's fuel. Plain functions over the world, so they're tested
 // without the game.
 
 // --- Bombs ---
@@ -94,6 +94,70 @@ export function rollUpRope(world: World, tx: number, ty: number): number {
     }
   }
   return Math.ceil(length / ROPE_LENGTH);
+}
+
+/**
+ * Tiles of rope still rolled up on a rope `length` tiles long: it took ceil(length / ROPE_LENGTH)
+ * coils, and that many coils hold this much more.
+ */
+export function ropeSlack(length: number): number {
+  return Math.ceil(length / ROPE_LENGTH) * ROPE_LENGTH - length;
+}
+
+/**
+ * If a rope's bottom end is right above (tx, ty) and that tile is open air, the rope unrolls down
+ * into the open from there, up to its slack (see ropeSlack). Its length still rolls back up into
+ * the coils it took. Returns how many tiles it unrolled.
+ */
+export function unrollSlack(world: World, tx: number, ty: number): number {
+  if (world.getTile(tx, ty) !== Tile.Air || world.getTile(tx, ty - 1) !== Tile.Rope) return 0;
+  let length = 0;
+  for (let y = ty - 1; world.getTile(tx, y) === Tile.Rope; y--) length++;
+  const slack = ropeSlack(length);
+  let more = 0;
+  while (more < slack && world.inBounds(tx, ty + more) && world.getTile(tx, ty + more) === Tile.Air) more++;
+  hangRope(world, tx, ty, more);
+  return more;
+}
+
+/**
+ * Ropes unroll into new air: when the tile under a rope's bottom end opens up (dug out, fallen
+ * away, blown up), the rope unrolls down into it, up to its slack. Tile changes queue those
+ * spots, and update() unrolls up to a budget of them per step. Nothing needs saving: the slack
+ * follows from the rope's length.
+ */
+export class RopeSlack {
+  private readonly world: World;
+  /** Spots under a rope's end that opened up, as ty * width + tx. */
+  private readonly queued = new Set<number>();
+
+  constructor(world: World) {
+    this.world = world;
+    world.onTileChange((tx, ty) => {
+      if (world.getTile(tx, ty) === Tile.Air && world.getTile(tx, ty - 1) === Tile.Rope) this.queued.add(ty * world.width + tx);
+    });
+  }
+
+  /** Spots waiting to be checked. */
+  get size(): number {
+    return this.queued.size;
+  }
+
+  /** Unroll up to `budget` of the waiting ropes. Returns where each one that unrolled now ends. */
+  update(budget: number): { tx: number; ty: number }[] {
+    const { world } = this;
+    const unrolled: { tx: number; ty: number }[] = [];
+    let done = 0;
+    for (const key of this.queued) {
+      if (done++ >= budget) break;
+      this.queued.delete(key);
+      const tx = key % world.width;
+      const ty = Math.floor(key / world.width);
+      const more = unrollSlack(world, tx, ty);
+      if (more > 0) unrolled.push({ tx, ty: ty + more - 1 });
+    }
+    return unrolled;
+  }
 }
 
 /** "Rope ladder: 20 m, ends 7 m above the floor": what the cursor says before a rope coil is used. */

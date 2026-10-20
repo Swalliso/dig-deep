@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { GIANT_MUSHROOM_STEM_MIN, PLANT_GROW_MAX, PLANT_GROW_MIN, SAPLING_CHANCE, SPORE_CHANCE, TREE_TRUNK_MIN } from '../src/config';
+import { GIANT_MUSHROOM_STEM_MIN, PLANT_GROW_MAX, PLANT_GROW_MIN, PLANT_SPACING, SAPLING_CHANCE, SPORE_CHANCE, TREE_TRUNK_MIN } from '../src/config';
 import { Player } from '../src/entities/player';
 import { canPlace } from '../src/systems/building';
 import { Inventory } from '../src/systems/inventory';
 import { createSave, restoreTileEntities } from '../src/systems/save';
 import { createRng } from '../src/util/rng';
-import { canPlantOn, growDuePlants, growGiantMushroom, newPlant, plantGrowTime } from '../src/world/plants';
+import { canPlantOn, growDuePlants, growGiantMushroom, newPlant, openToSky, plantGrowTime, plantStatus, plantStatusText } from '../src/world/plants';
 import { TileEntities } from '../src/world/tileEntities';
 import { chanceDropFor, Tile, tileDef, type TileId } from '../src/world/tiles';
 import { fellTreeAbove, isTrunk } from '../src/world/trees';
@@ -76,17 +76,101 @@ describe('growing', () => {
     expect(entities.size).toBe(0); // the tile changed, so its entity went
   });
 
-  it('waits for room, then grows (as tall as the room allows)', () => {
+  it('grows only as tall as the room allows', () => {
     const { world, entities } = setup();
     plant(world, entities, Tile.Sapling, 30, 10);
-    world.setTile(30, GROUND - 5, Tile.Stone); // a ceiling 3 tiles above the sapling: too low
-    expect(growDuePlants(world, entities, 50)).toEqual([]);
-    expect(world.getTile(30, GROUND - 1)).toBe(Tile.Sapling);
-    expect(entities.size).toBe(1);
-    world.setTile(30, GROUND - 5, Tile.Air);
-    world.setTile(30, GROUND - 7, Tile.Stone); // room for the shortest trunk and its canopy's middle
-    expect(growDuePlants(world, entities, 51)).toHaveLength(1);
+    // Room for the shortest trunk and its canopy's middle, under a beam (it doesn't block the sky).
+    world.setTile(30, GROUND - 7, Tile.Beam);
+    expect(plantStatus(world, 30, GROUND - 1)).toBe('growing');
+    expect(growDuePlants(world, entities, 50)).toHaveLength(1);
     expect(count(world, Tile.Wood)).toBe(TREE_TRUNK_MIN);
+  });
+
+  it("starts a plant's time again if it can't grow when it's due, instead of banking it", () => {
+    const { world, entities } = setup();
+    plant(world, entities, Tile.Sapling, 30, 10);
+    world.setTile(30, GROUND - 5, Tile.Beam); // 3 tiles above the sapling: too low
+    expect(plantStatus(world, 30, GROUND - 1)).toBe('noRoom');
+    expect(growDuePlants(world, entities, 50, () => 0.5)).toEqual([]);
+    expect(world.getTile(30, GROUND - 1)).toBe(Tile.Sapling);
+    expect(entities.get(30, GROUND - 1)).toEqual({ kind: 'plant', growAt: 50 + plantGrowTime(0.5) });
+    // Clearing the way doesn't make it spring up: it waits out its fresh time.
+    world.setTile(30, GROUND - 5, Tile.Air);
+    expect(plantStatus(world, 30, GROUND - 1)).toBe('growing');
+    expect(growDuePlants(world, entities, 51)).toEqual([]);
+    expect(growDuePlants(world, entities, 50 + plantGrowTime(0.5))).toHaveLength(1);
+  });
+
+  it('needs open sky above a sapling: a cave roof or a torch-lit room keeps it from growing', () => {
+    const { world, entities } = setup();
+    plant(world, entities, Tile.Sapling, 30, 10);
+    // A roof high above, with plenty of room under it, and torches beside the sapling.
+    for (let x = 0; x < 60; x++) world.setTile(x, 5, Tile.Stone);
+    world.setTile(29, GROUND - 1, Tile.Torch);
+    world.setTile(31, GROUND - 1, Tile.Torch);
+    expect(openToSky(world, 30, GROUND - 1)).toBe(false);
+    expect(plantStatus(world, 30, GROUND - 1)).toBe('noSky');
+    expect(growDuePlants(world, entities, 10, () => 0)).toEqual([]);
+    expect(entities.get(30, GROUND - 1)).toEqual({ kind: 'plant', growAt: 10 + PLANT_GROW_MIN });
+    // A hole in the roof right over it lets the sky in.
+    world.setTile(30, 5, Tile.Air);
+    expect(openToSky(world, 30, GROUND - 1)).toBe(true);
+    expect(growDuePlants(world, entities, 10 + PLANT_GROW_MIN)).toHaveLength(1);
+  });
+
+  it('grows mushroom spores in the dark', () => {
+    const { world, entities } = setup(Tile.Mudstone);
+    for (let x = 0; x < 60; x++) world.setTile(x, 5, Tile.Stone);
+    plant(world, entities, Tile.MushroomSprout, 30, 5);
+    expect(plantStatus(world, 30, GROUND - 1)).toBe('growing');
+    expect(growDuePlants(world, entities, 5)).toHaveLength(1);
+    expect(world.getTile(30, GROUND - 1)).toBe(Tile.MushroomStem);
+  });
+
+  it("starts a mushroom sprout's time again if its cap has no room", () => {
+    const { world, entities } = setup(Tile.Mudstone);
+    plant(world, entities, Tile.MushroomSprout, 30, 5);
+    world.setTile(30, GROUND - 3, Tile.Stone); // a low ceiling
+    expect(plantStatus(world, 30, GROUND - 1)).toBe('noRoom');
+    expect(growDuePlants(world, entities, 5, () => 1)).toEqual([]);
+    expect(entities.get(30, GROUND - 1)).toEqual({ kind: 'plant', growAt: 5 + PLANT_GROW_MAX });
+  });
+
+  it(`keeps ${PLANT_SPACING} clear tiles between trees, checking each sapling in turn`, () => {
+    const { world, entities } = setup();
+    // Two saplings due in the same check, two tiles apart: only the one due first grows.
+    plant(world, entities, Tile.Sapling, 20, 6);
+    plant(world, entities, Tile.Sapling, 22, 5);
+    expect(growDuePlants(world, entities, 10, () => 0)).toEqual([[22, GROUND - 1]]);
+    expect(world.getTile(20, GROUND - 1)).toBe(Tile.Sapling);
+    expect(plantStatus(world, 20, GROUND - 1)).toBe('crowded');
+    expect(entities.get(20, GROUND - 1)).toEqual({ kind: 'plant', growAt: 10 + PLANT_GROW_MIN });
+    // Far enough apart, both grow.
+    plant(world, entities, Tile.Sapling, 22 + PLANT_SPACING + 1, 10);
+    plant(world, entities, Tile.Sapling, 22 + 2 * (PLANT_SPACING + 1), 10);
+    expect(growDuePlants(world, entities, 10)).toHaveLength(2);
+    // A stump counts as a trunk too, and so does one on a step down the hill.
+    const hill = setup();
+    hill.world.setTile(40, GROUND - 1, Tile.Wood);
+    plant(hill.world, hill.entities, Tile.Sapling, 40 - PLANT_SPACING, 0);
+    expect(plantStatus(hill.world, 40 - PLANT_SPACING, GROUND - 1)).toBe('crowded');
+    hill.world.setTile(40, GROUND - 1, Tile.Air);
+    hill.world.setTile(40, GROUND, Tile.Air);
+    hill.world.setTile(40, GROUND + 1, Tile.Wood);
+    expect(plantStatus(hill.world, 40 - PLANT_SPACING, GROUND - 1)).toBe('crowded');
+    hill.world.setTile(40, GROUND + 1, Tile.Air);
+    expect(plantStatus(hill.world, 40 - PLANT_SPACING, GROUND - 1)).toBe('growing');
+  });
+
+  it('says how a planted sapling or sprout is doing', () => {
+    expect(plantStatusText(Tile.Sapling, 'growing')).toBe('Sapling: growing');
+    expect(plantStatusText(Tile.Sapling, 'noSky')).toBe('Sapling: needs open sky above it to grow');
+    expect(plantStatusText(Tile.Sapling, 'crowded')).toContain(`${PLANT_SPACING} clear tiles`);
+    expect(plantStatusText(Tile.Sapling, 'noRoom')).toContain(`${TREE_TRUNK_MIN + 1} clear tiles`);
+    expect(plantStatusText(Tile.Sapling, 'noGround')).toBe('Sapling: needs grass or dirt under it to grow');
+    expect(plantStatusText(Tile.MushroomSprout, 'noRoom')).toContain('cap');
+    const { world } = setup();
+    expect(plantStatus(world, 30, GROUND - 1)).toBeNull(); // nothing planted
   });
 
   it('grows the same tree whenever it grows (from the world seed and its spot)', () => {
@@ -122,6 +206,7 @@ describe('growing', () => {
     const { world, entities } = setup();
     plant(world, entities, Tile.Sapling, 30, 0);
     world.setTile(30, GROUND, Tile.Stone);
+    expect(plantStatus(world, 30, GROUND - 1)).toBe('noGround');
     expect(growDuePlants(world, entities, 1)).toEqual([]);
   });
 });
