@@ -80,6 +80,28 @@ describe('player physics', () => {
     expect(player.y + PLAYER_HEIGHT).toBe((FLOOR - 1) * TILE_SIZE);
   });
 
+  it('does not step up while walking carefully (Shift), but still walks off ledges', () => {
+    const world = flatWorld();
+    fill(world, 10, FLOOR - 1, 59, FLOOR - 1, Tile.Stone);
+    const player = standingPlayer(world, 5);
+    run(player, world, 60, { move: 1, jumpPressed: false, jumpHeld: false, careful: true });
+    expect(player.x + PLAYER_WIDTH).toBe(10 * TILE_SIZE);
+    expect(player.y + PLAYER_HEIGHT).toBe(FLOOR_Y);
+    // Letting go of Shift steps up as usual.
+    run(player, world, 30, { move: 1, jumpPressed: false, jumpHeld: false });
+    expect(player.y + PLAYER_HEIGHT).toBe((FLOOR - 1) * TILE_SIZE);
+
+    // Careful walk doesn't stop the player walking off a ledge.
+    const cliff = new World(60, 40, 0);
+    fill(cliff, 0, FLOOR, 59, 39, Tile.Stone);
+    fill(cliff, 0, FLOOR - 1, 9, FLOOR - 1, Tile.Stone); // a 1-tile ledge ending at column 9
+    const walker = new Player(5, FLOOR - 2);
+    run(walker, cliff, 2);
+    run(walker, cliff, 60, { move: 1, jumpPressed: false, jumpHeld: false, careful: true });
+    expect(walker.x).toBeGreaterThan(10 * TILE_SIZE);
+    expect(walker.y + PLAYER_HEIGHT).toBe(FLOOR_Y);
+  });
+
   it('is stopped by a 2-tile wall', () => {
     const world = flatWorld();
     fill(world, 10, FLOOR - 2, 59, FLOOR - 1, Tile.Stone);

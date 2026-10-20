@@ -509,6 +509,25 @@ export class Renderer {
     ctx.fillRect(x + S - 1, y + 1, 1, S - 2);
   }
 
+  /**
+   * The smart cursor's target (Settings): yellow corner brackets just outside tile (tx, ty), with
+   * a dark edge so they show on the sky too. They go around the tile's usual outline, which keeps
+   * its meaning (white: can be dug, red: can't, faint: a block can go here).
+   */
+  drawSmartTarget(tx: number, ty: number, camX: number, camY: number): void {
+    const { ctx } = this;
+    const x = tx * TILE_SIZE - camX - 2;
+    const y = ty * TILE_SIZE - camY - 2;
+    const S = TILE_SIZE + 4; // the bracketed box
+    const L = 6; // arm length
+    const T = 2; // thickness
+    for (const [color, d] of [['rgba(0, 0, 0, 0.6)', 1], ['#ffd84a', 0]] as const) {
+      ctx.fillStyle = color;
+      for (const [cx, cy] of [[x, y], [x + S - L, y], [x, y + S - T], [x + S - L, y + S - T]]) ctx.fillRect(cx + d, cy + d, L, T);
+      for (const [cx, cy] of [[x, y], [x + S - T, y], [x, y + S - L], [x + S - T, y + S - L]]) ctx.fillRect(cx + d, cy + d, T, L);
+    }
+  }
+
   /** Falling gravel blocks, between their last two steps. */
   drawFallingBlocks(blocks: readonly FallingBlock[], alpha: number, camX: number, camY: number): void {
     for (const b of blocks) {

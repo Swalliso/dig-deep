@@ -1217,7 +1217,7 @@ export class Menus {
     back.focus();
   }
 
-  /** Volumes (master, effects, ambience), screen shake, reduced flashes, pixel scale, the FPS counter and the minimap. Every change applies and saves at once. */
+  /** Volumes (master, effects, ambience), screen shake, reduced flashes, the smart cursor, pixel scale, the FPS counter and the minimap. Every change applies and saves at once. */
   showSettings(hooks: SettingsHooks, kind: 'title' | 'pause', onBack: () => void): void {
     const { settings, onChange } = hooks;
     const menu = this.open(kind);
@@ -1242,6 +1242,13 @@ export class Menus {
       settings.reducedFlashes = on;
       onChange();
     });
+    const smart = toggle('set-smart-cursor', 'Smart cursor', settings.smartCursor, (on) => {
+      settings.smartCursor = on;
+      onChange();
+    });
+    const smartAbout = el('p', 'Easier aiming: digging and placing pick the nearest tile toward the pointer, within reach.', 'detail');
+    smartAbout.id = 'set-smart-cursor-about';
+    smart.querySelector('button')?.setAttribute('aria-describedby', smartAbout.id);
     const scales: [PixelScale, string][] = [
       ['auto', 'Auto'],
       [2, '2x'],
@@ -1259,7 +1266,7 @@ export class Menus {
       settings.showMinimap = on;
       onChange();
     });
-    menu.append(el('h2', 'Settings'), master.row, effects.row, ambience.row, shake, flashes, scale, fps, minimap, button('Back', onBack));
+    menu.append(el('h2', 'Settings'), master.row, effects.row, ambience.row, shake, flashes, smart, smartAbout, scale, fps, minimap, button('Back', onBack));
     this.onBack = onBack;
     master.input.focus();
   }

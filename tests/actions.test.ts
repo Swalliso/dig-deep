@@ -53,13 +53,16 @@ describe('action table', () => {
     }
     const shared = [...users].filter(([, list]) => list.length > 1).map(([code, list]) => [code, list.sort()]);
     // W/↑ jump and climb; Space also respawns (only on the death screen, where nothing else
-    // moves); the left mouse button uses the held item in the world and clicks in menus; the
-    // right one interacts in the world and pins in the crafting panel and on the map; Enter
-    // respawns and finishes typing a pin name.
+    // moves); Shift is careful walk in the world and the shift-click modifier in the inventory
+    // panel (which pauses the world); the left mouse button uses the held item in the world and
+    // clicks in menus; the right one interacts in the world and pins in the crafting panel and
+    // on the map; Enter respawns and finishes typing a pin name.
     expect(shared).toEqual([
       ['Space', ['jump', 'respawn']],
       ['KeyW', ['climbUp', 'jump']],
       ['ArrowUp', ['climbUp', 'jump']],
+      ['ShiftLeft', ['careful', 'modifier']],
+      ['ShiftRight', ['careful', 'modifier']],
       ['MouseLeft', ['click', 'use']],
       ['MouseRight', ['interact', 'pin']],
       ['Enter', ['confirm', 'respawn']],

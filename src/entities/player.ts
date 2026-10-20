@@ -20,6 +20,7 @@ import {
   RUN_ACCEL,
   RUN_FRICTION,
   TILE_SIZE,
+  WALK_OFF_CATCH_TILES,
   WALL_JUMP_PUSH,
   WALL_SLIDE_SPEED,
 } from '../config';
@@ -40,6 +41,11 @@ export interface PlayerControls {
    * through a platform. In debug fly mode it flies (jump also flies up).
    */
   climb?: number;
+  /**
+   * Careful walk (Shift): no auto step-up onto 1-tile ledges, so shaving off a layer of tiles
+   * while walking doesn't lift the player onto it. It doesn't stop the player walking off ledges.
+   */
+  careful?: boolean;
   /** Debug fly mode only: move faster. */
   fast?: boolean;
 }
@@ -98,7 +104,8 @@ export class Player {
   floating = false;
   /**
    * Left the ground by walking off a ledge (not by jumping, dropping through a platform or
-   * letting go of a ladder). Walking off into a ladder column catches the player on it.
+   * letting go of a ladder). Walking off into a ladder column catches the player on it, once
+   * they've fallen WALK_OFF_CATCH_TILES.
    */
   private walkedOff = false;
   private coyoteTimer = 0;
@@ -190,8 +197,10 @@ export class Player {
     this.regrabTimer -= dt;
     if (climb !== this.heldWhenLetGo) this.heldWhenLetGo = 0;
     const canGrab = climb !== 0 && climb !== this.heldWhenLetGo && this.regrabTimer <= 0;
-    // Walking off a ledge into a ladder shaft catches you on the ladder (jumping in doesn't).
-    const caught = !this.climbing && this.walkedOff && !this.grounded && this.onLadder(world);
+    // Walking off a ledge into a ladder shaft catches you on the ladder (jumping in doesn't), once
+    // you've fallen a few tiles, so a small step down beside a ladder or rope doesn't latch on.
+    const fallen = this.fallTop === null ? 0 : this.y - this.fallTop;
+    const caught = !this.climbing && this.walkedOff && !this.grounded && fallen > WALK_OFF_CATCH_TILES * TILE_SIZE && this.onLadder(world);
     if (!this.climbing && ((canGrab && (this.onLadder(world) || (climb > 0 && this.onLadderTop(world)))) || caught)) {
       this.climbing = true;
       this.caughtByLadder = caught && !canGrab;
@@ -282,8 +291,9 @@ export class Player {
     const fallSpeed = this.vy;
     this.grounded = false;
     const startX = this.x;
+    const canStep = wasGrounded && !controls.careful;
     for (let i = 0; i < steps; i++) {
-      if (this.vx !== 0) this.moveX(dx / steps, world, wasGrounded);
+      if (this.vx !== 0) this.moveX(dx / steps, world, canStep);
       if (this.vy !== 0) this.moveY(dy / steps, world, false, true);
     }
     // Once the feet are past the top of the platform being dropped through, it's a floor again.
