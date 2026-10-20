@@ -24,14 +24,19 @@ Status: `open` (needs a decision), `planned` (in a package), `keep` (intended, s
 | Package | Items | Where | Status |
 | --- | --- | --- | --- |
 | A. World fixes | P1-01, P1-04, P1-05, P1-08, P1-15 | `feature/playtest-world-fixes` | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
-| B. Early game and the ore economy | P1-02, P1-03, P1-12, P1-13, P2-01, P2-02, P2-03 | design session, then slices B1 and B2 before Phase 17 | needs design |
-| C. Readability and art | P1-06, P1-07 | small slice, any time | ready |
-| D. Wishlist | P1-10, P1-11 | not planned | – |
+| B. Early game and the ore economy | P1-02, P1-03, P1-12, P1-13, P2-01, P2-02, P2-03, P3-02, P3-03, P3-08 | design session, then slices B1 and B2 before Phase 17 | measured; needs design |
+| C. Readability and art | P1-07 | small slice, any time | ready |
+| D. Wishlist | P1-11 | not planned | – |
 | E. Movement and targeting controls | P1-09, P1-14, P2-04 | `feature/playtest-controls` | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
+| F. Fungal Hollows pass | P1-06, P1-10, P3-04, P3-05 | one slice, after B's design session | main fix decided |
+| G. Rope follow-ups | P3-01, P3-06 | small slice, any time | ready |
 
-**Order (lean)**: A and E first. They're small and touch different files (plants, trees and
-audio; player physics, input and targeting), so they can be built side by side. Then B's design
-session and build, then Phase 17 leading with the Stone Caverns' structures. C fits in anywhere.
+Not packaged: P3-07 (dread and gravel supports barely came up) is evidence for ROADMAP's "Light
+balance pass" and "Hazard and building design review", to look at after B.
+
+**Order (lean)**: A and E are done. Next is B's design session, now that its baseline is measured
+(Round 3). G is small and can go any time. F follows B's design session, so the Hollows' light
+fits B2's supplies (charcoal, scouting light). C fits in anywhere.
 
 ### A. World fixes
 
@@ -53,8 +58,8 @@ Done: merged into `develop` in [#27](https://github.com/Swalliso/dig-deep/pull/2
 
 ### B. Early game and the ore economy
 
-**The problem**, from both rounds: after the stone pickaxe, the surest way to find ore is to strip
-mine in one direction. Ore is scarce and comes in small amounts, and the rate never improves.
+**The problem**, from all three rounds: after the stone pickaxe, the surest way to find ore is to
+strip mine in one direction. Ore is scarce and comes in small amounts, and the rate never improves.
 Coal feeds both bars and torches, so light runs short exactly when exploring. Scouting a drop is
 costly (flares burn out; ropes are short and can't be joined), so players jump in and build
 platforms back up.
@@ -62,14 +67,20 @@ platforms back up.
 **The goal**: exploring caves beats strip mining. Caves are where ore shows, light is affordable,
 drops can be scouted, and what you find grows as you progress.
 
-1. **Measure**: a fresh world with no debug mode (most of our own testing has used debug mode,
-   which skips the early game): time to each pickaxe, torches and coal used, and how each vein
-   was found. Plus a generation stats test: open space and cavern sizes per stratum, and ore per
-   stratum and how much of it touches a cave.
+1. **Measure** (done 2026-10-20): `npm run report:world` and `npm run report:backup`, and the
+   Round 3 baseline playtest. The baseline:
+   - **Generation** (strata v2, seeds 1–5): no cave ever opens to the surface; no cave in the
+     Stone Caverns or the Fungal Hollows is as big as a screen (the largest are about 330 and 460
+     tiles; a screen is about 920); about 86% of coal veins and 83% of copper veins never touch
+     a cave.
+   - **Play** (Round 3, seed 42): the stone pickaxe at 18:37 of play, copper at 40:36, and 2 of
+     the iron pickaxe's 10 bars at 51:41. 83% of the copper mined came from veins with no cave
+     next to them, and light was never short in the Stone Caverns.
 2. **Design session**: pick levers, not all of them. My lean is marked ★.
    - World (new generation, so a new profile):
-     - ★ More and larger caverns, especially in the Stone Caverns, and some cave mouths at the
-       surface so the first trip down can follow a cave.
+     - ★ More and larger caverns, especially in the Stone Caverns, now and then joined into a
+       network worth exploring (P3-08), and some cave mouths at the surface so the first trip
+       down can follow a cave.
      - ★ Ore biased onto cave walls (P1-13).
      - Coal in deeper strata too, rarer.
      - Larger veins, or occasional rich ones, deeper down.
@@ -81,6 +92,9 @@ drops can be scouted, and what you find grows as you progress.
      - Scouting light: thrown torches (clicking out of reach throws the torch, and it sticks as
        a placed torch: permanent, established light), or cheaper flares.
      - Keep the map's 5-tile ore sense (P1-02), maybe with a way to widen it.
+     - **Early gear that helps find ore** (decided): a copper item, so the first copper is worth spending on it
+       (P3-03): for example a copper item that widens the ore sense. Today's copper gear (the
+       toolbelt and padded boots) is comfort, not progress.
    - Growth (the "flat rate"):
      - ★ One mid-game vein tool that breaks a whole connected vein (Descent's Vein Miner as a
        Sandbox item), or yield that grows with pickaxe tier.
@@ -97,15 +111,13 @@ Loot is P2-01's answer to "crafting shouldn't be the only source of iron". Autom
 
 ### C. Readability and art
 
-- **P1-06**: more value contrast between the Fungal Hollows' backdrop and its tiles, and a weaker or
-  tighter glowshroom tint.
 - **P1-07**: wall and ceiling torch sprites, picked at draw time from the torch's neighbours.
-- Before-and-after screenshots of every stratum, with Reduced flashes on too.
+- Before-and-after screenshots of every stratum, with Reduced flashes on too. (P1-06, the
+  Hollows' contrast, moved to F.)
 
 ### D. Wishlist
 
-P1-10 glowshroom cultivation (may join B as a renewable light), P1-11 stairs (ROADMAP's
-"Building comfort").
+P1-11 stairs (ROADMAP's "Building comfort"). (P1-10, growing glowshrooms, moved to F.)
 
 ### E. Movement and targeting controls
 
@@ -123,12 +135,49 @@ Done: merged into `develop` in [#28](https://github.com/Swalliso/dig-deep/pull/2
   holding W to climb can close the tab. A toggle key can come with the remapping screen.
 - Key hints and the Controls screen come from the action table as usual.
 
+### F. Fungal Hollows pass
+
+Every round has run into the Hollows: they're hard to read (P1-06), damp torches make exploring
+miserable (P3-04), iron is found on the map rather than on screen (P3-05), and glowshrooms, the
+intended light, can't be grown (P1-10). Phase 14b's damp rule means the Hollows' light should be
+grown rather than torched, but nothing lets you grow it yet.
+
+- **Make the Hollows' own light usable** (decided 2026-10-20), rather than brightening every torch
+  (Round 3's suggestion). Light was already plentiful in the Stone Caverns and dread barely came
+  up (P3-07), so brighter torches everywhere would take the last bite out of the dark.
+  - **Growing glowshrooms (P1-10) is the main fix** (decided): it also gives the player something
+    to do in the Hollows besides digging. Spores you plant, or glowshrooms that slowly spread onto
+    nearby mudstone in the dark.
+  - A damp-proof light made from glowshrooms, for example a glow torch from wood and a
+    glowshroom, so the answer to the damp comes from the stratum itself.
+  - A little more light from damp torches (10 → 12) only if it's still miserable after that.
+- **Ore you can see** (P3-05): show the 5-tile ore sense on screen, as a faint shimmer on ore near
+  the player even in the dark, so finding iron means looking at the world rather than the map.
+  Possibly in every stratum.
+- **Readability** (P1-06): more value contrast between the backdrop and the tiles, and a weaker or
+  tighter glowshroom tint.
+
+### G. Rope follow-ups
+
+Ready: the calls were made on 2026-10-20.
+
+- **P3-01**: breaking a rope tile cuts the rope there: the part above keeps hanging and only the
+  part below rolls up (still never giving back more coils than were used). Rope is hard to cut
+  by accident: at least as tough as stone (hardness 0.8, against 0.2 today and dirt's 0.3), so
+  a stray click while digging down doesn't strand you.
+- **P3-06**: a coil used at a rope's bottom end extends it, so a drop deeper than 20 m can be
+  roped (the "joining ropes" option from P2-03).
+- Platforms staying the cheap way back up is fine. The goal is that ropes stop being frustrating,
+  not that they replace platforms.
+
 ## Decisions
 
 Open:
 
 1. **P1-03**: keep "lit on screen means seen on the map" through rock (lean yes)? And how do
    Phase 17's lit structures avoid showing through fog before they're found? (Settle in B.)
+2. **F**: besides growing glowshrooms (decided), a damp-proof glow torch (lean yes)? Show the ore
+   sense on screen (lean yes)?
 
 Made (2026-10-20):
 
@@ -140,6 +189,11 @@ Made (2026-10-20):
 - **P1-14**: careful walking doesn't stop you walking off ledges.
 - **P2-04**: the smart cursor is a Settings switch, and smart digging takes the nearest diggable
   tile toward the cursor.
+- **F**: the Hollows get light of their own rather than brighter torches everywhere, and growing
+  glowshrooms is the main fix.
+- **G**: cutting a rope only affects the part below the cut; a coil extends a rope; rope is hard
+  to cut by accident, at least as tough as stone.
+- **P3-03**: B2 gets a copper item that helps find more ore.
 
 ## Round 1 – 2026-10-19
 
@@ -158,11 +212,11 @@ Made (2026-10-20):
 | P1-03 | Glowshroom caves show on the map through solid rock | Design | B | open |
 | P1-04 | Trees grow deep underground in the dark | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | P1-05 | Felling a tree strips leaves off its neighbours | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
-| P1-06 | Fungal Hollows: backdrop blends into tiles; glowshroom haze washes over everything | Tuning | C | planned |
+| P1-06 | Fungal Hollows: backdrop blends into tiles; glowshroom haze washes over everything | Tuning | F | planned |
 | P1-07 | Torches on walls and ceilings should look attached there | Request | C | planned |
 | P1-08 | Rope ladders don't unroll further when the ground under them is dug out | Request | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | P1-09 | Ladders and ropes grab you without pressing up or down | Tuning | E | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
-| P1-10 | A way to cultivate glowshrooms | Request | D | open |
+| P1-10 | A way to cultivate glowshrooms | Request | F | planned |
 | P1-11 | Stairs or half-tile pieces for decoration | Request | D | open |
 | P1-12 | **Too little ore, small amounts, no way to speed it up** | Design | B | open |
 | P1-13 | Too few, too small caverns; ore could favour cavern edges | Design | B | open |
@@ -222,9 +276,10 @@ Made (2026-10-20):
 - *Cause*: the Hollows backdrop (`#111916` plus parallax layers) sits close in value to mudstone,
   and the coloured glow adds up to `GLOW_TINT_STRENGTH` (0.45) of teal over `GLOW_TINT_RADIUS`
   (6 tiles), on tiles and backdrop alike.
-- *Call*: package C, an art pass, not a light-rule change: more value contrast between backdrop
-  and tiles (a darker or less saturated backdrop, or edge shading on tiles that face open air),
-  and a weaker or tighter tint, perhaps tinting the backdrop less than the tiles.
+- *Call*: package F (moved from C in Round 3), an art pass, not a light-rule change: more value
+  contrast between backdrop and tiles (a darker or less saturated backdrop, or edge shading on
+  tiles that face open air), and a weaker or tighter tint, perhaps tinting the backdrop less than
+  the tiles.
 
 **P1-07 Torches on walls and ceilings.** Request.
 - *Seen*: a torch placed on a wall or ceiling still looks like it's standing on a floor.
@@ -252,14 +307,14 @@ Made (2026-10-20):
   still grab any time. Keep Phase 11b's check passing: walking into a ladder shaft from the side
   catches you.
 
-**P1-10 Cultivate glowshrooms.** Request, open.
+**P1-10 Cultivate glowshrooms.** Request.
 - *Seen*: the tester wants to grow glowshrooms.
 - *Now*: glowshrooms can be mined and placed again (Phase 14b's "a lit route through the Hollows
   is grown rather than torched"), but they never multiply, so the supply is whatever generation
   made.
-- *Call*: fits the game well. Options: glowshrooms slowly spread to nearby mudstone in the dark,
-  or drop spores that grow like the giant mushroom's. Decide alongside B, since it's a renewable
-  resource with real value (healing light).
+- *Call*: package F (moved from D in Round 3, which found the Hollows miserable without it). Fits
+  the game well. Options: glowshrooms slowly spread to nearby mudstone in the dark, or drop spores
+  that grow like the giant mushroom's.
 
 **P1-11 Stairs or half-tile pieces.** Request, open.
 - *Seen*: the tester wants small stair segments for looks.
@@ -371,6 +426,111 @@ Made (2026-10-20):
   Every letter key is bound (counting debug keys); Ctrl isn't.
 - *Call* (decided 2026-10-20): package E, as a Settings switch; smart digging takes the nearest
   diggable tile toward the cursor (see E for why not Ctrl).
+
+## Round 3 – 2026-10-20
+
+- **Build**: the dev site with packages A and E, played by us: world "Real World", seed 42,
+  strata v2, Normal, no debug mode, about 52 minutes. Backups exported at the stone pickaxe, the
+  copper pickaxe and the stop. This is package B's baseline playtest.
+- **Headline**: finding copper is the bottleneck. It's hard to find more than it's rare, and the
+  search is all tunnelling, so the game never changes pace. The Fungal Hollows are miserable to
+  explore with damp torches, and ropes are too easy to lose.
+
+### Numbers
+
+From `npm run report:backup` on the three backups:
+
+| Backup | Played | Pickaxe | Deepest seen | Dug | Ore mined | From a cave | Torches placed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Stone pickaxe | 18:37 | Stone | 42 m | 297 | 20 | 100% | 26 |
+| Copper pickaxe | 40:36 | Copper | 89 m | 924 | 112 | 27% | 80 |
+| Stop | 51:41 | Copper | 192 m | 1,279 | 139 | 30% | 125 |
+
+- By the stop: 41 copper mined, 83% of it from veins with no cave next to them (dug to); 90 coal,
+  71% dug to; 8 iron in the Hollows, all from veins a cave showed.
+- Explored: 6.6% of the Stone Caverns, 1.8% of the Fungal Hollows.
+- Light: dread stayed at 0 in every backup, and carried coal grew (8, then 27, then 36).
+- Iron: 2 of the iron pickaxe's 10 bars at the stop.
+
+### Summary
+
+| ID | Item | Kind | Package | Status |
+| --- | --- | --- | --- | --- |
+| P3-01 | A stray click breaks a rope almost instantly and rolls all of it up, stranding you | Tuning | G | planned |
+| P3-02 | Copper is hard to find more than rare; the search is all tunnelling | Design | B | open |
+| P3-03 | Early gear doesn't help find or reach ore, so copper isn't worth spending on it | Design | B | planned |
+| P3-04 | Damp torches make the Fungal Hollows miserable to explore | Tuning | F | planned |
+| P3-05 | In the dark, ore is found on the map rather than on screen | Design | F | open |
+| P3-06 | Platforms beat rope ladders for getting back up | Design | G | planned |
+| P3-07 | Dread and gravel supports barely came up | Design | – | open |
+| P3-08 | Occasional cave networks would break up the mining | Design | B | open |
+
+### Findings
+
+**P3-01 Ropes break too easily.** Tuning.
+- *Seen*: digging more or less straight down beside a rope, it's easy to hit the rope by
+  accident; it breaks seemingly instantly and the whole ladder is gone, which makes getting back
+  up hard.
+- *Now*: rope has hardness 0.2 (`world/tiles.ts`), and breaking any rope tile rolls up the whole
+  rope, above and below (`rollUpRope` in `systems/tools.ts`). The smart cursor skips ropes unless
+  pointed at directly, but it's off by default.
+- *Call* (decided 2026-10-20): package G: cutting only affects the part below the cut, and rope
+  is at least as tough as stone, so it's hard to cut by accident.
+
+**P3-02 Copper is hard to find, and the search is all tunnelling.** Design, open.
+- *Seen*: coal was fine; copper felt limited, but more because it's hard to find than because
+  there's too little. While searching, the gameplay never changes; more exploring mixed into the
+  mining would change things up. Most of the time went on tunnelling.
+- *Now*: the numbers above: 83% of the copper came from veins no cave touched, matching the
+  generation baseline (83% of copper veins never touch a cave).
+- *Call*: package B: ore on cave walls and more, larger caves (B1).
+
+**P3-03 Early gear doesn't help find ore.** Design.
+- *Seen*: the toolbelt and padded boots are useful, but with copper this scarce, you only want to
+  spend it on something that helps find more copper or dig and explore faster.
+- *Now*: the only copper gear is the toolbelt (4 copper bars) and padded boots (2); every gear
+  item that helps exploring (the helmet, claws, spring boots) needs iron or better.
+- *Call* (decided 2026-10-20): package B2: a copper item that helps find more ore, for example by
+  widening the ore sense.
+
+**P3-04 Damp torches make the Hollows miserable.** Tuning.
+- *Seen*: dimmer torches in the Hollows are a nice touch, but they make exploring there really
+  hard, and there's no way to gather or grow glowshrooms to make up for it. Suggested: make every
+  torch as bright as today's dry torch is in the Hollows, and brighter outside them.
+- *Now*: a damp torch gives 10 light (a 5-tile radius) instead of 16 (8 tiles), as much as a
+  glowshroom; glowshrooms can't be grown (P1-10).
+- *Call* (decided 2026-10-20): package F: give the Hollows a usable light of their own rather
+  than brighter torches everywhere, since light is already plentiful elsewhere (P3-07). Growing
+  glowshrooms is the main fix, and gives the player more to do there than dig.
+
+**P3-05 Iron is found on the map, not on screen.** Design, open.
+- *Seen*: in the Hollows' low light, finding iron by looking around doesn't work, so you rely on
+  the map instead.
+- *Now*: the map marks every tile within 5 tiles of the player, through rock and in the dark
+  (P1-02), while ore only glints at light level 3 or more.
+- *Call*: package F: show that 5-tile ore sense on screen, so you look at the world, not the map.
+
+**P3-06 Platforms beat rope ladders.** Design.
+- *Seen*: because of the rope's limits, you dig down and then use platforms to get back up.
+- *Now*: a rope is 20 tiles (5 planks), can't be extended, and is easy to lose (P3-01); a plank
+  makes 2 platforms, which you can jump up through.
+- *Call* (decided 2026-10-20): package G: fix the rope's frustrations (P3-01, and a coil extends
+  a rope) rather than make platforms worse.
+
+**P3-07 Dread and gravel supports barely came up.** Design, open.
+- *Seen*: no real contact with the dread mechanic, or with beams for shoring up gravel pockets;
+  the gravel just gets dug out.
+- *Now*: dread stayed at 0 in every backup, with 125 torches placed and coal to spare.
+- *Call*: evidence for ROADMAP's "Light balance pass" and "Hazard and building design review"
+  after B. B's bigger caves should make light matter more on their own (a big cave takes more
+  torches to light).
+
+**P3-08 Occasional cave networks.** Design, open.
+- *Seen*: you always explored the caves, mostly to reveal more of the map for ore. Their sizes
+  varied, but an occasional network of caves would be fun and break up the mining.
+- *Now*: the generation baseline has no cave in the Stone Caverns or the Hollows as big as a
+  screen, and none opening to the surface.
+- *Call*: package B1.
 
 ## Template for the next round
 
