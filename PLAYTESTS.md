@@ -23,17 +23,19 @@ Status: `open` (needs a decision), `planned` (in a package), `keep` (intended, s
 
 | Package | Items | Where | Status |
 | --- | --- | --- | --- |
-| A. World fixes | P1-01, P1-04, P1-05, P1-08, P1-15 | `feature/playtest-world-fixes` | started 2026-10-20 |
+| A. World fixes | P1-01, P1-04, P1-05, P1-08, P1-15 | `feature/playtest-world-fixes` | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | B. Early game and the ore economy | P1-02, P1-03, P1-12, P1-13, P2-01, P2-02, P2-03 | design session, then slices B1 and B2 before Phase 17 | needs design |
 | C. Readability and art | P1-06, P1-07 | small slice, any time | ready |
 | D. Wishlist | P1-10, P1-11 | not planned | – |
-| E. Movement and targeting controls | P1-09, P1-14, P2-04 | `feature/playtest-controls` | started 2026-10-20 |
+| E. Movement and targeting controls | P1-09, P1-14, P2-04 | `feature/playtest-controls` | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
 
 **Order (lean)**: A and E first. They're small and touch different files (plants, trees and
 audio; player physics, input and targeting), so they can be built side by side. Then B's design
 session and build, then Phase 17 leading with the Stone Caverns' structures. C fits in anywhere.
 
 ### A. World fixes
+
+Done: merged into `develop` in [#27](https://github.com/Swalliso/dig-deep/pull/27) on 2026-10-20.
 
 - **P1-15**: a due plant that has no room starts its timer again (a fresh random time). A sapling
   needs spacing from other trunks and saplings (Terraria keeps three empty tiles between
@@ -107,6 +109,8 @@ P1-10 glowshroom cultivation (may join B as a renewable light), P1-11 stairs (RO
 
 ### E. Movement and targeting controls
 
+Done: merged into `develop` in [#28](https://github.com/Swalliso/dig-deep/pull/28) on 2026-10-20.
+
 - **P1-14**: a **careful** action (Shift by default) in the action table: no auto step-up while
   it's held. It doesn't stop you walking off ledges (decided).
 - **P1-09**: ladders and ropes catch a walk-off only once the fall passes 3 tiles (decided, to
@@ -149,25 +153,25 @@ Made (2026-10-20):
 
 | ID | Item | Kind | Package | Status |
 | --- | --- | --- | --- | --- |
-| P1-01 | Audio crackles; ambience drops out under other sounds | Bug | A | planned |
+| P1-01 | Audio crackles; ambience drops out under other sounds | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | P1-02 | Map reveals ore a little past what you can see (and the tester relies on it) | Design | B | keep |
 | P1-03 | Glowshroom caves show on the map through solid rock | Design | B | open |
-| P1-04 | Trees grow deep underground in the dark | Bug | A | planned |
-| P1-05 | Felling a tree strips leaves off its neighbours | Bug | A | planned |
+| P1-04 | Trees grow deep underground in the dark | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
+| P1-05 | Felling a tree strips leaves off its neighbours | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | P1-06 | Fungal Hollows: backdrop blends into tiles; glowshroom haze washes over everything | Tuning | C | planned |
 | P1-07 | Torches on walls and ceilings should look attached there | Request | C | planned |
-| P1-08 | Rope ladders don't unroll further when the ground under them is dug out | Request | A | planned |
-| P1-09 | Ladders and ropes grab you without pressing up or down | Tuning | E | planned |
+| P1-08 | Rope ladders don't unroll further when the ground under them is dug out | Request | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
+| P1-09 | Ladders and ropes grab you without pressing up or down | Tuning | E | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
 | P1-10 | A way to cultivate glowshrooms | Request | D | open |
 | P1-11 | Stairs or half-tile pieces for decoration | Request | D | open |
 | P1-12 | **Too little ore, small amounts, no way to speed it up** | Design | B | open |
 | P1-13 | Too few, too small caverns; ore could favour cavern edges | Design | B | open |
-| P1-14 | A way to stop the auto step-up (hold Shift?) when shaving off a layer | Request | E | planned |
-| P1-15 | Saplings bank their growth time, then grow all at once and side by side | Bug | A | planned |
+| P1-14 | A way to stop the auto step-up (hold Shift?) when shaving off a layer | Request | E | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
+| P1-15 | Saplings bank their growth time, then grow all at once and side by side | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 
 ### Findings
 
-**P1-01 Audio crackles; ambience drops out under other sounds.** Bug.
+**P1-01 Audio crackles; ambience drops out under other sounds.** Bug. Done in [#27](https://github.com/Swalliso/dig-deep/pull/27).
 - *Seen*: crackling, and the stratum ambience cuts out while other sounds play (felling a tree,
   mining).
 - *Cause (likely, confirm by ear)*: every sound, ambience included, goes through one
@@ -197,7 +201,7 @@ Made (2026-10-20):
   lit structures (a lost camp's torch) would break that unless their lights are out until found;
   and whether the map should only mark tiles lit brightly enough to read, not at light level 1.
 
-**P1-04 Trees grow deep underground in the dark.** Bug.
+**P1-04 Trees grow deep underground in the dark.** Bug. Done in [#27](https://github.com/Swalliso/dig-deep/pull/27).
 - *Seen*: a sapling planted far underground grew into a tree in a pitch-black cave.
 - *Cause*: a sapling only needs grass or dirt under it and headroom (`plants.ts`); there's no
   light check, and dirt can be placed anywhere.
@@ -205,7 +209,7 @@ Made (2026-10-20):
   torches don't. Giant mushroom spores keep growing in the dark, so trees stay the surface's wood
   and mushrooms the underground's.
 
-**P1-05 Felling a tree strips leaves off its neighbours.** Bug.
+**P1-05 Felling a tree strips leaves off its neighbours.** Bug. Done in [#27](https://github.com/Swalliso/dig-deep/pull/27).
 - *Seen*: cutting one tree of a close group removes the leaves of the others too.
 - *Cause*: `fellTreeAbove` flood-fills leaves up to `TREE_FELL_RADIUS` (3) columns from the
   trunk, so canopies that touch come down together, leaving the neighbours bare.
@@ -229,7 +233,7 @@ Made (2026-10-20):
 - *Call*: package C: pick the sprite at draw time from what's next to it (floor, left wall, right
   wall, ceiling). No new tile ids, no save change.
 
-**P1-08 Rope ladders don't unroll further.** Request.
+**P1-08 Rope ladders don't unroll further.** Request. Done in [#27](https://github.com/Swalliso/dig-deep/pull/27).
 - *Seen*: digging out the ground under a hanging rope doesn't let the rest of it drop.
 - *Cause*: a coil unrolls once, up to `ROPE_LENGTH` (20 tiles), stopping at the floor. The slack
   isn't lost (rolling up gives back one coil per 20 tiles, rounded up), so a rope of length L has
@@ -238,7 +242,7 @@ Made (2026-10-20):
   rope's end opens up, unroll into the new air, up to the spare length, through the active tile
   updates. No new saved state.
 
-**P1-09 Ladders and ropes grab you without pressing up or down.** Tuning.
+**P1-09 Ladders and ropes grab you without pressing up or down.** Tuning. Done in [#28](https://github.com/Swalliso/dig-deep/pull/28).
 - *Seen*: walking past a ladder or rope sometimes latches on; the first time it felt like a bug.
 - *Cause*: Phase 11b's rule: walking off a ledge into a ladder column catches you, so walking
   sideways into a shaft isn't a long fall. Since Phase 16, ropes hang in more places, so stepping
@@ -285,14 +289,14 @@ Made (2026-10-20):
 - *Call*: package B. Changing caves or ore placement is new generation, so it goes in a new
   profile for new worlds; existing worlds keep theirs.
 
-**P1-14 A way to stop the auto step-up.** Request.
+**P1-14 A way to stop the auto step-up.** Request. Done in [#28](https://github.com/Swalliso/dig-deep/pull/28).
 - *Seen*: when shaving off one layer while walking and mining, the step-up lifts you onto the
   ledge you're trying to remove. (We hit this too in round 2.)
 - *Now*: walking into a one-tile ledge always steps up (`Player.moveX`). Shift does nothing in
   the world outside debug mode (it's the inventory's shift-click), and Ctrl isn't bound at all.
 - *Call*: package E: a **careful** action (Shift by default): no step-up while it's held.
 
-**P1-15 Saplings bank growth time.** Bug.
+**P1-15 Saplings bank growth time.** Bug. Done in [#27](https://github.com/Swalliso/dig-deep/pull/27).
 - *Seen*: plant saplings close together, fell the ones that grew, and the rest grow at once,
   even right next to each other.
 - *Cause*: a plant's grow time is fixed when it's planted. Once it's due it waits for room and
@@ -323,8 +327,8 @@ Made (2026-10-20):
 | --- | --- | --- | --- | --- |
 | P2-01 | Early exploration is just strip mining; want bigger caverns or structures with loot | Design | B | open |
 | P2-02 | Coal is limited, but torches need it, so light runs out while exploring | Design | B | planned |
-| P2-03 | Ropes are hard to use, since you can't tell how deep a drop is; flares cost too much | Design | A, B | planned |
-| P2-04 | A smart cursor like Terraria's (Ctrl) that targets a tile near you | Request | E | planned |
+| P2-03 | Ropes are hard to use, since you can't tell how deep a drop is; flares cost too much | Design | A, B | ropes done ([#27](https://github.com/Swalliso/dig-deep/pull/27)); light planned |
+| P2-04 | A smart cursor like Terraria's (Ctrl) that targets a tile near you | Request | E | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
 
 ### Findings
 
@@ -342,7 +346,7 @@ Made (2026-10-20):
   bombs (4 coal for 3) and the drill. A new game starts with 10 torches.
 - *Call* (decided 2026-10-20): package B2: charcoal from wood; maybe coal deeper down too (B1).
 
-**P2-03 Ropes, and scouting a drop.** Design.
+**P2-03 Ropes, and scouting a drop.** Design. The rope fix (P1-08) is done in [#27](https://github.com/Swalliso/dig-deep/pull/27); scouting light stays with B.
 - *Seen*: you can't tell how deep a cavern is, so you jump down and build platforms to get back
   up instead of using a rope. A flare would show the bottom, but flares are expensive and burn
   out, so you don't want to craft or use them.
@@ -354,7 +358,7 @@ Made (2026-10-20):
   Cheaper scouting light (thrown torches or cheaper flares) stays an option for B2, and joining
   ropes one if drops deeper than 20 m still come up.
 
-**P2-04 Smart cursor.** Request.
+**P2-04 Smart cursor.** Request. Done in [#28](https://github.com/Swalliso/dig-deep/pull/28).
 - *Seen*: Terraria's Ctrl smart cursor, which targets a tile near you. It could be an item, or an
   accessibility option for now.
 - *How Terraria does it* ([wiki](https://terraria.wiki.gg/wiki/Smart_Cursor)): Left Ctrl toggles
