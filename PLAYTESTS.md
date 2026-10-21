@@ -63,7 +63,7 @@ chat): it gets triaged here as a new round.
 **The numbers** (`src/analysis/`, run from a checkout after `npm install`):
 
 - `npm run report:world -- --seeds 1,2,3,4,5`: generates worlds with the profile new worlds get
-  and prints, per stratum, open space, cave sizes, ore and veins per type, and how much ore a cave
+  (or another, with `--profile strata:2`) and prints, per stratum, open space, cave sizes, ore and veins per type, and how much ore a cave
   shows (exposed) versus how much is buried; then the cave mouths at the surface.
 - `npm run report:backup -- r3-stone.json r3-copper.json`: compares each backup with its world
   regenerated from the seed and prints a timeline (play time, pickaxe, depth, tiles dug, ore mined
@@ -78,7 +78,7 @@ Both print markdown, so a round's tables can be pasted straight into its entry b
 | Package | Items | Where | Status |
 | --- | --- | --- | --- |
 | A. World fixes | P1-01, P1-04, P1-05, P1-08, P1-15 | `feature/playtest-world-fixes` | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
-| B. Early game and the ore economy | P1-02, P1-03, P1-12, P1-13, P2-01, P2-02, P2-03, P3-02, P3-03, P3-08 | design session, then slices B1 and B2 before Phase 17 | measured; needs design |
+| B. Early game and the ore economy | P1-02, P1-03, P1-12, P1-13, P2-01, P2-02, P2-03, P3-02, P3-03, P3-08 | ROADMAP.md: packages B1 (caves and ore) and B2 (supplies and tools), before Phase 17 | B1 built (`feature/b1-caves-and-ore`), Round 4 to play; then B2 |
 | C. Readability and art | P1-07 | small slice, any time | ready |
 | D. Wishlist | P1-11 | not planned | – |
 | E. Movement and targeting controls | P1-09, P1-14, P2-04 | `feature/playtest-controls` | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
@@ -88,9 +88,9 @@ Both print markdown, so a round's tables can be pasted straight into its entry b
 Not packaged: P3-07 (dread and gravel supports barely came up) is evidence for ROADMAP's "Light
 balance pass" and "Hazard and building design review", to look at after B.
 
-**Order (lean)**: A and E are done. Next is B's design session, now that its baseline is measured
-(Round 3). G is small and can go any time. F follows B's design session, so the Hollows' light
-fits B2's supplies (charcoal, scouting light). C fits in anywhere.
+**Order (lean)**: A and E are done, and B is designed (2026-10-20). B1 is built and needs its
+playtest (Round 4); then B2, with its own round (Round 5). F follows B2, so the Hollows' light is tuned on a B1 world with
+B2's charcoal and sounding rod. G is small and can go any time, and so can C.
 
 ### A. World fixes
 
@@ -130,38 +130,42 @@ drops can be scouted, and what you find grows as you progress.
    - **Play** (Round 3, seed 42): the stone pickaxe at 18:37 of play, copper at 40:36, and 2 of
      the iron pickaxe's 10 bars at 51:41. 83% of the copper mined came from veins with no cave
      next to them, and light was never short in the Stone Caverns.
-2. **Design session**: pick levers, not all of them. My lean is marked ★.
-   - World (new generation, so a new profile):
-     - ★ More and larger caverns, especially in the Stone Caverns, now and then joined into a
-       network worth exploring (P3-08), and some cave mouths at the surface so the first trip
-       down can follow a cave.
-     - ★ Ore biased onto cave walls (P1-13).
-     - Coal in deeper strata too, rarer.
-     - Larger veins, or occasional rich ones, deeper down.
-   - Supplies and tools (no generation change):
-     - **Charcoal** (decided): a furnace turns wood into charcoal, which works as coal for
-       torches (and maybe smelting). Wood grows back, so light does too.
-     - Ropes: P1-08 (package A) is the fix we chose. Joining ropes and an easier-to-find depth
-       readout stay options if drops deeper than 20 m still come up.
-     - Scouting light: thrown torches (clicking out of reach throws the torch, and it sticks as
-       a placed torch: permanent, established light), or cheaper flares.
-     - Keep the map's 5-tile ore sense (P1-02), maybe with a way to widen it.
-     - **Early gear that helps find ore** (decided): a copper item, so the first copper is worth spending on it
-       (P3-03): for example a copper item that widens the ore sense. Today's copper gear (the
-       toolbelt and padded boots) is comfort, not progress.
-   - Growth (the "flat rate"):
-     - ★ One mid-game vein tool that breaks a whole connected vein (Descent's Vein Miner as a
-       Sandbox item), or yield that grows with pickaxe tier.
-     - Cheaper bombs, or a lesser drill earlier.
-     - Check the iron sinks, such as lift rails per bar.
-3. **Write it into `ROADMAP.md`** as two slices, like 14a/14b (decided): B1 the world
-   (generation) and B2 supplies and tools. Acceptance like "a fresh world reaches the iron pickaxe in N minutes
-   without strip mining" and "a cave trip pays more than a tunnel of the same length".
+2. **Design session** (done 2026-10-20). The world levers were prototyped in a throwaway
+   profile and measured against strata v2 with the world report; the before/after tables are in
+   ROADMAP.md's B1.
+   - **B1, the world** (a new profile, strata v3):
+     - caverns in the Stone Caverns and the Hollows, now and then joined into cave networks
+       (P1-13, P3-08)
+     - four cave mouths at the surface, one near the spawn that leads to a first cavern with a
+       coal and a copper vein on its walls, so the first trip down can follow a cave
+     - 30% of veins starting on a cave wall (P1-13, P3-02)
+     - The prototype takes the Stone Caverns from 6.6% to 18% open and the copper veins
+       touching a cave from 17% to 57%, at about 1.7 times v2's generation time.
+   - **B2, supplies and tools** (no generation change):
+     - **charcoal** from wood, for torches and flares only (P2-02)
+     - a copper **sounding rod** that shows roughly where ore is when tapped, without marking
+       the map (P3-03)
+     - **rich strikes**: a chance of extra ore that grows with each pickaxe tier above the
+       ore's own (P1-12)
+     - The iron sinks were checked and stay as they are.
+   - **Left out**:
+     - coal deeper down and bigger veins deeper (charcoal and rich strikes do those jobs)
+     - a vein tool (it stays Descent's boon)
+     - cheaper bombs or an earlier drill
+     - thrown torches (charcoal makes flares cheaper, and A and G fixed ropes)
+     - a wider passive ore sense (the rod does that job, and the 5-tile sense stays, P1-02)
+3. **Written into `ROADMAP.md`** (done 2026-10-20) as packages **B1: Caves and ore** and **B2:
+   Supplies and tools**, before Phase 17, each with acceptance tied to this baseline:
+   - B1: the copper pickaxe in 30 minutes or less, and half the copper from veins a cave showed
+     (Round 4)
+   - B2: copper in 25 minutes or less, iron in 60 or less, and at least 0.25 ore per tile dug
+     (Round 5)
 
 **Then Phase 17** leads with the Stone Caverns' structures (abandoned mineshafts with a chest of
 iron bars, torches and rope), so the early game gets loot, with loot tables balanced against B.
-Loot is P2-01's answer to "crafting shouldn't be the only source of iron". Automation (ROADMAP's
-"Ideas to brainstorm") stays the long-term answer to scaling up; B shouldn't pre-empt it.
+Loot is P2-01's answer to "crafting shouldn't be the only source of iron". Structures generate
+unlit, so they don't show through fog (P1-03). Automation (ROADMAP's "Ideas to brainstorm")
+stays the long-term answer to scaling up; B doesn't pre-empt it.
 
 ### C. Readability and art
 
@@ -210,6 +214,13 @@ grown rather than torched, but nothing lets you grow it yet.
   Possibly in every stratum.
 - **Readability** (P1-06): more value contrast between the backdrop and the tiles, and a weaker or
   tighter glowshroom tint.
+- **What B changes for F**:
+  - B1 more than doubles the Hollows' open space, and their glowshrooms with it (about 420 →
+    860 a world), so measure the Hollows' light on a B1 world before deciding on the damp
+    torch.
+  - B2's charcoal lets the Hollows make their own torches from mushroom wood.
+  - B2's sounding rod already shows roughly where iron is on screen in the dark, so decide the
+    on-screen ore sense (P3-05) after playing with the rod.
 
 ### G. Rope follow-ups
 
@@ -228,10 +239,27 @@ Ready: the calls were made on 2026-10-20.
 
 Open:
 
-1. **P1-03**: keep "lit on screen means seen on the map" through rock (lean yes)? And how do
-   Phase 17's lit structures avoid showing through fog before they're found? (Settle in B.)
-2. **F**: besides growing glowshrooms (decided), a damp-proof glow torch (lean yes)? Show the ore
-   sense on screen (lean yes)?
+1. **F**: besides growing glowshrooms (decided), a damp-proof glow torch (lean yes)? Show the ore
+   sense on screen (lean yes; decide after playing with B2's sounding rod)?
+
+Made in B's design session (2026-10-20):
+
+- **B1**: a new profile (strata v3) with caverns in the Stone Caverns and the Hollows,
+  occasional cave networks, four cave mouths (one near the spawn, leading to a first cavern
+  with a coal and a copper vein on its walls), and 30% of veins starting on a cave wall. No
+  coal deeper down and no bigger veins deeper.
+- **B2 charcoal**: light fuel only (torches and flares); coal stays the fuel for bars, bombs
+  and the drill.
+- **B2 copper item**: a sounding rod that shows only roughly where ore is (glowing 8 × 8-tile
+  areas, the same on every tap) and marks nothing on the map. The user's idea for later: an
+  upgraded rod that pinpoints ore or keeps it on the map.
+- **B2 growth**: rich strikes, a chance of extra ore for each tool tier above the ore's own.
+  No vein tool (it stays Descent's boon).
+- **Iron sinks** stay as they are; double the lift rails per bar if a 300 m lift is still out
+  of reach after about 90 minutes.
+- **P1-03**: keep "lit on screen means seen on the map" through rock. Phase 17's structures
+  generate with no light of their own, so none shows through fog before it's found.
+- **Order**: B1, then B2, then F, before Phase 17; G and C any time.
 
 Made (2026-10-20):
 
@@ -263,7 +291,7 @@ Made (2026-10-20):
 | --- | --- | --- | --- | --- |
 | P1-01 | Audio crackles; ambience drops out under other sounds | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | P1-02 | Map reveals ore a little past what you can see (and the tester relies on it) | Design | B | keep |
-| P1-03 | Glowshroom caves show on the map through solid rock | Design | B | open |
+| P1-03 | Glowshroom caves show on the map through solid rock | Design | B | keep |
 | P1-04 | Trees grow deep underground in the dark | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | P1-05 | Felling a tree strips leaves off its neighbours | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 | P1-06 | Fungal Hollows: backdrop blends into tiles; glowshroom haze washes over everything | Tuning | F | planned |
@@ -272,8 +300,8 @@ Made (2026-10-20):
 | P1-09 | Ladders and ropes grab you without pressing up or down | Tuning | E | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
 | P1-10 | A way to cultivate glowshrooms | Request | F | planned |
 | P1-11 | Stairs or half-tile pieces for decoration | Request | D | open |
-| P1-12 | **Too little ore, small amounts, no way to speed it up** | Design | B | open |
-| P1-13 | Too few, too small caverns; ore could favour cavern edges | Design | B | open |
+| P1-12 | **Too little ore, small amounts, no way to speed it up** | Design | B | planned (B1, B2) |
+| P1-13 | Too few, too small caverns; ore could favour cavern edges | Design | B | planned (B1) |
 | P1-14 | A way to stop the auto step-up (hold Shift?) when shaving off a layer | Request | E | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
 | P1-15 | Saplings bank their growth time, then grow all at once and side by side | Bug | A | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
 
@@ -299,15 +327,16 @@ Made (2026-10-20):
 - *Call*: keep it, and make it a deliberate part of finding ore in package B. Don't "fix" it
   without a replacement, or ore gets harder to find.
 
-**P1-03 Glowshroom caves show on the map through solid rock.** Design, open.
+**P1-03 Glowshroom caves show on the map through solid rock.** Design, keep.
 - *Seen*: within about a screen of glowshrooms, their cave appears on the map, through any amount
   of rock.
 - *Cause*: the map also marks every *lit* tile on screen, and light has no line of sight: the
   screen itself draws a glowshroom-lit cave behind 50 m of rock. The map matches the screen.
-- *Call (lean)*: keep it. Glowing caves seen from afar are a lure that helps discovery, which is
-  what P1-12 needs. To settle: Phase 17 says undiscovered structures mustn't show through fog, so
-  lit structures (a lost camp's torch) would break that unless their lights are out until found;
-  and whether the map should only mark tiles lit brightly enough to read, not at light level 1.
+- *Call* (decided 2026-10-20, in B's design session): keep it. Glowing caves seen from afar are
+  a lure that helps discovery, which is what P1-12 needs, and B1's bigger Hollows make more of
+  them. Phase 17's structures generate with no light of their own (dead torches, unlit lamps, a
+  geode's crystals dull until it's broken open), so none shows through fog before it's found.
+  The map keeps marking any lit tile: a higher threshold would only take ore off the map.
 
 **P1-04 Trees grow deep underground in the dark.** Bug. Done in [#27](https://github.com/Swalliso/dig-deep/pull/27).
 - *Seen*: a sapling planted far underground grew into a tree in a pitch-black cave.
@@ -377,7 +406,7 @@ Made (2026-10-20):
   with a stepped look would be cheap but only cosmetic, since auto step-up already climbs
   one-tile steps.
 
-**P1-12 Too little ore, small amounts, no way to speed it up.** Design, open. The headline.
+**P1-12 Too little ore, small amounts, no way to speed it up.** Design, planned. The headline.
 - *Seen*: ore is hard to find, each find is small, and the rate never improves.
 - *Numbers today* (strata worlds):
   - A pickaxe is 10 bars: 30 ore, 10 coal and 5 wood. A vein is 3–8 ore, one per 450 (coal) to
@@ -388,15 +417,18 @@ Made (2026-10-20):
   - Pickaxe tiers only add speed and access; nothing raises yield. The only accelerators are
     bombs (3 x 3, an iron bar and 4 coal for 3) and the drill, which needs emberite, so it only
     arrives at the end.
-- *Call*: package B.
+- *Call*: package B: B1 puts more of the ore where caves show it, and B2's sounding rod helps
+  find the rest. B2's rich strikes give extra ore for each pickaxe tier above an ore's own, so
+  the rate grows with progress (ROADMAP.md).
 
-**P1-13 Too few, too small caverns; ore on cavern edges.** Design, open.
+**P1-13 Too few, too small caverns; ore on cavern edges.** Design, planned.
 - *Seen*: more and bigger caverns would help find ore; ore could favour cavern edges.
 - *Now*: caves are noise-carved with a threshold that eases from 0.55 near the surface to 0.28 at
   the bottom; the Geode Depths add around a dozen huge caverns. Ore veins are placed in rock with
   no regard for nearby air.
-- *Call*: package B. Changing caves or ore placement is new generation, so it goes in a new
-  profile for new worlds; existing worlds keep theirs.
+- *Call*: package B1 (ROADMAP.md): caverns in the Stone Caverns and the Hollows, cave networks
+  and 30% of veins starting on a cave wall, in a new profile (strata v3) for new worlds;
+  existing worlds keep theirs.
 
 **P1-14 A way to stop the auto step-up.** Request. Done in [#28](https://github.com/Swalliso/dig-deep/pull/28).
 - *Seen*: when shaving off one layer while walking and mining, the step-up lifts you onto the
@@ -434,26 +466,28 @@ Made (2026-10-20):
 
 | ID | Item | Kind | Package | Status |
 | --- | --- | --- | --- | --- |
-| P2-01 | Early exploration is just strip mining; want bigger caverns or structures with loot | Design | B | open |
-| P2-02 | Coal is limited, but torches need it, so light runs out while exploring | Design | B | planned |
-| P2-03 | Ropes are hard to use, since you can't tell how deep a drop is; flares cost too much | Design | A, B | ropes done ([#27](https://github.com/Swalliso/dig-deep/pull/27)); light planned |
+| P2-01 | Early exploration is just strip mining; want bigger caverns or structures with loot | Design | B | planned (B1, B2, Phase 17) |
+| P2-02 | Coal is limited, but torches need it, so light runs out while exploring | Design | B | planned (B2) |
+| P2-03 | Ropes are hard to use, since you can't tell how deep a drop is; flares cost too much | Design | A, B | ropes done ([#27](https://github.com/Swalliso/dig-deep/pull/27)); cheaper flares planned (B2) |
 | P2-04 | A smart cursor like Terraria's (Ctrl) that targets a tile near you | Request | E | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
 
 ### Findings
 
-**P2-01 Early exploration is just strip mining.** Design, open.
+**P2-01 Early exploration is just strip mining.** Design, planned.
 - *Seen*: once you have the stone pickaxe, ore is hard to find, so you dig in one direction and
   hope. The early loop needs more than that: bigger caverns, or abandoned structures with chests,
   so crafting isn't the only way to get things that need iron (which many recipes use).
 - *Now*: the same causes as P1-12 and P1-13. There are no structures yet; they're Phase 17.
-- *Call*: package B, then Phase 17 leading with the Stone Caverns' structures.
+- *Call*: packages B1 (caves that show ore, cave mouths) and B2 (the sounding rod), then Phase
+  17 leading with the Stone Caverns' structures, whose loot is a second source of iron.
 
 **P2-02 Coal for torches.** Design.
 - *Seen*: coal is limited and torches need it, so you run out of light while exploring.
 - *Now*: coal is only in the Stone Caverns (one vein per 450 tiles, 3–8 coal). A coal and a wood
   make 4 torches, and coal is also the fuel for every bar, flares (2 coal and a torch for 2),
   bombs (4 coal for 3) and the drill. A new game starts with 10 torches.
-- *Call* (decided 2026-10-20): package B2: charcoal from wood; maybe coal deeper down too (B1).
+- *Call* (decided 2026-10-20): package B2: charcoal from wood, for torches and flares only (coal
+  stays the fuel for bars). No coal deeper down.
 
 **P2-03 Ropes, and scouting a drop.** Design. The rope fix (P1-08) is done in [#27](https://github.com/Swalliso/dig-deep/pull/27); scouting light stays with B.
 - *Seen*: you can't tell how deep a cavern is, so you jump down and build platforms to get back
@@ -511,13 +545,13 @@ From `npm run report:backup` on the three backups:
 | ID | Item | Kind | Package | Status |
 | --- | --- | --- | --- | --- |
 | P3-01 | A stray click breaks a rope almost instantly and rolls all of it up, stranding you | Tuning | G | planned |
-| P3-02 | Copper is hard to find more than rare; the search is all tunnelling | Design | B | open |
-| P3-03 | Early gear doesn't help find or reach ore, so copper isn't worth spending on it | Design | B | planned |
+| P3-02 | Copper is hard to find more than rare; the search is all tunnelling | Design | B | planned (B1, B2) |
+| P3-03 | Early gear doesn't help find or reach ore, so copper isn't worth spending on it | Design | B | planned (B2) |
 | P3-04 | Damp torches make the Fungal Hollows miserable to explore | Tuning | F | planned |
 | P3-05 | In the dark, ore is found on the map rather than on screen | Design | F | open |
 | P3-06 | Platforms beat rope ladders for getting back up | Design | G | planned |
 | P3-07 | Dread and gravel supports barely came up | Design | – | open |
-| P3-08 | Occasional cave networks would break up the mining | Design | B | open |
+| P3-08 | Occasional cave networks would break up the mining | Design | B | planned (B1) |
 
 ### Findings
 
@@ -531,21 +565,22 @@ From `npm run report:backup` on the three backups:
 - *Call* (decided 2026-10-20): package G: cutting only affects the part below the cut, and rope
   is at least as tough as stone, so it's hard to cut by accident.
 
-**P3-02 Copper is hard to find, and the search is all tunnelling.** Design, open.
+**P3-02 Copper is hard to find, and the search is all tunnelling.** Design, planned.
 - *Seen*: coal was fine; copper felt limited, but more because it's hard to find than because
   there's too little. While searching, the gameplay never changes; more exploring mixed into the
   mining would change things up. Most of the time went on tunnelling.
 - *Now*: the numbers above: 83% of the copper came from veins no cave touched, matching the
   generation baseline (83% of copper veins never touch a cave).
-- *Call*: package B: ore on cave walls and more, larger caves (B1).
+- *Call*: package B1: ore on cave walls and more, larger caves, with cave mouths so the first
+  trip down follows a cave; B2's sounding rod helps find the veins no cave shows.
 
 **P3-03 Early gear doesn't help find ore.** Design.
 - *Seen*: the toolbelt and padded boots are useful, but with copper this scarce, you only want to
   spend it on something that helps find more copper or dig and explore faster.
 - *Now*: the only copper gear is the toolbelt (4 copper bars) and padded boots (2); every gear
   item that helps exploring (the helmet, claws, spring boots) needs iron or better.
-- *Call* (decided 2026-10-20): package B2: a copper item that helps find more ore, for example by
-  widening the ore sense.
+- *Call* (decided 2026-10-20): package B2: a copper sounding rod. Tapped, it shows roughly where
+  ore is within 20 tiles (glowing areas, not single tiles) and marks nothing on the map.
 
 **P3-04 Damp torches make the Hollows miserable.** Tuning.
 - *Seen*: dimmer torches in the Hollows are a nice touch, but they make exploring there really
@@ -579,12 +614,13 @@ From `npm run report:backup` on the three backups:
   after B. B's bigger caves should make light matter more on their own (a big cave takes more
   torches to light).
 
-**P3-08 Occasional cave networks.** Design, open.
+**P3-08 Occasional cave networks.** Design, planned.
 - *Seen*: you always explored the caves, mostly to reveal more of the map for ore. Their sizes
   varied, but an occasional network of caves would be fun and break up the mining.
 - *Now*: the generation baseline has no cave in the Stone Caverns or the Hollows as big as a
   screen, and none opening to the surface.
-- *Call*: package B1.
+- *Call*: package B1: cave networks joining caverns in about 40% of the Stone Caverns and the
+  Hollows, and cave mouths at the surface.
 
 ## Template for the next round
 

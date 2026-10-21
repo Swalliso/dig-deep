@@ -4,7 +4,7 @@ import { Player } from '../src/entities/player';
 import { readBackup, backupText } from '../src/systems/backup';
 import { Inventory } from '../src/systems/inventory';
 import { checkSave, createSave, restoreProfile, SAVE_VERSION } from '../src/systems/save';
-import { CLASSIC_PROFILE, findProfile, generateWorld, GRAVEL_PROFILE, STRATA_PROFILE } from '../src/world/generate';
+import { CLASSIC_PROFILE, findProfile, generateWorld, GRAVEL_PROFILE, STRATA_PROFILE, STRATA_V2_PROFILE } from '../src/world/generate';
 import { columnHeld, isLoose, worldGetter } from '../src/world/supports';
 import { ORE_TILES, Tile } from '../src/world/tiles';
 import type { World } from '../src/world/world';
@@ -121,6 +121,24 @@ describe('strata v1', () => {
   });
 });
 
+// World hashes of strata v2, recorded before package B1 added strata v3. It's frozen too: worlds
+// made with it keep generating the same, without B1's caverns, cave networks, cave mouths or
+// ore on cave walls.
+const STRATA_V2_HASHES: [number, string][] = [
+  [1, '80ed5913'],
+  [42, 'bfb1baa2'],
+  [987654321, '6f867977'],
+];
+
+describe('strata v2', () => {
+  it.each(STRATA_V2_HASHES)('still generates seed %i exactly as before package B1', (seed, hash) => {
+    const world = generateWorld(seed, STRATA_V2_PROFILE);
+    expect(world.hash().toString(16).padStart(8, '0')).toBe(hash);
+    expect(world.profile).toEqual({ name: 'strata', version: 2 });
+    expect(world.firstCavern).toBeNull();
+  });
+});
+
 describe('saved worlds keep their profile', () => {
   it('saves the profile, and a save without one (from before Phase 12) is classic', () => {
     const world = generateWorld(3, GRAVEL_PROFILE);
@@ -134,11 +152,12 @@ describe('saved worlds keep their profile', () => {
 
   it('a profile this version does not know reads as a save from a newer version', () => {
     const save = createSave(generateWorld(3), new Player(0, 0), new Inventory(), []);
-    const status = checkSave({ ...save, profile: { name: 'strata', version: 3 } });
+    const status = checkSave({ ...save, profile: { name: 'strata', version: 4 } });
     expect(status).toEqual({ kind: 'outdated', version: SAVE_VERSION + 1 });
     expect(findProfile({ name: 'gravel', version: 2 })).toBeNull();
     expect(checkSave({ ...save, profile: { name: 'strata', version: 1 } }).kind).toBe('ok');
     expect(checkSave({ ...save, profile: { name: 'strata', version: 2 } }).kind).toBe('ok');
+    expect(checkSave({ ...save, profile: { name: 'strata', version: 3 } }).kind).toBe('ok');
   });
 
   it('a backup keeps the profile', () => {

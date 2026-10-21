@@ -58,9 +58,12 @@ and pick **Normal** or **Cozy**).
   ambient sound and (below the Stone Caverns) a rule of its own. Crossing into one shows its name,
   depth, what's found there and its rule near the top of the screen. Each layer's ore makes the
   pickaxe you need for the next layer's rock and ore.
-  - **Topsoil** (0–15 m): dirt over the first stone, with the trees on top.
-  - **Stone Caverns** (15–110 m): coal and copper, and pockets of loose gravel.
-  - **Fungal Hollows** (110–230 m): damp **mudstone** (needs a stone pickaxe), iron, glowshrooms
+  - **Topsoil** (0–15 m): dirt over the first stone, with the trees on top. A few **cave
+    mouths** slope down from the surface into the caves; the one nearest the spawn leads on foot
+    to a first cavern with coal and copper on its walls.
+  - **Stone Caverns** (15–110 m): coal and copper, pockets of loose gravel, and caverns, some
+    joined by winding tunnels into cave networks. Much of the ore shows on cave walls.
+  - **Fungal Hollows** (110–230 m): bigger caverns and networks, damp **mudstone** (needs a stone pickaxe), iron, glowshrooms
     that light the caves teal, and giant mushrooms whose stems give wood. **Damp air**: torches
     only light 5 tiles here (8 elsewhere), a little less at first and fully once you're a dozen
     metres in. Glowshrooms, gem lamps, the lantern and flares don't mind the damp, so a lit way
@@ -247,6 +250,7 @@ npm run build     # type-check, then build the static site into dist/
 npm run build:dev # the same, as the dev-site build (own save slot, "DEV BUILD" tag)
 npm run preview   # serve the built dist/ locally
 npm run report:world -- --seeds 1,2,3     # caves and ore per stratum (see PLAYTESTS.md)
+npm run report:world -- --profile strata:2   # ...for worlds of an older generation profile
 npm run report:backup -- r3-copper.json   # what a playthrough dug, mined and explored
 ```
 

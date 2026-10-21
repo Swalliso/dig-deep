@@ -76,8 +76,9 @@ src/config.ts    every tunable number
 src/channel.ts   live vs dev-site build, storageKey()
 src/input.ts     the action table (every key binding), keyboard + mouse state
 src/debug.ts     ?debug testing shortcuts
-src/world/       tiles, chunked storage, generation and strata, lighting, supports, heat, plants,
-                 tile entities, doors, beds, the camp, lift rails and stops, explored map
+src/world/       tiles, chunked storage, generation and strata, cave systems and the walk check,
+                 lighting, supports, heat, plants, tile entities, doors, beds, the camp, lift rails
+                 and stops, explored map
 src/entities/    player physics, item drops, flares, bombs
 src/systems/     items, inventory, mining, building, crafting, chests, saves and backups, health,
                  death, dread, heat, cave-ins, lifts, goal and map pins, settings, clock, stats

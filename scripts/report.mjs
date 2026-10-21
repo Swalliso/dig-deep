@@ -1,5 +1,5 @@
 // Runs one of package B's measuring reports (src/analysis/reports.ts) from the command line:
-//   npm run report:world -- --seeds 1,2,3,4,5
+//   npm run report:world -- --seeds 1,2,3,4,5 [--profile strata:2]
 //   npm run report:backup -- r3-stone.json r3-copper.json
 // The game's code is TypeScript that uses Vite's import.meta.env, so this loads it through Vite's
 // own module loader (no extra tools). The report goes to stdout as markdown, progress to stderr.
@@ -9,7 +9,7 @@ import { createServer } from 'vite';
 
 const [kind, ...args] = process.argv.slice(2);
 if (kind !== 'world' && kind !== 'backup') {
-  console.error('Usage: node scripts/report.mjs world [--seeds 1,2,3] | backup <file.json>...');
+  console.error('Usage: node scripts/report.mjs world [--seeds 1,2,3] [--profile strata:2] | backup <file.json>...');
   process.exit(1);
 }
 if (kind === 'backup' && args.length === 0) {

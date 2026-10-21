@@ -49,9 +49,12 @@ export function isCave(world: World, tx: number, ty: number): boolean {
   return world.inBounds(tx, ty) && ty > world.surface[tx] && !isSolid(world.getTile(tx, ty));
 }
 
-/** Open above the ground (sky, trees): what a cave mouth opens onto. */
+/**
+ * Open above the ground (sky, trees), or open in the surface row itself (where a cave mouth has
+ * carved the grass away): what a cave mouth opens onto.
+ */
 function isSky(world: World, tx: number, ty: number): boolean {
-  return world.inBounds(tx, ty) && ty < world.surface[tx] && !isSolid(world.getTile(tx, ty));
+  return world.inBounds(tx, ty) && ty <= world.surface[tx] && !isSolid(world.getTile(tx, ty));
 }
 
 const DX4 = [1, -1, 0, 0];
