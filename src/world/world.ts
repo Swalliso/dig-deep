@@ -17,6 +17,18 @@ export interface HeartSite {
   cavernY0: number;
 }
 
+/** Strata v3 worlds (package B1): the first cave mouth, near the spawn, and the cavern it leads to. */
+export interface FirstCavernSite {
+  /** A standing spot on the surface beside the mouth, where the walk down starts. */
+  mouthTx: number;
+  mouthTy: number;
+  /** The cavern: a ragged ellipse around (cx, cy) with these radii. */
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+}
+
 /** Hears about every tile change, after the new tile is in place. */
 export type TileListener = (tx: number, ty: number) => void;
 
@@ -50,6 +62,11 @@ export class World {
    * heartstone chamber and the cavern around it), or null. Filled in by generation, like strataTops.
    */
   heart: HeartSite | null = null;
+  /**
+   * Strata v3 worlds (package B1): the first cave mouth and its cavern, or null. Filled in by
+   * generation, like strataTops.
+   */
+  firstCavern: FirstCavernSite | null = null;
   /** Called after any tile changes. Lighting and tile entities listen here (see onTileChange). */
   private readonly tileListeners: TileListener[] = [];
   /**

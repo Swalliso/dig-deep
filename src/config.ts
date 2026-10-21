@@ -751,6 +751,108 @@ export const DEPTHS_GEN: DepthsGenSpec = {
 };
 
 /**
+ * Caverns in one stratum (strata v3): open air where low-frequency noise beats the threshold,
+ * which rises by edgePenalty per row closer than edge to the stratum's top or bottom, so they
+ * round off inside it (like the Geode Depths' crystal caverns).
+ */
+export interface CavernSpec {
+  stratum: number; // index into STRATA
+  scaleX: number; // tiles per noise period
+  scaleY: number;
+  threshold: number;
+  edge: number;
+  edgePenalty: number;
+}
+
+/**
+ * Cave systems (the strata profile v3, package B1): caves that show ore. Caverns in the Stone
+ * Caverns and the Fungal Hollows, cave networks joining them in some areas, cave mouths at the
+ * surface (the first near the spawn, leading to a first cavern with coal and copper on its
+ * walls), and a share of every ore's veins started on a cave wall.
+ */
+export interface CaveSystemsSpec {
+  caverns: readonly CavernSpec[];
+  /**
+   * Cave networks: winding passages along the zero line of a noise (|noise| < width), carved
+   * `radius` tiles round, only where a slow region noise beats regionThreshold. The passages
+   * narrow over the first regionFade above it, so a network peters out at its edges.
+   */
+  networks: {
+    strata: readonly number[];
+    scaleX: number;
+    scaleY: number;
+    width: number;
+    radius: number;
+    regionScale: number;
+    regionThreshold: number;
+    regionFade: number;
+  };
+  /**
+   * Cave mouths: tunnels from the surface down into the caves, each heading away from the spawn,
+   * between angleMin and angleMax degrees below horizontal (wandering by up to wobble a step),
+   * about 2 * radius tiles across. The first starts nearMin..nearMax columns from the spawn and
+   * ends in the first cavern; the others start anywhere at least `spacing` columns apart (and
+   * from the first) and stop once they break into a cave of joinCave tiles, or at maxDepth.
+   */
+  mouths: {
+    count: number;
+    nearMin: number;
+    nearMax: number;
+    spacing: number;
+    edgeMargin: number; // columns kept clear at the world's sides
+    radius: number;
+    angleMin: number;
+    angleMax: number;
+    wobble: number;
+    minDepth: number; // m; a mouth only stops at a cave below this
+    maxDepth: number; // m
+    joinCave: number; // tiles
+  };
+  /**
+   * The first cavern: a ragged ellipse (rx by ry tiles) at depthMin..depthMax m, at least
+   * `cover` rows into the Stone Caverns, at the end of the first mouth. Its walls always show a
+   * coal vein and a copper vein. The mouth is retried (up to `tries` times) until the cavern can
+   * be walked to and back from the surface (world/walkable.ts).
+   */
+  firstCavern: {
+    rxMin: number;
+    rxMax: number;
+    ryMin: number;
+    ryMax: number;
+    depthMin: number;
+    depthMax: number;
+    cover: number;
+    tries: number;
+  };
+  /** Share of each ore's veins that start on a rock face (its stratum's rock with air on a side). */
+  wallVeinShare: number;
+}
+
+export const CAVE_SYSTEMS: CaveSystemsSpec = {
+  caverns: [
+    { stratum: 1, scaleX: 120, scaleY: 30, threshold: 0.6, edge: 8, edgePenalty: 0.05 },
+    { stratum: 2, scaleX: 100, scaleY: 30, threshold: 0.55, edge: 8, edgePenalty: 0.05 },
+  ],
+  networks: { strata: [1, 2], scaleX: 80, scaleY: 40, width: 0.025, radius: 1, regionScale: 160, regionThreshold: 0.15, regionFade: 0.25 },
+  mouths: {
+    count: 4,
+    nearMin: 40,
+    nearMax: 90,
+    spacing: 120,
+    edgeMargin: 40,
+    radius: 1.8,
+    angleMin: 20,
+    angleMax: 55,
+    wobble: 14,
+    minDepth: 18,
+    maxDepth: 70,
+    joinCave: 300,
+  },
+  firstCavern: { rxMin: 20, rxMax: 28, ryMin: 6, ryMax: 9, depthMin: 28, depthMax: 40, cover: 3, tries: 12 },
+  wallVeinShare: 0.3,
+};
+
+/**
  * Gravel pockets (the 'gravel' generation profile, Phase 12): blobs of gravel in stone. A
  * share of them sit on cave ceilings, hanging from them (they fall once disturbed), and
  * deeper ones sometimes hold ore near their bottom, worth shoring up before mining.

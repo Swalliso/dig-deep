@@ -21,7 +21,7 @@ import { checkMine } from '../src/systems/mining';
 import { PICKAXES } from '../src/config';
 import { checkSave, createSave, metaFromSave } from '../src/systems/save';
 import { Inventory } from '../src/systems/inventory';
-import { generateWorld, NEW_WORLD_PROFILE, STRATA_V2_PROFILE } from '../src/world/generate';
+import { generateWorld, STRATA_V2_PROFILE } from '../src/world/generate';
 import { heatField, heatIn, maxHeat, HEAT_REACH } from '../src/world/heat';
 import { LightMap } from '../src/world/lighting';
 import { GEODE, HOLLOWS, inFloatField, MAGMA, STRATA, stratumAt, torchLight } from '../src/world/strata';
@@ -278,8 +278,7 @@ describe('a strata v2 world', () => {
     world = generateWorld(42, STRATA_V2_PROFILE);
   });
 
-  it('is what new worlds get, deterministic, and keeps strata v1 under what it adds', () => {
-    expect(NEW_WORLD_PROFILE).toBe(STRATA_V2_PROFILE);
+  it('is deterministic, and keeps strata v1 under what it adds', () => {
     expect(world.profile).toEqual({ name: 'strata', version: 2 });
     expect(generateWorld(42, STRATA_V2_PROFILE).hash()).toBe(world.hash());
   });

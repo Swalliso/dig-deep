@@ -2,6 +2,7 @@ import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import {
   BEDROCK_BOTTOM_ROWS,
   CAVE_CRUST_HARD,
+  CAVE_SYSTEMS,
   CAVE_CRUST_PENALTY,
   CAVE_DETAIL_SCALE,
   CAVE_DETAIL_WEIGHT,
@@ -43,12 +44,14 @@ import {
   TREE_TRUNK_MIN,
   WORLD_HEIGHT,
   WORLD_WIDTH,
+  type CaveSystemsSpec,
   type DepthsGenSpec,
   type GravelSpec,
   type OreSpec,
   type StrataGenSpec,
 } from '../config';
 import { createRng, randInt, type Rng } from '../util/rng';
+import { carveCaverns, carveNetworks, digMouths, facesInRows, rockFaces } from './caveSystems';
 import { growGiantMushroom } from './plants';
 import { STRATA, stratumAt } from './strata';
 import { isSolid, Tile, tileDef, type TileId } from './tiles';
@@ -100,6 +103,12 @@ export interface GenProfile {
    * of the Deep, or null for none.
    */
   depths: DepthsGenSpec | null;
+  /**
+   * Cave systems (package B1, needs strata): caverns in the Stone Caverns and the Fungal
+   * Hollows, cave networks, cave mouths with a first cavern, and veins started on cave walls, or
+   * null for none.
+   */
+  caveSystems: CaveSystemsSpec | null;
 }
 
 /** Which profile a world was generated with, as saved. */
@@ -109,24 +118,31 @@ export interface ProfileRef {
 }
 
 /** Generation as it was up to Phase 11: frozen, so worlds made then keep regenerating the same. */
-export const CLASSIC_PROFILE: GenProfile = { name: 'classic', version: 1, ores: ORE_LAYERS, gravel: null, strata: null, depths: null };
+export const CLASSIC_PROFILE: GenProfile = { name: 'classic', version: 1, ores: ORE_LAYERS, gravel: null, strata: null, depths: null, caveSystems: null };
 /** Phase 12: classic plus gravel pockets. Frozen too. */
-export const GRAVEL_PROFILE: GenProfile = { name: 'gravel', version: 1, ores: ORE_LAYERS, gravel: GRAVEL_POCKETS, strata: null, depths: null };
+export const GRAVEL_PROFILE: GenProfile = { name: 'gravel', version: 1, ores: ORE_LAYERS, gravel: GRAVEL_POCKETS, strata: null, depths: null, caveSystems: null };
 /**
  * Phase 14a: strata (Topsoil, Stone Caverns, Fungal Hollows, Geode Depths, Magma Layer), each
  * with its own rock and ores; giant mushrooms and glowshrooms in the Hollows, huge glowing
  * crystal caverns in the Geode Depths; and the gravel pockets. Frozen too.
  */
-export const STRATA_PROFILE: GenProfile = { name: 'strata', version: 1, ores: STRATA_ORES, gravel: GRAVEL_POCKETS, strata: STRATA_GEN, depths: null };
+export const STRATA_PROFILE: GenProfile = { name: 'strata', version: 1, ores: STRATA_ORES, gravel: GRAVEL_POCKETS, strata: STRATA_GEN, depths: null, caveSystems: null };
 /**
  * Phase 14b: strata v1 plus what the strata's rules need: floatstone in the Geode Depths' huge
  * caverns, hot rock and lava pools in the Magma Layer, and the Heart of the Deep's chamber above
- * the bedrock. Everything v1 generates is generated the same way first.
+ * the bedrock. Everything v1 generates is generated the same way first. Frozen too.
  */
 export const STRATA_V2_PROFILE: GenProfile = { ...STRATA_PROFILE, version: 2, depths: DEPTHS_GEN };
-export const PROFILES: readonly GenProfile[] = [CLASSIC_PROFILE, GRAVEL_PROFILE, STRATA_PROFILE, STRATA_V2_PROFILE];
+/**
+ * Package B1: strata v2 plus caves that show ore: caverns in the Stone Caverns and the Fungal
+ * Hollows, cave networks, cave mouths at the surface (the first leading to a first cavern with
+ * coal and copper on its walls) and veins started on cave walls. Everything v2 carves is carved
+ * the same way first; the ores' random stream differs, since some veins start on a wall.
+ */
+export const STRATA_V3_PROFILE: GenProfile = { ...STRATA_V2_PROFILE, version: 3, caveSystems: CAVE_SYSTEMS };
+export const PROFILES: readonly GenProfile[] = [CLASSIC_PROFILE, GRAVEL_PROFILE, STRATA_PROFILE, STRATA_V2_PROFILE, STRATA_V3_PROFILE];
 /** What new worlds are generated with. */
-export const NEW_WORLD_PROFILE = STRATA_V2_PROFILE;
+export const NEW_WORLD_PROFILE = STRATA_V3_PROFILE;
 
 /** The profile a save names, or null if this version doesn't know it. */
 export function findProfile(ref: ProfileRef): GenProfile | null {
@@ -228,13 +244,32 @@ export function* generateWorldSteps(world: World, profile: GenProfile): Generato
     carveCrystalCaverns(world, cavernNoise, strata);
   }
 
+  // 3c. Cave systems (strata v3): caverns in the Stone Caverns and the Hollows, cave networks,
+  //     then the cave mouths and the first cavern, each from its own stream.
+  const caves = strata ? profile.caveSystems : null;
+  if (caves) {
+    yield progress(2.96, 'Opening caverns');
+    carveCaverns(world, createNoise2D(subRng(20)), caves.caverns);
+    yield progress(2.97, 'Joining cave networks');
+    carveNetworks(world, createNoise2D(subRng(21)), createNoise2D(subRng(22)), caves.networks);
+    yield progress(2.98, 'Opening cave mouths');
+    digMouths(world, subRng(23), caves);
+  }
+
   // 4. Ores: random-walk veins, only into stone/deepstone (strata: their own stratum's rock),
-  //    only inside each ore's depth band.
+  //    only inside each ore's depth band. With cave systems, a share start on a rock face.
   const oreRng = subRng(5);
+  const faces = new Map<number, Int32Array>();
+  const wallStarts = (stratum: number, top: number, bottom: number): Int32Array => {
+    if (!faces.has(stratum)) faces.set(stratum, rockFaces(world, stratum));
+    return facesInRows(faces.get(stratum)!, world.width, top, bottom);
+  };
   for (let i = 0; i < profile.ores.length; i++) {
     yield progress(3 + i / profile.ores.length, 'Placing ores');
-    placeOreVeins(world, oreRng, profile.ores[i].tile, profile.ores[i].spec, strata ? strata.jitter : 0);
+    const walls = caves ? { share: caves.wallVeinShare, starts: wallStarts } : null;
+    placeOreVeins(world, oreRng, profile.ores[i].tile, profile.ores[i].spec, strata ? strata.jitter : 0, walls);
   }
+  if (caves && strata) placeFirstCavernVeins(world, subRng(24), profile.ores, strata.jitter);
 
   // 4b. Gravel pockets (not in classic), from their own RNG so nothing else changes. With strata
   //     they're in the Stone Caverns' stone and the Fungal Hollows' mudstone.
@@ -356,28 +391,79 @@ function carveCrystalCaverns(world: World, noise: NoiseFunction2D, spec: StrataG
   }
 }
 
-function placeOreVeins(world: World, rng: Rng, tile: TileId, spec: OreSpec, pad: number): void {
+/** Cave systems' vein starts: this share of veins start on one of the rock faces `starts` gives. */
+interface WallVeins {
+  share: number;
+  /** Rock faces of a stratum in rows top..bottom, in row order. */
+  starts: (stratum: number, top: number, bottom: number) => Int32Array;
+}
+
+function placeOreVeins(world: World, rng: Rng, tile: TileId, spec: OreSpec, pad: number, walls: WallVeins | null = null): void {
   const [top, bottom] = oreRowRange(world, spec, pad);
   if (bottom < top) return;
   const stratum = spec.stratum;
   const rock = stratum === undefined ? null : STRATA[stratum].rock;
+  const fits = (tx: number, ty: number): boolean => {
+    const current = world.getTile(tx, ty);
+    return rock === null ? current === Tile.Stone || current === Tile.Deepstone : current === rock && stratumAt(world, tx, ty) === stratum;
+  };
+  const faces = walls && stratum !== undefined ? walls.starts(stratum, top, bottom) : null;
   const veins = Math.round(((bottom - top + 1) * world.width) / spec.tilesPerVein);
   for (let v = 0; v < veins; v++) {
     let tx = randInt(rng, 1, world.width - 2);
     let ty = randInt(rng, top, bottom);
-    const size = randInt(rng, spec.veinMin, spec.veinMax);
-    let placed = 0;
-    for (let step = 0; step < size * 4 && placed < size; step++) {
-      const current = world.getTile(tx, ty);
-      const fits = rock === null ? current === Tile.Stone || current === Tile.Deepstone : current === rock && stratumAt(world, tx, ty) === stratum;
-      if (fits) {
-        world.setTile(tx, ty, tile);
-        placed++;
-      }
-      const dir = randInt(rng, 0, 3);
-      tx = Math.min(world.width - 2, Math.max(1, tx + DX[dir]));
-      ty = Math.min(bottom, Math.max(top, ty + DY[dir]));
+    if (walls && faces && faces.length > 0 && rng() < walls.share) {
+      const i = faces[randInt(rng, 0, faces.length - 1)];
+      tx = i % world.width;
+      ty = (i - tx) / world.width;
     }
+    walkVein(world, rng, tile, tx, ty, randInt(rng, spec.veinMin, spec.veinMax), top, bottom, fits);
+  }
+}
+
+/** A random-walk vein of up to `size` tiles from (tx, ty), placed only where `fits`, staying in rows top..bottom. */
+function walkVein(world: World, rng: Rng, tile: TileId, tx: number, ty: number, size: number, top: number, bottom: number, fits: (tx: number, ty: number) => boolean): void {
+  let placed = 0;
+  for (let step = 0; step < size * 4 && placed < size; step++) {
+    if (fits(tx, ty)) {
+      world.setTile(tx, ty, tile);
+      placed++;
+    }
+    const dir = randInt(rng, 0, 3);
+    tx = Math.min(world.width - 2, Math.max(1, tx + DX[dir]));
+    ty = Math.min(bottom, Math.max(top, ty + DY[dir]));
+  }
+}
+
+/**
+ * The first cavern always shows a coal vein and a copper vein: for each that no wall of it shows
+ * yet, a vein is started on one of its rock faces (in that ore's rows).
+ */
+function placeFirstCavernVeins(world: World, rng: Rng, ores: GenProfile['ores'], pad: number): void {
+  const site = world.firstCavern;
+  if (!site) return;
+  const air = (tx: number, ty: number): boolean => world.getTile(tx, ty) === Tile.Air;
+  const facesAir = (tx: number, ty: number): boolean => air(tx - 1, ty) || air(tx + 1, ty) || air(tx, ty - 1) || air(tx, ty + 1);
+  for (const tile of [Tile.CoalOre, Tile.CopperOre]) {
+    const layer = ores.find((o) => o.tile === tile);
+    if (!layer || layer.spec.stratum === undefined) continue;
+    const stratum = layer.spec.stratum;
+    const rock = STRATA[stratum].rock;
+    const [top, bottom] = oreRowRange(world, layer.spec, pad);
+    const faces: [number, number][] = [];
+    let shown = false;
+    for (let ty = site.cy - site.ry - 2; ty <= site.cy + site.ry + 2; ty++) {
+      for (let tx = site.cx - site.rx - 2; tx <= site.cx + site.rx + 2; tx++) {
+        if (!facesAir(tx, ty)) continue;
+        const here = world.getTile(tx, ty);
+        if (here === tile) shown = true;
+        else if (here === rock && ty >= top && ty <= bottom && stratumAt(world, tx, ty) === stratum) faces.push([tx, ty]);
+      }
+    }
+    if (shown || faces.length === 0) continue;
+    const [tx, ty] = faces[randInt(rng, 0, faces.length - 1)];
+    const fits = (x: number, y: number): boolean => world.getTile(x, y) === rock && stratumAt(world, x, y) === stratum;
+    walkVein(world, rng, tile, tx, ty, randInt(rng, layer.spec.veinMin, layer.spec.veinMax), top, bottom, fits);
   }
 }
 

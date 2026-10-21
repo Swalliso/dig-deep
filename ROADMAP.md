@@ -755,18 +755,46 @@ copper dug to rather than seen. B1 makes caves the place where ore shows. Branch
     deciding anything about damp torches.
   - Gravel hanging over a cave rises from about 205 to 340 tiles a world, and big caverns take
     more torches to light. Both are evidence for the light and hazard reviews after B (P3-07).
+- **As built** (`feature/b1-caves-and-ore`):
+  - **Where it lives**: every number is in `CAVE_SYSTEMS` (config.ts), and `world/caveSystems.ts`
+    carves the caverns, networks, mouths and first cavern and lists rock faces. `generate.ts`
+    adds `STRATA_V3_PROFILE`, which new worlds get, with a `caveSystems` field (null in every
+    older profile), and starts 30% of veins on rock faces.
+  - **Older profiles**: the vein walk was pulled out into a function without changing any
+    random call, so classic, gravel, v1 and v2 all keep their pinned hashes. v2's hashes are
+    pinned now.
+  - **Tuning**: the Stone Caverns' caverns ended up at noise scale 120 × 30 rather than
+    100 × 28, which left 2 of 21 seeds without a cave as big as a screen.
+  - **The first cavern**: a ragged ellipse about 41–57 × 13–19 tiles, with its near tip at the
+    end of the mouth.
+    - The prototype's mouth broke in through the cavern's upper wall, an overhang you could fall
+      from but never climb back to.
+    - Generation checks the cavern with `world/walkable.ts`, a cautious search on foot down from
+      the surface and back up: walking with the step up, jumps of up to 4 tiles (a full jump
+      clears 4), running jumps over holes up to 3 columns wide, and drops of at most 12 tiles.
+    - A cavern that fails gets its mouth retried from another column, on alternating sides, up
+      to 12 times. All 21 seeds tried (1–20 and 42) end with a cavern that passes.
+    - The cavern gets a coal or copper vein on its walls if the wall-started veins didn't put
+      one there.
+    - `world.firstCavern` records the mouth's start and the cavern. It's regenerated from the
+      seed, not saved.
+  - **The report**: `npm run report:world -- --profile strata:2` reports an older profile, and
+    an open tile in the surface row counts as sky, so mouths are found.
+  - **Speed**: generation takes about 215 ms in Node (v2: 132 ms) and about 75 ms in Chromium
+    (v2: 50 ms). Seed 42 goes from Create world to playing in about 0.13 s.
+  - **Saves and debug**: no new tiles, saved state or debug keys, and no `SAVE_VERSION` bump.
 
 Generation targets, per world over seeds 1–5 (`npm run report:world`):
 
-| | v2 | Prototype | Target |
-| --- | ---: | ---: | --- |
-| Stone Caverns open | 6.6% | 17.9% | 15–20% |
-| Stone Caverns caves of ¼ screen / of a screen | 3 / 0 | 19 / 3 | at least 12 / at least 2, and 1 on every seed |
-| Fungal Hollows open | 9.7% | 23.7% | 20–25% |
-| Fungal Hollows caves of a screen | 0 | 7 | at least 5 |
-| Veins touching a cave: coal / copper / iron | 14 / 17 / 24% | 59 / 57 / 61% | at least 50% each |
-| Each ore's tiles | – | within 3% of v2 | within 10% of v2 |
-| Cave mouths / nearest to the spawn | 0 / – | 6 / 48–75 tiles | at least 3 / within 100 tiles |
+| | v2 | Prototype | As built | Target |
+| --- | ---: | ---: | ---: | --- |
+| Stone Caverns open | 6.6% | 17.9% | 17.6% | 15–20% |
+| Stone Caverns caves of ¼ screen / of a screen | 3 / 0 | 19 / 3 | 18 / 3 (1–4 per seed) | at least 12 / at least 2, and 1 on every seed |
+| Fungal Hollows open | 9.7% | 23.7% | 23.7% | 20–25% |
+| Fungal Hollows caves of a screen | 0 | 7 | 7 | at least 5 |
+| Veins touching a cave: coal / copper / iron | 14 / 17 / 24% | 59 / 57 / 61% | 56 / 57 / 60% | at least 50% each |
+| Each ore's tiles | – | within 3% of v2 | within 6% of v2 | within 10% of v2 |
+| Cave mouths / the first one's distance from the spawn | 0 / – | 6 / 48–75 tiles | 4 / 46–66 tiles | at least 3 / within 100 tiles |
 
 - [ ] `npm run report:world` on seeds 1–5 meets the generation targets above.
 - [ ] Seeds 1–5 and 42 each have at least 3 cave mouths. One is within 100 tiles of the spawn

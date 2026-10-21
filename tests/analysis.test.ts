@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { SURFACE_LEVEL } from '../src/config';
 import { backupReport, measureBackup, playTimeLabel } from '../src/analysis/backupStats';
-import { parseSeeds } from '../src/analysis/reports';
+import { parseProfile, parseSeeds } from '../src/analysis/reports';
 import { findVeins, MIN_CAVE, measureWorld, ORE_KINDS, worldReport } from '../src/analysis/worldStats';
 import { Inventory } from '../src/systems/inventory';
 import { createSave } from '../src/systems/save';
 import { ExploredMap } from '../src/world/explored';
+import { NEW_WORLD_PROFILE, STRATA_V2_PROFILE } from '../src/world/generate';
 import { Tile, type TileId } from '../src/world/tiles';
 import { World } from '../src/world/world';
 
@@ -78,6 +79,15 @@ describe('world report', () => {
     expect(stats.mouths).toEqual([{ tx: 51, fromSpawn: 19, size: 15, deepest: 16 - SURFACE_LEVEL }]);
   });
 
+  it('counts a cave under a gap in the grass (a cave mouth carved through the surface row) as a mouth', () => {
+    const world = tinyWorld();
+    world.setTile(8, 10, Tile.Air);
+    fill(world, 8, 11, 8, 21, Tile.Air); // a shaft from the gap down into the Stone Caverns' cave
+    const mouths = measureWorld(world).mouths;
+    expect(mouths.map((m) => m.tx)).toEqual([8, 51]);
+    expect(mouths[0]).toMatchObject({ size: 40 + 11, deepest: 25 - SURFACE_LEVEL });
+  });
+
   it('prints a table per stratum', () => {
     const text = worldReport([stats]);
     for (const name of ['Topsoil', 'Stone Caverns', 'Fungal Hollows', 'Geode Depths', 'Magma Layer', 'Cave mouths']) {
@@ -91,6 +101,13 @@ describe('world report', () => {
     expect(parseSeeds(['--seeds=9'])).toEqual([9]);
     expect(parseSeeds([])).toEqual([1, 2, 3, 4, 5]);
     expect(() => parseSeeds(['--seeds', 'x'])).toThrow();
+  });
+
+  it('reads the profile from the command line', () => {
+    expect(parseProfile([])).toBe(NEW_WORLD_PROFILE);
+    expect(parseProfile(['--profile', 'strata:2'])).toBe(STRATA_V2_PROFILE);
+    expect(parseProfile(['--seeds', '1', '--profile=strata:2'])).toBe(STRATA_V2_PROFILE);
+    expect(() => parseProfile(['--profile', 'strata:9'])).toThrow();
   });
 });
 

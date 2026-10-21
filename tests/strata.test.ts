@@ -4,7 +4,7 @@ import { nextStratumSpot } from '../src/debug';
 import { RECIPES } from '../src/systems/crafting';
 import { nextPickaxe, pickaxeNote, whereFound } from '../src/systems/goal';
 import { itemDef, type ItemId } from '../src/systems/items';
-import { CLASSIC_PROFILE, generateWorld, GRAVEL_PROFILE, NEW_WORLD_PROFILE, STRATA_ORES, STRATA_V2_PROFILE } from '../src/world/generate';
+import { CLASSIC_PROFILE, generateWorld, GRAVEL_PROFILE, STRATA_ORES, STRATA_V2_PROFILE } from '../src/world/generate';
 import { bannerTitle, depthRange, STRATA, StratumTracker, stratumAt } from '../src/world/strata';
 import { isSolid, Tile, TILES, tileDef, type TileId } from '../src/world/tiles';
 import { World } from '../src/world/world';
@@ -155,8 +155,7 @@ describe.each(SEEDS)('strata world from seed %i', (seed) => {
 });
 
 describe('the strata profile', () => {
-  it('is what new worlds get, and is deterministic', () => {
-    expect(NEW_WORLD_PROFILE).toBe(STRATA_V2_PROFILE);
+  it('is deterministic', () => {
     const a = generateWorld(2024, STRATA_V2_PROFILE);
     const b = generateWorld(2024, STRATA_V2_PROFILE);
     expect(b.hash()).toBe(a.hash());

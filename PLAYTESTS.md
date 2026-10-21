@@ -63,8 +63,9 @@ chat): it gets triaged here as a new round.
 **The numbers** (`src/analysis/`, run from a checkout after `npm install`):
 
 - `npm run report:world -- --seeds 1,2,3,4,5`: generates worlds with the profile new worlds get
-  and prints, per stratum, open space, cave sizes, ore and veins per type, and how much ore a cave
-  shows (exposed) versus how much is buried; then the cave mouths at the surface.
+  (or another, with `--profile strata:2`) and prints, per stratum, open space, cave sizes, ore
+  and veins per type, and how much ore a cave shows (exposed) versus how much is buried; then
+  the cave mouths at the surface.
 - `npm run report:backup -- r3-stone.json r3-copper.json`: compares each backup with its world
   regenerated from the seed and prints a timeline (play time, pickaxe, depth, tiles dug, ore mined
   and how much came from veins a cave showed, torches placed), then per backup the tiles dug and
@@ -78,7 +79,7 @@ Both print markdown, so a round's tables can be pasted straight into its entry b
 | Package | Items | Where | Status |
 | --- | --- | --- | --- |
 | A. World fixes | P1-01, P1-04, P1-05, P1-08, P1-15 | `feature/playtest-world-fixes` | done ([#27](https://github.com/Swalliso/dig-deep/pull/27)) |
-| B. Early game and the ore economy | P1-02, P1-03, P1-12, P1-13, P2-01, P2-02, P2-03, P3-02, P3-03, P3-08 | ROADMAP.md: packages B1 (caves and ore) and B2 (supplies and tools), before Phase 17 | designed; B1 next |
+| B. Early game and the ore economy | P1-02, P1-03, P1-12, P1-13, P2-01, P2-02, P2-03, P3-02, P3-03, P3-08 | ROADMAP.md: packages B1 (caves and ore) and B2 (supplies and tools), before Phase 17 | B1 built (`feature/b1-caves-and-ore`), Round 4 to play; then B2 |
 | C. Readability and art | P1-07 | small slice, any time | ready |
 | D. Wishlist | P1-11 | not planned | – |
 | E. Movement and targeting controls | P1-09, P1-14, P2-04 | `feature/playtest-controls` | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
@@ -88,8 +89,9 @@ Both print markdown, so a round's tables can be pasted straight into its entry b
 Not packaged: P3-07 (dread and gravel supports barely came up) is evidence for ROADMAP's "Light
 balance pass" and "Hazard and building design review", to look at after B.
 
-**Order (lean)**: A and E are done, and B is designed (2026-10-20). Next is B1, then B2, each
-with its own playtest round. F follows B2, so the Hollows' light is tuned on a B1 world with
+**Order (lean)**: A and E are done, and B is designed (2026-10-20). B1 is built and needs its
+playtest (Round 4); then B2, with its own round (Round 5). F follows B2, so the Hollows'
+light is tuned on a B1 world with
 B2's charcoal and sounding rod. G is small and can go any time, and so can C.
 
 ### A. World fixes
