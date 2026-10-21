@@ -113,7 +113,7 @@ import { Heat, heatStatus, type HeatSafety } from './systems/heat';
 import { saveSettings, type Settings } from './systems/settings';
 import { smartDigTarget, smartPlaceTarget } from './systems/smartCursor';
 import { computeStats, statChanges, type PlayerStats } from './systems/stats';
-import { blastBreaks, blastHits, blastTiles, drillTilesLeft, hangRope, rollUpRope, ropePlan, ropePlanText, RopeSlack } from './systems/tools';
+import { blastBreaks, blastHits, blastTiles, cutRope, drillTilesLeft, hangRope, ROPE_AT_FLOOR, ropePlan, ropePlanText, RopeSlack } from './systems/tools';
 import { ladderGrabHint, mainKey, overlayHelpLines, respawnPrompt } from './ui/controls';
 import { drawDebugInfo, drawDepthMeter, drawFpsCounter, drawHotbar, drawStratumBanner, drawToasts, Toasts } from './ui/hud';
 import { goalHudLines } from './ui/guidance';
@@ -1281,7 +1281,7 @@ export class Game {
       const left = drillTilesLeft(this.drillCharge, coal);
       return left > 0 ? `Fuel: ${coal} coal, about ${left} tiles of drilling` : 'No coal: the drill needs coal to run';
     }
-    if (item === 'rope_coil') return `Hangs a rope ladder up to ${ROPE_LENGTH} m down from an edge`;
+    if (item === 'rope_coil') return `Hangs up to ${ROPE_LENGTH} m of rope ladder from an edge, or adds it to a rope`;
     if (item === 'bomb') {
       const tier = inventory.bestPickaxeTier();
       return tier >= 0 ? `Blasts 3 x 3: what your ${PICKAXES[tier].name.toLowerCase()} pickaxe can mine` : 'Blasts 3 x 3, but breaks nothing without a pickaxe';
@@ -1441,10 +1441,12 @@ export class Game {
       for (const felled of fellTreeAbove(this.world, tx, ty, tile)) this.shatter(felled.tx, felled.ty, felled.tile);
     }
     if (tile === Tile.HeartCore && this.heartClaimedAt === null) this.claimHeart(tx, ty);
-    // Breaking any part of a rope ladder rolls the whole rope back up into coils.
+    // Cutting a rope ladder rolls up the part below the cut; the part above keeps hanging (and
+    // unrolls the rest of its coil back into the gap). Any whole coils that frees come to the
+    // player, rather than dropping down the shaft the rope hung in.
     if (tile === Tile.Rope) {
-      const coils = rollUpRope(this.world, tx, ty);
-      this.dropList.push(new ItemDrop('rope_coil', coils, (tx + 0.5) * TILE_SIZE, (ty + 0.5) * TILE_SIZE));
+      const coils = cutRope(this.world, tx, ty);
+      if (coils > 0) this.dropList.push(new ItemDrop('rope_coil', coils, this.player.centerX, this.player.centerY));
     }
   }
 
@@ -1864,18 +1866,25 @@ export class Game {
     if (!this.deathScreen && blastHits(tx, ty, player.x, player.y)) this.hurt(BOMB_DAMAGE, { kind: 'bomb' });
   }
 
-  /** Hang a rope ladder from (tx, ty) with the held rope coil, or say why it can't hang there. */
+  /**
+   * Hang a rope ladder from (tx, ty) with the held rope coil, or on a rope (or under its end) add
+   * the coil to that rope's bottom end; or say why it can't.
+   */
   private hangRopeAt(tx: number, ty: number): void {
     const { world, player, inventory } = this;
     if (inventory.selectedStack?.item !== 'rope_coil') return;
     const plan = ropePlan(world, player, tx, ty);
     if (!plan) {
-      const why = !inReach(player, tx, ty) ? 'Too far away to hang a rope there' : 'A rope hangs from an empty spot with something solid right above it or beside it, like the lip of a shaft';
+      const why = !inReach(player, tx, ty)
+        ? 'Too far away to hang a rope there'
+        : world.getTile(tx, ty) === Tile.Rope
+          ? `${ROPE_AT_FLOOR}: a coil adds to a rope with open space under its end`
+          : 'A rope hangs from an empty spot with something solid right above it or beside it, like the lip of a shaft';
       this.toasts.show(why, 4);
       return;
     }
-    hangRope(world, tx, ty, plan.length);
-    inventory.removeFromSlot(inventory.selected, 1);
+    hangRope(world, tx, plan.from, plan.length);
+    if (plan.coils > 0) inventory.removeFromSlot(inventory.selected, plan.coils);
     sfx.rope(this.pan(tx));
   }
 
@@ -2127,25 +2136,14 @@ export class Game {
    */
   private drawCursorAt(tx: number, ty: number, camX: number, camY: number): void {
     const { world, renderer } = this;
+    const stack = this.inventory.selectedStack;
+    if (stack?.item === 'rope_coil' && this.drawRopePlan(tx, ty, camX, camY)) return;
     const check = checkMine(world, this.player, tx, ty, this.inventory.bestPickaxeTier());
     if (check !== 'empty') {
       renderer.drawTileOutline(tx, ty, check === 'ok' ? '#ffffff' : '#ff4040', camX, camY);
       const here = world.getTile(tx, ty);
       if (this.caveIns.isEnabled && isSupport(here)) this.drawRemovalWarning(tx, ty, here, camX, camY);
       this.drawPlantStatus(tx, ty, camX, camY);
-      return;
-    }
-    // A rope coil: the rope it would unroll, and how far it reaches (Phase 16).
-    const stack = this.inventory.selectedStack;
-    if (stack?.item === 'rope_coil' && world.getTile(tx, ty) === Tile.Air && inReach(this.player, tx, ty)) {
-      const plan = ropePlan(world, this.player, tx, ty);
-      if (!plan) {
-        renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
-        renderer.drawFloatingText('A rope hangs from an edge: something solid above or beside', (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
-        return;
-      }
-      for (let i = 0; i < plan.length; i++) renderer.drawTileOutline(tx, ty + i, i === 0 ? '#ffffff' : 'rgba(255, 255, 255, 0.35)', camX, camY);
-      renderer.drawFloatingText(ropePlanText(plan), (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffe9b0', 1, camX, camY);
       return;
     }
     // Empty tile: a faint outline where the selected block could be placed.
@@ -2184,6 +2182,29 @@ export class Game {
       const text = `${itemDef(stack!.item).name} only grow${stack!.item === 'sapling' ? 's' : ''} on ${on.join(' or ')}`;
       renderer.drawFloatingText(text, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
     }
+  }
+
+  /**
+   * With a rope coil held, at an open spot or a rope in reach: the rope it would hang, or what it
+   * would add to the rope there, and how far it reaches (Phase 16; extending, package G), or why
+   * it can't. False anywhere else, where the cursor shows what it usually does.
+   */
+  private drawRopePlan(tx: number, ty: number, camX: number, camY: number): boolean {
+    const { world, renderer } = this;
+    const here = world.getTile(tx, ty);
+    if ((here !== Tile.Air && here !== Tile.Rope) || !inReach(this.player, tx, ty)) return false;
+    const plan = ropePlan(world, this.player, tx, ty);
+    if (!plan) {
+      const why = here === Tile.Rope ? ROPE_AT_FLOOR : 'A rope hangs from an edge: something solid above or beside';
+      renderer.drawTileOutline(tx, ty, '#ff9628', camX, camY);
+      renderer.drawFloatingText(why, (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffc080', 1, camX, camY);
+      return true;
+    }
+    // The spot (or the rope) it's used on, then the rope it would unroll there or under the rope's end.
+    renderer.drawTileOutline(tx, ty, '#ffffff', camX, camY);
+    for (let i = 0; i < plan.length; i++) if (plan.from + i !== ty) renderer.drawTileOutline(tx, plan.from + i, 'rgba(255, 255, 255, 0.35)', camX, camY);
+    renderer.drawFloatingText(ropePlanText(plan), (tx + 0.5) * TILE_SIZE, ty * TILE_SIZE - 2, '#ffe9b0', 1, camX, camY);
+    return true;
   }
 
   /** Which one-time hint covers placing `tile`. */

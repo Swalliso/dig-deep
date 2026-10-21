@@ -160,14 +160,14 @@ export function quickTorchSpot(world: World, player: Player, tx: number, ty: num
 
 /**
  * What a left-click does for as long as the button stays down: mine tiles, place blocks, throw
- * one (a flare or a bomb), or hang a rope (once per press).
+ * one (a flare or a bomb), or hang a rope or add to one (once per press).
  */
 export type PrimaryAction = 'dig' | 'build' | 'throw' | 'rope';
 
 /**
  * Decide what a left-click does, from what's held and the tile under the cursor when the button
- * goes down. A held tool is used (a pickaxe or the drill digs, a flare or a bomb is thrown and
- * a rope coil hung from an empty spot, once per press); a held
+ * goes down. A held tool is used (a pickaxe or the drill digs, a flare or a bomb is thrown, and
+ * a rope coil is hung from an empty spot or added to the rope it's used on, once per press); a held
  * block is placed on an empty spot; anything else digs with the best pickaxe carried, so the
  * dig-and-build loop never needs a hotbar switch. Deciding once per press keeps a building
  * sweep from mining what it drags across, and a dig from placing blocks.
@@ -177,7 +177,7 @@ export function primaryAction(held: ItemId | null, cursorTile: TileId): PrimaryA
   const def = itemDef(held);
   if (def.pickaxeTier !== undefined || def.tool === 'drill') return 'dig';
   if (def.thrown) return 'throw';
-  if (def.tool === 'rope') return cursorTile === Tile.Air ? 'rope' : 'dig';
+  if (def.tool === 'rope') return cursorTile === Tile.Air || cursorTile === Tile.Rope ? 'rope' : 'dig';
   return def.placeTile !== null && cursorTile === Tile.Air ? 'build' : 'dig';
 }
 

@@ -12,33 +12,33 @@ Built with TypeScript, Vite and plain HTML5 Canvas: no game engine, no external 
 or start a **New world** (give it a name and a seed, or leave the seed blank for a random one,
 and pick **Normal** or **Cozy**).
 
-| Action                             | Input                     |
-| ---------------------------------- | ------------------------- |
-| Move                               | A / D or ← / →            |
-| Jump                               | Space, W or ↑             |
-| Careful walk (no auto step-up)     | Hold Shift and move       |
-| Dig                                | Hold left mouse on a tile |
-| Place the held block               | Left mouse on empty space |
-| Build a row                        | Hold left mouse and sweep |
-| Throw a held flare or bomb         | Left mouse at a spot      |
-| Hang a held rope coil              | Left mouse on an edge     |
-| Pick block onto hotbar             | Middle mouse              |
-| Quick torch (keeps what you hold)  | T                         |
-| Use chest, door, bed, camp, lift   | Right-click it            |
-| Climb a ladder                     | W / S or ↑ / ↓ on it      |
-| Drop through a platform            | S (hold to keep dropping) |
-| Map / minimap                      | M / N                     |
-| Add or edit a map pin              | Right-click the map       |
-| Select hotbar slot                 | 1–0 or mouse wheel        |
-| Drop selected stack                | Q                         |
-| Quick stack to nearby chests       | C                         |
-| Inventory, crafting, nearest chest | E or Tab                  |
-| Move stack (hotbar ↔ bag ↔ chest)  | Shift-click               |
-| Wear or take off an accessory      | Shift-click it            |
-| Craft 10                           | Shift-click a recipe      |
-| Pin a recipe as your goal          | Right-click the recipe    |
-| Pause                              | Esc                       |
-| Debug overlay (FPS)                | F3                        |
+| Action                             | Input                         |
+| ---------------------------------- | ----------------------------- |
+| Move                               | A / D or ← / →                |
+| Jump                               | Space, W or ↑                 |
+| Careful walk (no auto step-up)     | Hold Shift and move           |
+| Dig                                | Hold left mouse on a tile     |
+| Place the held block               | Left mouse on empty space     |
+| Build a row                        | Hold left mouse and sweep     |
+| Throw a held flare or bomb         | Left mouse at a spot          |
+| Hang or extend a rope              | Left mouse on an edge or rope |
+| Pick block onto hotbar             | Middle mouse                  |
+| Quick torch (keeps what you hold)  | T                             |
+| Use chest, door, bed, camp, lift   | Right-click it                |
+| Climb a ladder                     | W / S or ↑ / ↓ on it          |
+| Drop through a platform            | S (hold to keep dropping)     |
+| Map / minimap                      | M / N                         |
+| Add or edit a map pin              | Right-click the map           |
+| Select hotbar slot                 | 1–0 or mouse wheel            |
+| Drop selected stack                | Q                             |
+| Quick stack to nearby chests       | C                             |
+| Inventory, crafting, nearest chest | E or Tab                      |
+| Move stack (hotbar ↔ bag ↔ chest)  | Shift-click                   |
+| Wear or take off an accessory      | Shift-click it                |
+| Craft 10                           | Shift-click a recipe          |
+| Pin a recipe as your goal          | Right-click the recipe        |
+| Pause                              | Esc                           |
+| Debug overlay (FPS)                | F3                            |
 
 - **Left mouse uses what you're holding.** Holding a block and pointing at an empty spot places
   it (hold and sweep to build a row); pointing at a tile digs it with your best pickaxe,
@@ -177,9 +177,13 @@ and pick **Normal** or **Cozy**).
     pickaxe could mine, never bedrock. Stand clear: it hurts if you're within 2 tiles.
   - **Rope coil** (5 planks): left mouse on an empty spot with something solid above or beside
     it (the lip of a shaft) hangs a rope ladder up to 20 tiles straight down. The cursor shows
-    how far it reaches first. Climb it like a ladder; break any part of it to roll it back up.
-    If the floor under its end opens up (dug, fallen or blown away), it unrolls further into the
-    gap, up to the rest of its coil (a 6-tile rope can grow to 20).
+    how far it reaches first. Climb it like a ladder. Left mouse on a rope (or the spot under its
+    end) adds another coil to its bottom end, up to 20 more tiles, so ropes reach past 20 m.
+    Rope is as tough to dig as coal ore, so a stray click doesn't cut it. Cutting it keeps the
+    part above hanging and rolls up the part below: whole coils come back to you, and the rest of
+    the cut coil drops back down into the gap. Break its top tile to roll all of it up. If the floor
+    under its end opens up (dug, fallen or blown away), it unrolls further into the gap, up to
+    the rest of its coil (a 6-tile rope can grow to 20).
   - **Drill** (8 emberite bars and 4 iron bars): with it in hand, it mines anything the
     emberite pickaxe can, about twice as fast, burning one coal from your inventory every 8
     tiles. The hotbar shows how much drilling your coal is good for. You keep it when you die.
@@ -234,9 +238,9 @@ and pick **Normal** or **Cozy**).
   first click or key press, as browsers require.
 - **Smart cursor** (Settings, off at first) makes aiming easier: digging works on the nearest
   tile toward the pointer (you only need to point the right way, within reach), and a held
-  block goes in the nearest spot toward the pointer where it can be placed. Ladders, torches,
-  platforms and trees are only dug when you point right at them. The target gets yellow corner
-  brackets. Throwing, ropes and right-click still use the tile under the pointer.
+  block goes in the nearest spot toward the pointer where it can be placed. Ladders, ropes,
+  torches, platforms and trees are only dug when you point right at them. The target gets yellow
+  corner brackets. Throwing, ropes and right-click still use the tile under the pointer.
 
 ## Development
 

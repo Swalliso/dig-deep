@@ -63,8 +63,9 @@ chat): it gets triaged here as a new round.
 **The numbers** (`src/analysis/`, run from a checkout after `npm install`):
 
 - `npm run report:world -- --seeds 1,2,3,4,5`: generates worlds with the profile new worlds get
-  (or another, with `--profile strata:2`) and prints, per stratum, open space, cave sizes, ore and veins per type, and how much ore a cave
-  shows (exposed) versus how much is buried; then the cave mouths at the surface.
+  (or another, with `--profile strata:2`) and prints, per stratum, open space, cave sizes, ore
+  and veins per type, and how much ore a cave shows (exposed) versus how much is buried; then
+  the cave mouths at the surface.
 - `npm run report:backup -- r3-stone.json r3-copper.json`: compares each backup with its world
   regenerated from the seed and prints a timeline (play time, pickaxe, depth, tiles dug, ore mined
   and how much came from veins a cave showed, torches placed), then per backup the tiles dug and
@@ -83,13 +84,14 @@ Both print markdown, so a round's tables can be pasted straight into its entry b
 | D. Wishlist | P1-11 | not planned | – |
 | E. Movement and targeting controls | P1-09, P1-14, P2-04 | `feature/playtest-controls` | done ([#28](https://github.com/Swalliso/dig-deep/pull/28)) |
 | F. Fungal Hollows pass | P1-06, P1-10, P3-04, P3-05 | one slice, after B's design session | main fix decided |
-| G. Rope follow-ups | P3-01, P3-06 | small slice, any time | ready |
+| G. Rope follow-ups | P3-01, P3-06 | `feature/rope-follow-ups` | done ([#32](https://github.com/Swalliso/dig-deep/pull/32)) |
 
 Not packaged: P3-07 (dread and gravel supports barely came up) is evidence for ROADMAP's "Light
 balance pass" and "Hazard and building design review", to look at after B.
 
 **Order (lean)**: A and E are done, and B is designed (2026-10-20). B1 is built and needs its
-playtest (Round 4); then B2, with its own round (Round 5). F follows B2, so the Hollows' light is tuned on a B1 world with
+playtest (Round 4); then B2, with its own round (Round 5). F follows B2, so the Hollows'
+light is tuned on a B1 world with
 B2's charcoal and sounding rod. G is small and can go any time, and so can C.
 
 ### A. World fixes
@@ -224,14 +226,17 @@ grown rather than torched, but nothing lets you grow it yet.
 
 ### G. Rope follow-ups
 
-Ready: the calls were made on 2026-10-20.
+Done: merged into `develop` in [#32](https://github.com/Swalliso/dig-deep/pull/32) on 2026-10-20.
 
 - **P3-01**: breaking a rope tile cuts the rope there: the part above keeps hanging and only the
   part below rolls up (still never giving back more coils than were used). Rope is hard to cut
-  by accident: at least as tough as stone (hardness 0.8, against 0.2 today and dirt's 0.3), so
-  a stray click while digging down doesn't strand you.
+  by accident: at least as tough as stone (stone is 0.8, dirt 0.3; rope was 0.2), so a stray
+  click while digging down doesn't strand you.
 - **P3-06**: a coil used at a rope's bottom end extends it, so a drop deeper than 20 m can be
   roped (the "joining ropes" option from P2-03).
+- As built: rope hardness is 1.0. A cut inside the rope's last coil drops straight back down
+  (the part above unrolls into the gap up to its own slack), and only whole coils freed below the
+  cut come back. A coil used on any rope tile in reach extends that rope from its bottom end.
 - Platforms staying the cheap way back up is fine. The goal is that ropes stop being frustrating,
   not that they replace platforms.
 
@@ -544,18 +549,18 @@ From `npm run report:backup` on the three backups:
 
 | ID | Item | Kind | Package | Status |
 | --- | --- | --- | --- | --- |
-| P3-01 | A stray click breaks a rope almost instantly and rolls all of it up, stranding you | Tuning | G | planned |
+| P3-01 | A stray click breaks a rope almost instantly and rolls all of it up, stranding you | Tuning | G | done ([#32](https://github.com/Swalliso/dig-deep/pull/32)) |
 | P3-02 | Copper is hard to find more than rare; the search is all tunnelling | Design | B | planned (B1, B2) |
 | P3-03 | Early gear doesn't help find or reach ore, so copper isn't worth spending on it | Design | B | planned (B2) |
 | P3-04 | Damp torches make the Fungal Hollows miserable to explore | Tuning | F | planned |
 | P3-05 | In the dark, ore is found on the map rather than on screen | Design | F | open |
-| P3-06 | Platforms beat rope ladders for getting back up | Design | G | planned |
+| P3-06 | Platforms beat rope ladders for getting back up | Design | G | done ([#32](https://github.com/Swalliso/dig-deep/pull/32)) |
 | P3-07 | Dread and gravel supports barely came up | Design | – | open |
 | P3-08 | Occasional cave networks would break up the mining | Design | B | planned (B1) |
 
 ### Findings
 
-**P3-01 Ropes break too easily.** Tuning.
+**P3-01 Ropes break too easily.** Tuning. Done in [#32](https://github.com/Swalliso/dig-deep/pull/32).
 - *Seen*: digging more or less straight down beside a rope, it's easy to hit the rope by
   accident; it breaks seemingly instantly and the whole ladder is gone, which makes getting back
   up hard.
@@ -599,7 +604,7 @@ From `npm run report:backup` on the three backups:
   (P1-02), while ore only glints at light level 3 or more.
 - *Call*: package F: show that 5-tile ore sense on screen, so you look at the world, not the map.
 
-**P3-06 Platforms beat rope ladders.** Design.
+**P3-06 Platforms beat rope ladders.** Design. Done in [#32](https://github.com/Swalliso/dig-deep/pull/32).
 - *Seen*: because of the rope's limits, you dig down and then use platforms to get back up.
 - *Now*: a rope is 20 tiles (5 planks), can't be extended, and is easy to lose (P3-01); a plank
   makes 2 platforms, which you can jump up through.

@@ -213,9 +213,11 @@ export const BOMB_THROW_SPEED = 420; // px/s
 export const BOMB_GRAVITY = 900; // px/s^2
 export const BOMB_MAX = 8; // fused at once; throwing another sets off the oldest early
 // Rope coil: hung from an empty spot (with something solid above it or beside it), it unrolls
-// a rope ladder straight down, through open space, up to ROPE_LENGTH tiles. Breaking any part of
-// it rolls the whole rope back up into coils. When the tile under its end opens up, it unrolls
-// further into the open, up to the rest of its coils (at most ROPE_UNROLL_BUDGET ropes a step).
+// a rope ladder straight down, through open space, up to ROPE_LENGTH tiles; used on a rope, it
+// unrolls up to ROPE_LENGTH more from the rope's end. Cutting a rope rolls up the part below the
+// cut into coils (breaking its top rolls up all of it). When the tile under its end opens up, it
+// unrolls further into the open, up to the rest of its coils (at most ROPE_UNROLL_BUDGET ropes a
+// step).
 export const ROPE_LENGTH = 20; // tiles
 export const ROPE_UNROLL_BUDGET = 8; // ropes unrolled into new air per step
 // Drill: mines at least the emberite pickaxe's tier, much faster, as long as there's coal to
