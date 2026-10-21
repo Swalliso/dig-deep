@@ -226,9 +226,10 @@ const defs: TileDef[] = [
   { id: Tile.DoorRightClosedBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: true, material: 'wood', insulates: true },
   { id: Tile.DoorRightOpenTop, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
   { id: Tile.DoorRightOpenBottom, name: 'Door', hardness: 0.5, minTier: 0, color: '#8f6236', drop: 'door', solid: false, material: 'wood' },
-  // Climbed like a ladder. It drops nothing itself: breaking any part rolls the whole rope back
-  // up into coils (systems/tools.ts).
-  { id: Tile.Rope, name: 'Rope ladder', hardness: 0.2, minTier: 0, color: '#c9a66b', drop: null, solid: false, material: 'plant', climbable: true },
+  // Climbed like a ladder. It drops nothing itself: cutting it rolls up the part below the cut
+  // into coils (systems/tools.ts). Tougher than the stone it's dug beside (as tough as coal ore),
+  // so a stray click while digging down past it doesn't cut it.
+  { id: Tile.Rope, name: 'Rope ladder', hardness: 1.0, minTier: 0, color: '#c9a66b', drop: null, solid: false, material: 'plant', climbable: true },
 ];
 
 /** Indexed by tile id. */

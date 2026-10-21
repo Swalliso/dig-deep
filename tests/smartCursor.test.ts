@@ -99,6 +99,16 @@ describe('smart cursor digging', () => {
     expect(smartDigTarget(world, player, ...at(10, 30))).toEqual([10, FLOOR]);
     expect(smartDigTarget(world, player, ...at(10, 19))).toEqual([10, 19]);
   });
+
+  it('passes over a rope beside the player unless the pointer is on it', () => {
+    const { world, player } = setup();
+    // A rope hanging right beside the player, in front of a dirt wall.
+    fill(world, 11, 10, 11, FLOOR - 1, Tile.Rope);
+    fill(world, 12, 0, 39, FLOOR - 1, Tile.Dirt);
+    expect(smartDigTarget(world, player, ...farRight(player))).toEqual([12, 19]);
+    expect(smartDigTarget(world, player, ...at(13, 18))).toEqual([12, 18]);
+    expect(smartDigTarget(world, player, ...at(11, 19))).toEqual([11, 19]);
+  });
 });
 
 describe('smart cursor placing', () => {
