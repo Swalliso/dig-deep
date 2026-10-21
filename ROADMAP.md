@@ -3,7 +3,8 @@
 All 7 phases of `SPEC.md` are done and live. Phases 8–12 are live too, and Phase 13, the
 guidance slice, Phase 14a (the strata world), Phase 14b (the strata's rules and the Heart of
 the Deep), Phase 15 (lifts and the camp) and Phase 16 (gear and tools) are on `develop` (the dev
-site). **Phase 17 (structures and loot) is next.** This plan continues the same way: one phase at a time, each phase ends playable, and each
+site). **Next are playtest package B's two slices, B1 (caves and ore) and B2 (supplies and
+tools), then Phase 17 (structures and loot).** This plan continues the same way: one phase at a time, each phase ends playable, and each
 has acceptance criteria to check before moving on. Phase numbers continue from SPEC.md. Earlier phase checklists remain as validation
 targets; release status is separate from implementation status.
 
@@ -95,8 +96,8 @@ phase that needs it, and that phase says so.
 | Input actions (`src/input.ts`) | 11a | Logical actions (move left, jump, climb, map, quick stack…) bound to keys in one table, instead of key codes spread through `game.ts`. The F3 help, the Controls screen, tooltips and hints read their key names from it, so the remapping screen in the companion work only edits the table. |
 | PlayerStats (`src/systems/stats.ts`) | 11b | Player stats computed from the base values in config, plus equipment and boons. Replaces direct reads of `REACH`, `STATION_RANGE`, `DROP_PULL_RANGE` and the run/jump constants. 11b uses it for max health and safe fall height. |
 | Active tile updates (`src/world/tileUpdates.ts`) | 12 | A queue of tiles to recheck, fed by neighbours of changed tiles and worked through with a per-step budget, like the lighting's dirty box. Runs falling blocks, torch burnout and liquids. Never touches the whole world in one frame. |
-| Generation profiles | 12, extended in 14a and 14b | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14a adds strata (the **strata** profile, whose per-column stratum boundaries are kept in `world.strataTops`), Phase 14b adds **strata v2** (floatstone, hot rock, lava pools and the Heart of the Deep, whose place is kept in `world.heart`), and Descent floors are smaller profiles. |
-| World compatibility | 12, reviewed at 14a, 14b and 17 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. Reviewed at 14a: strata are a new profile, classic and gravel worlds still generate exactly as before (tests pin both profiles' world hashes), and no `SAVE_VERSION` bump was needed. Reviewed at 14b: the rules' generation is strata **v2**; v1 is frozen (its world hashes are pinned too), so 14a worlds keep generating the same and get the damp rule (it needs only strata) but no floatstone, lava, hot rock or Heart. Tile ids 45–49 were appended, the Heart's claim is an optional save field, and no `SAVE_VERSION` bump was needed. |
+| Generation profiles | 12, extended in 14a, 14b and B1 | `generateWorldSteps(world, profile)` takes a `GenProfile` (size, layers, ore table, caves, loose-rock pockets, later strata and structures). Today's generation becomes the frozen **classic** profile; Phase 12 adds gravel in a new profile, Phase 14a adds strata (the **strata** profile, whose per-column stratum boundaries are kept in `world.strataTops`), Phase 14b adds **strata v2** (floatstone, hot rock, lava pools and the Heart of the Deep, whose place is kept in `world.heart`), package B1 adds **strata v3** (caverns, cave networks, cave mouths and ore on cave walls), and Descent floors are smaller profiles. |
+| World compatibility | 12, reviewed at 14a, 14b, B1 and 17 | Saves regenerate unchanged chunks from their seed, so each world records the generation profile (name and version) it was created with and keeps generating with it while that's cheap; existing worlds stay **classic**, with no upgrade path. New generation features appear in new worlds. Backward compatibility is welcome but never a constraint: the few current testers know breaking changes may come, so when keeping old worlds working would hold a feature back, break them instead. Bump `SAVE_VERSION` so they show "Save from an older version" rather than loading wrong, and mention it in the release PR. Never silently reinterpret an old world with new generation. Export/import backups arrive with Phase 11a. Reviewed at 14a: strata are a new profile, classic and gravel worlds still generate exactly as before (tests pin both profiles' world hashes), and no `SAVE_VERSION` bump was needed. Reviewed at 14b: the rules' generation is strata **v2**; v1 is frozen (its world hashes are pinned too), so 14a worlds keep generating the same and get the damp rule (it needs only strata) but no floatstone, lava, hot rock or Heart. Tile ids 45–49 were appended, the Heart's claim is an optional save field, and no `SAVE_VERSION` bump was needed. |
 | Run rules and random streams | 18 | Record the seed, rules/generation version and eligible content pools. Derive separate generation, loot and boon streams from the seed and stable floor identifiers; keep cosmetics independent. Persist the state needed to resume without rerolling content. |
 
 Notes:
@@ -696,7 +697,169 @@ satchel, and lifts and the camp are what make the deeper strata practical.
 - [ ] Equipment choices are understandable without F3; removing gear never deletes inventory
       overflow or leaves the player trapped by an unexplained change in movement or reach.
 
+### Package B1: Caves and ore (before Phase 17)
+
+Playtest package B ("Early game and the ore economy" in `PLAYTESTS.md`) is split like Phase 14:
+B1 changes the world, B2 adds supplies and tools. Neither gets a phase number. The problem, from
+three playtests: after the stone pickaxe, the surest way to find ore is to strip mine in one
+direction. The baseline (strata v2, seeds 1–5) has no cave that opens to the surface, no cave in
+the Stone Caverns or the Fungal Hollows as big as a screen, and 83–86% of coal and copper veins
+that never touch a cave. Round 3 reached the copper pickaxe at 40:36 of play, with 83% of its
+copper dug to rather than seen. B1 makes caves the place where ore shows. Branch:
+`feature/b1-caves-and-ore`.
+
+- **A new generation profile, 'strata' v3**, for new worlds. It generates everything strata v2
+  does, the same way, plus four things, each from its own seeded stream. They're carved after
+  v2's crystal caverns and before the ores, so ore, gravel, glowshrooms and giant mushrooms all
+  see the new caves:
+  - **Caverns** in the Stone Caverns and the Fungal Hollows: open air where low-frequency noise
+    beats a threshold that rises near the stratum's edges. They're like the Geode Depths' crystal
+    caverns but smaller, and bigger in the Hollows than in the Stone Caverns.
+  - **Cave networks**: winding passages at least 3 tiles wide along the zero line of a second
+    noise, carved only where a slow region noise allows (about 40% of the two strata). They join
+    caverns and small caves into systems, so some areas are networks worth a trip and others
+    stay solid rock.
+  - **Cave mouths**: 4 sloped tunnels from the surface (20–55° below horizontal, wandering, 3–5
+    tiles wide). Each heads away from the spawn and stops once it breaks into a cave of 300
+    tiles or more, or at 70 m. The first starts 40–90 tiles from the spawn and ends in a **first
+    cavern** at 28–40 m, a ragged ellipse about 45 × 15 tiles whose walls always show a coal vein
+    and a copper vein. That's the forgiving first meeting with "ore shows on cave walls". The
+    spawn's own ground stays whole.
+  - **Ore on cave walls**: 30% of each ore's veins start on a rock face (its stratum's rock with
+    air on a side); the rest are placed as now. Veins per band stay the same, so a world holds
+    as much ore as before, and caves show more of it.
+- **Starting values**, from the design session's prototype: caverns at noise scale 100 × 28 and
+  threshold 0.6 in the Stone Caverns, and 100 × 30 and 0.55 in the Hollows, with the crystal
+  caverns' edge rounding (8 rows, 0.05 a row). Networks where |noise(x / 80, y / 40)| < 0.025,
+  inside a region noise (scale 160) above 0.15, carved with a 1-tile radius. Tune them against
+  the acceptance targets, not the other way round.
+- **Not in B1** (decided): coal in deeper strata (B2's charcoal covers light, and coal stays
+  worth packing for a deep trip), and bigger or richer veins deeper down (B2's rich strikes do
+  that job without touching generation).
+- **Profiles and saves**: record strata v2's world hashes in `tests/profiles.test.ts` before
+  adding v3 (v2 isn't pinned yet), as 14b did for v1. `NEW_WORLD_PROFILE` becomes v3, and
+  existing worlds keep theirs. No new tiles and no `SAVE_VERSION` bump. Mouths carve the grass
+  row, so check that what reads `world.surface` (trees, the map's sky colour, the backdrop)
+  handles an open surface tile.
+- **Performance**: a world took 132 ms to generate in Node with v2 and 227 ms with the
+  prototype. Collect the rock faces once per stratum and keep the mouths' flood fills bounded.
+  Generation must stay around 2 s in the browser.
+- **Measuring**: `npm run report:world` measures the profile new worlds get, so it reports v3.
+  Add `--profile strata:2` for before/after tables. Fix its cave-mouth check too: an open tile
+  in the surface row counts as sky. The baseline isn't affected, since no cave reached that row.
+- Debug: no new shortcut. The first cavern is a short walk from the spawn, Y reaches each
+  stratum and V reveals the map.
+- **Effects on later work**:
+  - The Hollows' open space more than doubles, and with it their glowshrooms (about 420 → 860
+    a world) and giant mushrooms. Package F measures the Hollows' light on a v3 world before
+    deciding anything about damp torches.
+  - Gravel hanging over a cave rises from about 205 to 340 tiles a world, and big caverns take
+    more torches to light. Both are evidence for the light and hazard reviews after B (P3-07).
+
+Generation targets, per world over seeds 1–5 (`npm run report:world`):
+
+| | v2 | Prototype | Target |
+| --- | ---: | ---: | --- |
+| Stone Caverns open | 6.6% | 17.9% | 15–20% |
+| Stone Caverns caves of ¼ screen / of a screen | 3 / 0 | 19 / 3 | at least 12 / at least 2, and 1 on every seed |
+| Fungal Hollows open | 9.7% | 23.7% | 20–25% |
+| Fungal Hollows caves of a screen | 0 | 7 | at least 5 |
+| Veins touching a cave: coal / copper / iron | 14 / 17 / 24% | 59 / 57 / 61% | at least 50% each |
+| Each ore's tiles | – | within 3% of v2 | within 10% of v2 |
+| Cave mouths / nearest to the spawn | 0 / – | 6 / 48–75 tiles | at least 3 / within 100 tiles |
+
+- [ ] `npm run report:world` on seeds 1–5 meets the generation targets above.
+- [ ] Seeds 1–5 and 42 each have at least 3 cave mouths. One is within 100 tiles of the spawn
+      and leads on foot, with no drop past the safe fall height, to the first cavern and its
+      coal and copper veins (a test walks it).
+- [ ] Strata v1 and v2 generate exactly as before, and the same seed always gives the same v3
+      world.
+- [ ] Round 4 playtest (seed 42, Normal, no debug, the same rules as Round 3): the first trip
+      down can follow the spawn's cave mouth. The copper pickaxe comes in 30 minutes of play or
+      less (Round 3: 40:36), and at least half the copper mined comes from veins a cave showed
+      (Round 3: 17%).
+
+### Package B2: Supplies and tools (before Phase 17)
+
+The second half of package B: light that renews, a copper tool that helps find ore, and yield
+that grows with the pickaxe, so the ore rate stops being flat. There's no generation change, so
+it works in every world. Branch: `feature/b2-supplies-and-tools`.
+
+- **Charcoal** (P2-02): a furnace turns 1 wood into 1 charcoal. The camp's stove counts, and
+  giant mushroom stems give wood, so the Hollows can make their own.
+  - It's **light fuel only**: 1 wood + 1 charcoal make 4 torches (no station, like the coal
+    torch), and a torch + 2 charcoal make 2 flares (workbench), so flares get cheaper too.
+  - Coal stays the only fuel for bars, bombs and the drill, so coal veins keep their worth.
+    Charcoal's tooltip says what it's for.
+  - The two recipes sit beside the coal ones, so crafting needs no "coal or charcoal"
+    ingredient.
+- **Sounding rod** (P3-03, the copper item): 3 copper bars + 2 planks at a workbench, in Tools.
+  - Held, the left mouse taps the rock instead of digging: like flares and bombs, it does what
+    the held item does. The rod needs 2 s of play to settle before the next tap, and the hotbar
+    note shows it.
+  - Ore and gems within 20 tiles answer through rock and in the dark, but **only roughly**.
+    Each 8 × 8-tile cell with ore in it glows softly over its whole area for about 4 s, in its
+    ore's colour (brighter for more ore, mixed colours for mixed ore), and a chime comes from
+    its direction.
+  - The cells are fixed in the world, so tapping again shows the same areas and can't
+    triangulate a vein. The rod says where to dig, not which tile: up close, the map's 5-tile
+    ore sense and light find the vein.
+  - It marks nothing on the map. A toast sums up each tap ("Copper and coal nearby", "Nothing
+    within 20 m"). With Reduced flashes on, the glow fades in and out without pulsing. It works
+    in every stratum, with any pickaxe.
+  - Later, not in B2 (the user's idea): an upgraded rod that pinpoints ore or keeps it on the
+    map, if the rough one leaves players wanting more.
+- **Rich strikes** (P1-12's flat rate): when an ore or gem tile breaks (by pickaxe, drill or
+  bomb), each tool tier above the tier it needs gives a 25% chance, up to 75%, of a second one.
+  - Examples: coal with the stone pickaxe, 25%. Copper with the copper pickaxe, 25%, and with
+    iron, 50%. Iron with the iron pickaxe, 25%, and with gold, 50%.
+  - The extra one shows a "+1" floater and a brighter clink. Pickaxe tooltips and F3 list the
+    chances.
+  - Drops aren't generation, so the roll doesn't need the seeded RNG, but it takes a random
+    source a test can fix.
+- **Iron sinks** (checked, unchanged):
+  - The iron pickaxe is 10 bars, and everything after it 42: a 300 m lift (19 bars of rail and
+    3 stops), the camp, lantern, helmet, claws, spring boots, magnet charm and drill.
+  - That's 156 iron ore in all, or about 115–130 with rich strikes: roughly 15% of a v3 world's
+    iron, most of it on cave walls.
+  - If a 300 m lift is still out of reach after about 90 minutes of play, double
+    `LIFT_RAILS_PER_BAR` (16 → 32). Phase 17's mineshafts add iron bars as loot.
+- **Not in B2** (decided):
+  - A vein tool: it's Descent's Vein Miner boon, and with ore on cave walls a vein is quick to
+    dig out.
+  - Cheaper bombs or an earlier drill: they aren't the bottleneck.
+  - Thrown torches: charcoal flares and the rope fixes cover scouting.
+  - A wider passive ore sense: the rod does that job, and the 5-tile sense stays as it is
+    (P1-02).
+- **Saves**: two new items, charcoal and the sounding rod. The rod's settling time and its glows
+  aren't saved. No new saved state and no `SAVE_VERSION` bump.
+- Debug: the materials kit (G) gets charcoal and a sounding rod. F3 shows the selected pickaxe's
+  rich-strike chances and the rod's last tap (the cells and ores it found).
+- **Effects on package F**: charcoal from mushroom wood lets the Hollows supply their own (damp)
+  torches. The rod already shows roughly where iron is on screen in the dark, so F decides
+  whether the 5-tile ore sense also shimmers on screen (P3-05) after playing with the rod.
+
+- [ ] Charcoal is made from surface wood or giant mushroom wood, and makes torches and flares
+      and nothing else; its tooltip says so.
+- [ ] A tap shows roughly where ore is within 20 tiles, through rock and in the dark, without
+      pointing at single tiles or marking the map. Tapping again shows the same cells, holding
+      the rod never digs, and the tap reads with sound muted and Reduced flashes on.
+- [ ] Rich strikes give the stated share of extra ore per tier (a test with a fixed random
+      source), shown with a "+1". Pickaxe tooltips list the chances.
+- [ ] Round 5 playtest (seed 42 with v3, Normal, no debug, the same rules as Round 3): the
+      copper pickaxe in 25 minutes of play or less, the iron pickaxe in 60 or less (Round 3: 2
+      of its 10 bars at 51:41), at least 0.25 ore mined per tile dug (Round 3: 0.11), and
+      torches never run short.
+
 ### Phase 17: Structures and loot
+
+Leads with the Stone Caverns' structures (decided in package B): abandoned mineshafts with a
+chest of iron bars, torches and rope, so the early game gets loot and crafting isn't the only
+source of iron (P2-01). Balance the loot tables against B1's caves and B2's rich strikes: loot
+is a second source of iron, not the main one. Structures generate with no light of their own
+(dead torches, unlit lamps, a geode's crystals dull until it's broken open). The map's "lit on
+screen means seen" rule stays (P1-03, decided), so an unlit structure never shows through fog
+before it's found.
 
 - Seeded structures placed per stratum:
   - **Abandoned mineshafts**: plank corridors with beams, ladders and a chest.
@@ -952,12 +1115,17 @@ Work through the phases in number order, with the companion polish in small slic
    dread off, only established light heals), the guidance slice (pinned recipe, map pins and
    quick torch), Phase 14a (distinct strata whose materials all have uses, and renewable wood),
    Phase 14b (each stratum's rule and the Heart of the Deep), Phase 15 (lifts and the camp: a
-   reliable way home) and Phase 16 (gear and tools, with recipe search).
-2. Phase 17: useful discoveries.
-3. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
+   reliable way home) and Phase 16 (gear and tools, with recipe search). Playtest packages A
+   (world fixes) and E (movement and targeting controls).
+2. Package B: B1 (caves and ore), then B2 (supplies and tools), each with its playtest round.
+   Package F (the Fungal Hollows' own light) follows B2, so it's tuned on a B1 world with B2's
+   charcoal and sounding rod. G (rope follow-ups) and C (readability) are small slices that fit
+   in anywhere. See `PLAYTESTS.md`.
+3. Phase 17: useful discoveries, leading with the Stone Caverns' structures.
+4. Phase 18: settle the camp-defense idea, then validate a complete floor and the pressure loop
    before expanding boons in 19 and objectives/mutators in 20. Meta progression and
    standardized dailies follow in 21.
-4. Ideas to brainstorm: camp defense before Phase 18; automation once lifts and liquids exist.
+5. Ideas to brainstorm: camp defense before Phase 18; automation once lifts and liquids exist.
 
 Phase 18 builds on Phase 11's session and health foundations, Phase 12's generation profiles
 and falling blocks (its pressure prototype needs them), Phase 13's darkness, Phase 14's strata
