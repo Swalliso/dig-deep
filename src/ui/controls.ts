@@ -62,7 +62,7 @@ export function controlsList(table: ActionTable = ACTIONS): [string, string][] {
     ['Place the held block', `${key('use')} on empty space`],
     ['Build a row', `Hold ${use} and sweep`],
     ['Throw a held flare or bomb', `${key('use')} at a spot`],
-    ['Hang a held rope coil', `${key('use')} on an edge`],
+    ['Hang or extend a rope', `${key('use')} on an edge or rope`],
     ['Pick block onto hotbar', key('pickBlock')],
     ['Quick torch (keeps what you hold)', list('quickTorch')],
     ['Use chest, door, bed, camp, lift', `${clickName('interact', table)} it`],

@@ -5,6 +5,7 @@ paths:
   - "src/systems/building.ts"
   - "src/systems/mining.ts"
   - "src/systems/smartCursor.ts"
+  - "src/systems/tools.ts"
   - "src/ui/controls.ts"
   - "tests/player.test.ts"
   - "tests/traversal.test.ts"
@@ -13,6 +14,7 @@ paths:
   - "tests/actions.test.ts"
   - "tests/controls.test.ts"
   - "tests/smartCursor.test.ts"
+  - "tests/tools.test.ts"
 ---
 
 # Player, physics, mining and input
@@ -70,8 +72,18 @@ paths:
   climb up, so W clings like it climbs a ladder.
 - **Tools** (Phase 16): `primaryAction` digs with the drill (at least `DRILL_TIER`, at
   `DRILL_SPEED`, while there's coal; one coal per `DRILL_TILES_PER_COAL` tiles), throws bombs
-  like flares and hangs a rope coil (once per press). Gear only changes in the inventory panel,
-  so stats are recomputed from the worn gear every step.
+  like flares and hangs a rope coil, or on a rope (or the spot under its end) adds the coil to
+  that rope's bottom end (once per press). Gear only changes in the inventory panel, so stats
+  are recomputed from the worn gear every step.
+- **Rope accounting** (package G, `systems/tools.ts`): only a rope's tiles are saved, so a rope
+  of length L always counts as `ropeCoils(L)` = ceil(L / 20) coils, and its slack is what those
+  coils hold beyond L. Cutting a rope tile keeps the part above (U tiles) and rolls up the part
+  below, giving back `ropeCoils(L) − ropeCoils(U)` coils (all of them when the top is cut),
+  dropped at the player rather than down the shaft. The rest of a coil cut partway is the upper
+  part's slack, so it unrolls straight back into the gap (`RopeSlack`): a stray cut costs
+  nothing. A coil that lands a rope on another rope's top joins them and only takes a coil if
+  the joined rope counts more than they did. Rope has hardness 1.0 (coal ore's, above stone's
+  0.8). The smart cursor passes over ropes like ladders.
 - **Lift rides** (Phase 15): while riding, the player is attached to the cage (`Player.rideTo`
   each step instead of `update`), so there's no moving-platform physics; digging and building
   are off. Lift rail is climbable like a ladder.
